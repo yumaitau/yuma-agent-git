@@ -14,4 +14,7 @@ export interface Env {
   IMPORT_QUEUE: Queue;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */
   REF_LOCK: DurableObjectNamespace;
+  /** GitHub OAuth app credentials (issue #12) — set via secrets/.dev.vars. */
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }

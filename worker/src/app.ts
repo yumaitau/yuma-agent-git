@@ -1,16 +1,24 @@
 import { Hono } from 'hono';
-import type { Env } from './env';
 import { apiRouter } from './api/router';
 import { apiError, errorResponse } from './api/errors';
+import { authRoutes } from './auth/oauth';
+import { authMiddleware } from './auth/session';
+import { tokensRoutes } from './auth/tokens';
+import type { AppEnv } from './auth/principal';
 
 /**
  * The Hono application. Exported separately from the Worker entry so tests can
  * drive routes through `app.fetch` with miniflare bindings.
  */
-export const app = new Hono<{ Bindings: Env }>();
+export const app = new Hono<AppEnv>();
+
+// Resolves `user` + `principal` on every request (never 401s by itself).
+app.use('*', authMiddleware);
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
+app.route('/', authRoutes);
+app.route('/', tokensRoutes);
 app.route('/api/v1', apiRouter);
 
 // Every response follows the error envelope — including unrouted URLs.

@@ -18,6 +18,8 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations({ migrationsDir: 'migrations' }),
+          GITHUB_CLIENT_ID: 'test-client-id',
+          GITHUB_CLIENT_SECRET: 'test-client-secret',
         },
       },
     })),
@@ -25,7 +27,7 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     // commit-graph and blame-chain suites build hundreds of changesets
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

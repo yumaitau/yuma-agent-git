@@ -116,6 +116,8 @@ export const T = {
   pathRules: 'path_rules',
   agentTasks: 'agent_tasks',
   importJobs: 'import_jobs',
+  oauthStates: 'oauth_states',
+  apiTokens: 'api_tokens',
 } as const;
 
 /** Column names, per table. */
@@ -191,6 +193,22 @@ export const C = {
     createdBy: 'created_by',
     createdAt: 'created_at',
     updatedAt: 'updated_at',
+  },
+  oauthStates: {
+    stateHash: 'state_hash',
+    createdAt: 'created_at',
+    expiresAt: 'expires_at',
+  },
+  apiTokens: {
+    id: 'id',
+    tokenHash: 'token_hash',
+    repoId: 'repo_id',
+    userId: 'user_id',
+    label: 'label',
+    scopes: 'scopes',
+    createdAt: 'created_at',
+    lastUsedAt: 'last_used_at',
+    expiresAt: 'expires_at',
   },
   importJobs: {
     id: 'id',
