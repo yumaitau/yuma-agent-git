@@ -24,5 +24,8 @@ export default defineConfig({
   ],
   test: {
     include: ['test/**/*.test.ts'],
+    // commit-graph and blame-chain suites build hundreds of changesets
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

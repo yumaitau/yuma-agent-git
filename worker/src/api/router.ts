@@ -4,6 +4,7 @@ import { ancestryRoutes } from './ancestry';
 import { blameRoutes } from './blame';
 import { changesetsRoutes } from './changesets';
 import { diffRoutes } from './diff';
+import { objectsRoutes } from './objects';
 import { readRoutes } from './read';
 import { refsRoutes } from './refs';
 
@@ -17,4 +18,5 @@ apiRouter.route('/', blameRoutes);
 apiRouter.route('/', changesetsRoutes);
 apiRouter.route('/', diffRoutes);
 apiRouter.route('/', refsRoutes);
+apiRouter.route('/', objectsRoutes);
 apiRouter.route('/', readRoutes);
