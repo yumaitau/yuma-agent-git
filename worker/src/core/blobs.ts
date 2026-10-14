@@ -143,3 +143,18 @@ export async function hasBlob(
   await Promise.all(Array.from({ length: Math.min(20, hashes.length) }, () => worker()));
   return found;
 }
+
+/**
+ * Uncompressed size of a stored blob (from write-time metadata), or null when
+ * not stored. Avoids downloading content.
+ */
+export async function statBlob(
+  env: Env,
+  repoId: string,
+  hash: string,
+): Promise<number | null> {
+  const head = await env.OBJECTS.head(blobKey(repoId, hash));
+  if (!head) return null;
+  const size = Number(head.customMetadata?.size ?? '0');
+  return Number.isFinite(size) ? size : 0;
+}
