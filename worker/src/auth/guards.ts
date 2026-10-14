@@ -22,3 +22,17 @@ export async function requireRepoWrite(
 ): Promise<boolean> {
   return true; // TODO(issue #14): replace with RBAC
 }
+
+/**
+ * History/blame permission on a specific path — the monorepo-security hook
+ * (deny `history` on `secrets/` while granting `read` elsewhere). Issue #14
+ * enforces path_rules here.
+ */
+export async function requirePathHistory(
+  _env: Env,
+  _c: Context,
+  _repo: RepoRecord,
+  _path: string,
+): Promise<boolean> {
+  return true; // TODO(issue #14): replace with RBAC path_rules
+}

@@ -1,7 +1,8 @@
 import type { Env } from '../env';
-import { getChangeset, type Changeset } from './changesets';
+import type { Changeset } from './changesets';
 import { NotFoundError } from './errors';
 import { getRef } from '../db/repos';
+import { getChangeset } from './changesets';
 
 const CS_ID_RE = /^[0-9a-f]{64}$/;
 
@@ -95,39 +96,4 @@ export function contentTypeFor(path: string): string {
   const dot = path.lastIndexOf('.');
   if (dot < 0) return 'application/octet-stream';
   return CONTENT_TYPES[path.slice(dot + 1).toLowerCase()] ?? 'application/octet-stream';
-}
-
-// ---------------------------------------------------------------------------
-// Path history (provisional)
-// ---------------------------------------------------------------------------
-
-/**
- * Commits touching `path` (exact match or under the directory), newest first.
- *
- * PROVISIONAL (`X-YAG-Provisional: path-history`): walks first-parent history
- * with a hard cap of 500 hops. Issue #10 serves this from the `path_history`
- * derived-data kind and deletes this walk.
- */
-export async function provisionalPathHistory(
-  env: Env,
-  repoId: string,
-  head: string,
-  path: string,
-  limit: number,
-): Promise<Changeset[]> {
-  const normalized = path.replace(/\/+$/, '');
-  const out: Changeset[] = [];
-  let cursor: string | null = head;
-  let hops = 0;
-  while (cursor !== null && out.length < limit && hops < 500) {
-    const cs: Changeset | null = await getChangeset(env, repoId, cursor);
-    if (cs === null) break;
-    const touched = cs.changed_files.some(
-      (f) => f.path === normalized || f.path.startsWith(`${normalized}/`),
-    );
-    if (touched) out.push(cs);
-    cursor = cs.first_parent;
-    hops++;
-  }
-  return out;
 }

@@ -27,6 +27,11 @@ import { getChangeset, type Changeset } from './changesets';
 export interface DerivedCtx {
   /** parentId → { kindName: payload } for registered kinds. */
   parents: Record<string, Record<string, unknown>>;
+  /**
+   * The derived_data key being computed. Composite-key kinds (blame:
+   * `csId:path`) parse their subkey from this.
+   */
+  key: string;
   getBlobContent?: (hash: string) => Promise<Uint8Array | null>;
   signal?: AbortSignal;
 }
@@ -35,6 +40,11 @@ export interface DerivedKind<P = unknown> {
   name: string;
   /** Computed in the commit path; otherwise deferred (cache-aside / queue). */
   eager: boolean;
+  /**
+   * Composite keys: map a derived_data `cs_id` key to the changeset it derives
+   * from (blame uses `csId:path`). Default: the key is the changeset id.
+   */
+  changesetOfKey?(key: string): string;
   compute(env: Env, repoId: string, cs: Changeset, ctx: DerivedCtx): Promise<P>;
   parse(payload: string): P;
   /** Row size guard; default 1 MiB. */
@@ -64,6 +74,27 @@ const DEFAULT_MAX_PAYLOAD_BYTES = 1024 * 1024;
 export const OVERSIZE_SENTINEL = { oversize: true } as const;
 export const FAILED_SENTINEL = { failed: true } as const;
 
+/** Sentinel rows ({oversize}|{failed}) are terminal answers, not payloads. */
+export function isSentinel(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    ('oversize' in payload || 'failed' in payload)
+  );
+}
+
+/** Parse a stored row: sentinels pass through, payloads go through the kind. */
+export function parseStored<P>(kind: DerivedKind<P>, text: string): P {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    raw = null;
+  }
+  if (isSentinel(raw)) return raw as P;
+  return kind.parse(text);
+}
+
 async function readRaw(
   env: Env,
   repoId: string,
@@ -78,6 +109,16 @@ async function readRaw(
   );
   if (!row) return null;
   return String((row as Record<string, unknown>)[C.derivedData.payload]);
+}
+
+/** Read a stored payload without computing (null when absent). */
+export async function peekDerived(
+  env: Env,
+  repoId: string,
+  kindName: string,
+  key: string,
+): Promise<string | null> {
+  return readRaw(env, repoId, kindName, key);
 }
 
 /** Idempotent row write — concurrent computations settle on one row. */
@@ -112,20 +153,21 @@ export async function getDerived<P = unknown>(
   env: Env,
   repoId: string,
   kindName: string,
-  csId: string,
+  key: string,
 ): Promise<P | null> {
   const kind = derivedKinds.get(kindName) as DerivedKind<P> | undefined;
   if (!kind) throw new Error(`unknown derived kind: ${kindName}`);
-  const existing = await readRaw(env, repoId, kindName, csId);
-  if (existing !== null) return kind.parse(existing);
+  const existing = await readRaw(env, repoId, kindName, key);
+  if (existing !== null) return parseStored(kind, existing);
 
+  const csId = kind.changesetOfKey?.(key) ?? key;
   const cs = await getChangeset(env, repoId, csId);
   if (cs === null) return null;
-  const value = await computeDerived(env, repoId, kind, cs);
-  await writeKindRow(env, repoId, kind, csId, value);
+  const value = await computeDerived(env, repoId, kind, cs, key);
+  await writeKindRow(env, repoId, kind, key, value);
   // Re-read so concurrent losers converge on the surviving row.
-  const stored = await readRaw(env, repoId, kindName, csId);
-  return stored === null ? (value as P) : kind.parse(stored);
+  const stored = await readRaw(env, repoId, kindName, key);
+  return stored === null ? (value as P) : parseStored(kind, stored);
 }
 
 /** Compute a kind's value with a memoized per-call parent context. */
@@ -134,8 +176,9 @@ export async function computeDerived<P>(
   repoId: string,
   kind: DerivedKind<P>,
   cs: Changeset,
+  key: string = cs.id,
 ): Promise<P> {
-  const ctx: DerivedCtx = { parents: {} };
+  const ctx: DerivedCtx = { parents: {}, key };
   for (const parentId of cs.parents) {
     const payloads: Record<string, unknown> = {};
     for (const other of derivedKinds.values()) {

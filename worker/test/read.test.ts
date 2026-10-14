@@ -218,7 +218,7 @@ describe('read RPCs', () => {
     });
   });
 
-  it('history walks first-parent; path filter is provisional + capped', async () => {
+  it('history walks first-parent; path filter served by path_history kind', async () => {
     const { cs1, cs2, cs3 } = await seedHistory('acme/history');
 
     const all = await get('/acme/history/history?cs=ref:main');
@@ -229,9 +229,15 @@ describe('read RPCs', () => {
     expect(allBody.changesets.map((c) => c.id)).toEqual([cs3.id, cs2.id, cs1.id]);
 
     const byFile = await get('/acme/history/history?path=src/app.ts');
-    expect(byFile.headers.get('x-yag-provisional')).toBe('path-history');
-    const byFileBody = (await byFile.json()) as { changesets: { id: string }[] };
+    // provisional fallback removed (issue #10) — real derived data answers
+    expect(byFile.headers.get('x-yag-provisional')).toBeNull();
+    const byFileBody = (await byFile.json()) as {
+      changesets: { id: string }[];
+      next: string | null;
+      complete: boolean;
+    };
     expect(byFileBody.changesets.map((c) => c.id)).toEqual([cs2.id, cs1.id]);
+    expect(byFileBody.complete).toBe(true);
 
     const byDir = await get('/acme/history/history?path=docs/readme.md');
     const byDirBody = (await byDir.json()) as { changesets: { id: string }[] };

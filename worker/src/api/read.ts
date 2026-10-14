@@ -2,13 +2,10 @@ import { Hono } from 'hono';
 import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import { apiError, errorResponse } from './errors';
-import { firstParentHistory } from '../core/changesets';
-import {
-  contentTypeFor,
-  lookupRev,
-  provisionalPathHistory,
-  resolveRevision,
-} from '../core/read';
+import { firstParentHistory, getChangeset } from '../core/changesets';
+import { contentTypeFor, lookupRev, resolveRevision } from '../core/read';
+import { PATH_HISTORY, pathHistoryAt } from '../core/derived/pathHistory';
+import { enqueueDerived, peekDerived } from '../core/derived';
 import { blobKey, getBlob, statBlob } from '../core/blobs';
 import { decompressStream, parseCodec } from '../core/compress';
 import { IncrementalSha256, sha256Hex } from '../core/hashing';
@@ -65,7 +62,7 @@ function cacheHeaders(
 }
 
 /** Query-param path validation (NFC, no traversal). Empty allowed for tree root. */
-function normalizeQueryPath(raw: string, allowEmpty: boolean): string {
+export function normalizeQueryPath(raw: string, allowEmpty: boolean): string {
   const path = raw.normalize('NFC');
   if (path === '') {
     if (allowEmpty) return '';
@@ -344,14 +341,28 @@ readRoutes.get('/repos/:repo{.+}/history', async (c) => {
       return c.json({ changesets }, 200, headers);
     }
 
-    // Path history — provisional first-parent walk until the `path_history`
-    // derived-data kind lands (issue #10).
+    // Path history via the `path_history` derived kind (issue #10 — the
+    // provisional walk is gone). Cold + background=1 → 202 + queue; otherwise
+    // bounded inline walk with a resume cursor.
     const path = normalizeQueryPath(rawPath, false);
-    const changesets = await provisionalPathHistory(c.env, repo.id, cs.id, path, limit);
-    return c.json({ path, changesets }, 200, {
-      ...headers,
-      'x-yag-provisional': 'path-history',
-    });
+    const background = c.req.query('background') === '1';
+    const cold = (await peekDerived(c.env, repo.id, PATH_HISTORY, cs.id)) === null;
+    if (background && cold) {
+      await enqueueDerived(c.env, [
+        { repo_id: repo.id, kind: PATH_HISTORY, cs_id: cs.id },
+      ]);
+      return c.json({ status: 'computing', path, cs: cs.id }, 202, headers);
+    }
+
+    const result = await pathHistoryAt(c.env, repo.id, cs.id, path, limit);
+    const changesets = (
+      await Promise.all(result.commits.map((id) => getChangeset(c.env, repo.id, id)))
+    ).filter((c2) => c2 !== null);
+    return c.json(
+      { path, changesets, next: result.next, complete: result.complete },
+      200,
+      headers,
+    );
   } catch (err) {
     return errorResponse(c, err);
   }
