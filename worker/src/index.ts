@@ -1,7 +1,9 @@
 import { app } from './app';
 import type { Env } from './env';
 import type { DerivedMessage } from './core/derived';
+import type { ImportMessage } from './bridge/import';
 import { derivedQueue } from './queues/derived';
+import { importQueue } from './queues/import';
 
 export { app };
 // Durable Object classes must be exported from the Worker entry.
@@ -17,9 +19,7 @@ export default {
       case 'derived-data':
         return derivedQueue(batch as MessageBatch<DerivedMessage>, env);
       case 'git-import':
-        // TODO(issue #15): import queue consumer
-        batch.retryAll();
-        return;
+        return importQueue(batch as MessageBatch<ImportMessage>, env);
       case 'agent-jobs':
         // TODO(issue #17): agent job consumer
         batch.retryAll();

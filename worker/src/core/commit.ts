@@ -51,6 +51,8 @@ export const commitRequestSchema = z.object({
   message: z.string().min(1).max(65536),
   author: authorSchema,
   changes: z.array(changeSchema).max(5000),
+  /** Server-side timestamp override (git imports preserve commit dates). */
+  created_at: z.number().int().optional(),
 });
 export type CommitRequest = z.infer<typeof commitRequestSchema>;
 
@@ -197,6 +199,7 @@ export async function commitChanges(
   const changeset = await createChangeset(env, repoId, {
     ...fields,
     root_tree: rootTreeHash,
+    created_at: req.created_at,
   });
 
   await onChangesetCreated(env, repoId, changeset);
