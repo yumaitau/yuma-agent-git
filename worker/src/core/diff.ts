@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { getBlob } from './blobs';
 import { getChangeset } from './changesets';
-import { isAncestorProvisional, provisionalMergeBase } from './ancestry';
+import { isAncestorDag, mergeBase } from './ancestry';
 import { NotFoundError, ObjectCorruptError, ObjectNotFoundError } from './errors';
 import { getTree, type TreeEntry } from './trees';
 import { unifiedDiff } from './xdiff';
@@ -44,8 +44,6 @@ export interface DiffResult {
   merge_base: string | null;
   files: FileDiff[];
   truncated: boolean;
-  /** True when the merge base came from the provisional walk (issue #8 fixes). */
-  provisional?: boolean;
 }
 
 export interface DiffOptions {
@@ -77,8 +75,7 @@ export async function diffRevisions(
   const maxFiles = opts.maxFiles ?? DEFAULT_MAX_FILES;
   const files: FileDiff[] = [];
   let truncated = false;
-  let mergeBase: string | null = null;
-  let provisional = false;
+  let base: string | null = null;
 
   if (mode === 'direct') {
     truncated = await walkSide(
@@ -92,21 +89,17 @@ export async function diffRevisions(
     );
   } else {
     if (opts.mergeBase !== undefined) {
-      mergeBase = opts.mergeBase;
-    } else if (await isAncestorProvisional(env, repoId, from.id, to.id)) {
-      mergeBase = from.id;
-    } else if (await isAncestorProvisional(env, repoId, to.id, from.id)) {
-      mergeBase = to.id;
+      base = opts.mergeBase;
+    } else if (await isAncestorDag(env, repoId, from.id, to.id)) {
+      base = from.id;
+    } else if (await isAncestorDag(env, repoId, to.id, from.id)) {
+      base = to.id;
     } else {
-      // PROVISIONAL merge base (X-YAG-Provisional) — issue #8 replaces with
-      // skip-list convergence.
-      mergeBase = await provisionalMergeBase(env, repoId, from.id, to.id);
-      provisional = true;
+      // Real skip-list merge base (issue #8) over first-parent spines.
+      base = await mergeBase(env, repoId, from.id, to.id);
     }
     const baseTree =
-      mergeBase === null
-        ? null
-        : ((await getChangeset(env, repoId, mergeBase))?.root_tree ?? null);
+      base === null ? null : ((await getChangeset(env, repoId, base))?.root_tree ?? null);
     truncated =
       (await walkSide(env, repoId, baseTree, from.root_tree, 'from', files, maxFiles)) ||
       truncated;
@@ -125,11 +118,10 @@ export async function diffRevisions(
   const result: DiffResult & { texts?: TextDiff[] } = {
     from: from.id,
     to: to.id,
-    merge_base: mergeBase,
+    merge_base: base,
     files,
     truncated,
   };
-  if (provisional) result.provisional = true;
   if (opts.includeText) {
     result.texts = await collectTexts(env, repoId, files, opts.maxTextFileSize);
   }

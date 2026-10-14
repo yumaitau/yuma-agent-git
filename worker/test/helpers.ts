@@ -98,6 +98,38 @@ export function instrumentObjects(base: TestEnv): ObjectProbe {
   return { env, puts, gets, heads };
 }
 
+export interface DbProbe {
+  env: Env;
+  prepares: string[];
+}
+
+/**
+ * Env with D1 instrumented — counts prepared statements so tests can assert
+ * read complexity (the O(log n) ancestry claims).
+ */
+export function instrumentDb(base: TestEnv): DbProbe {
+  const prepares: string[] = [];
+  const target = base.DB;
+  const proxied = new Proxy(target, {
+    get(t, prop, _recv) {
+      if (prop === 'prepare') {
+        return (sql: string): unknown => {
+          prepares.push(sql);
+          return (t.prepare as (s: string) => unknown).call(t, sql);
+        };
+      }
+      const v = Reflect.get(t, prop, t) as unknown;
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
+  const env = new Proxy(base, {
+    get(t, prop, _recv) {
+      return prop === 'DB' ? proxied : Reflect.get(t, prop, t);
+    },
+  }) as TestEnv;
+  return { env, prepares };
+}
+
 interface FetchLike {
   (request: Request): Response | Promise<Response>;
 }

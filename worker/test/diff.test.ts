@@ -79,9 +79,7 @@ describe('diffRevisions', () => {
     const diff = await diffRevisions(dbEnv, repoId, from.id, to.id);
 
     expect(diff.merge_base).toBe(base.id);
-    // neither side is an ancestor of the other → the provisional walk produced
-    // the base (issue #8's skip-list removes this flag)
-    expect(diff.provisional).toBe(true);
+    // skip-list merge base (issue #8) — the provisional flag no longer exists
     expect(diff.files).toEqual([
       {
         path: 'A.txt',
@@ -338,7 +336,7 @@ describe('diff route', () => {
     expect(byRef.headers.get('cache-control')).toBe('public, max-age=10');
   });
 
-  it('flags the provisional merge base and keeps private diffs uncacheable', async () => {
+  it('merge base is skip-list real; private diffs stay uncacheable', async () => {
     const { repoId, base } = await seedBranches('acme/prov');
     // sibling branches with NO common first-parent walk through `from`… the
     // provisional walk is exercised because neither is an ancestor of the other
@@ -361,7 +359,10 @@ describe('diff route', () => {
 
     const res = await get(`/acme/prov/diff?from=${a.id}&to=${b.id}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-yag-provisional')).toBe('merge-base');
+    // provisional merge-base flags are GONE (issue #8 replaced the fallback)
+    expect(res.headers.get('x-yag-provisional')).toBeNull();
+    const body = (await res.json()) as { merge_base: string };
+    expect(body.merge_base).toBe(base.id);
     // private repo (default) → never publicly cacheable
     expect(res.headers.get('cache-control')).toBe('private, no-store');
   });

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Env } from '../env';
 import { getRef, setRef } from '../db/repos';
-import { isAncestorProvisional } from './ancestry';
+import { isAncestorDag } from './ancestry';
 import { ApiError } from './errors';
 import { validateRefName } from './refs';
 
@@ -74,16 +74,13 @@ export class RefLockDO {
     // Fast-forward check runs OUTSIDE the gate: reachability over immutable
     // changesets never changes, and keeping the D1 walk out of
     // blockConcurrencyWhile keeps the gate short (it resets the DO on throw
-    // or after 30s).
+    // or after 30s). Full-DAG reachability (git semantics: a merge descends
+    // from both parents) — the first-parent skip list alone would reject
+    // moving off a merge's second parent.
     let fastForward = true;
     if (!args.force && args.from !== null && args.to !== args.from) {
       try {
-        fastForward = await isAncestorProvisional(
-          this.env,
-          args.repo_id,
-          args.from,
-          args.to,
-        );
+        fastForward = await isAncestorDag(this.env, args.repo_id, args.from, args.to);
       } catch (err) {
         console.error('ref-lock ancestry check failed', err);
         return fail(500, 'internal_error', 'ancestry check failed');

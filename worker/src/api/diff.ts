@@ -82,10 +82,6 @@ diffRoutes.get('/repos/:repo{.+}/diff', async (c) => {
       );
       headers.etag = `"${digest.slice(0, 32)}"`;
     }
-    if (result.provisional) {
-      headers['x-yag-provisional'] = 'merge-base';
-    }
-
     return c.json(payload, 200, headers);
   } catch (err) {
     return errorResponse(c, err);
