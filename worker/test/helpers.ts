@@ -18,6 +18,27 @@ export async function seedSchema(env: TestEnv): Promise<void> {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 }
 
+/** Table names in safe wipe order (children before parents). */
+const WIPE_ORDER = [
+  'path_rules',
+  'repo_members',
+  'import_jobs',
+  'agent_tasks',
+  'derived_data',
+  'refs',
+  'changesets',
+  'sessions',
+  'users',
+  'repos',
+];
+
+/** Empty every table (schema stays). */
+export async function cleanDb(env: TestEnv): Promise<void> {
+  for (const table of WIPE_ORDER) {
+    await env.DB.prepare(`DELETE FROM ${table}`).run();
+  }
+}
+
 /** Hex SHA-256 of raw bytes (WebCrypto). */
 export async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
