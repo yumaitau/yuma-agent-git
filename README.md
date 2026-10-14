@@ -21,16 +21,16 @@ yuma-agent-git brings that model to a platform anyone can run on Cloudflare's ed
 
 ## Architecture
 
-| Scion concept          | yuma-agent-git on Cloudflare                          |
-|------------------------|-------------------------------------------------------|
-| Changesets (WAL)       | D1 rows: changed-file list + content-addressed pointers |
-| Blob/tree storage      | R2, SHA-256 content-addressed, zstd-compressed blobs  |
-| Refs + CAS             | Durable Object per ref (compare-and-swap)             |
-| scion-server RPCs      | Worker + Hono HTTP/JSON API                           |
-| Derived data (blame, path history, skip lists) | Generic recursive framework, eager or deferred via Queues |
-| scion-daemon / cache tiers | Client-side bounded object cache (thin `yag` CLI)  |
-| git bridge             | Import: clone → changesets via Queues. Export: fast-import stream |
-| Agents                 | Agents SDK / Durable Objects + Workers AI, writing through RPCs |
+| Scion concept                                  | yuma-agent-git on Cloudflare                                      |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
+| Changesets (WAL)                               | D1 rows: changed-file list + content-addressed pointers           |
+| Blob/tree storage                              | R2, SHA-256 content-addressed, zstd-compressed blobs              |
+| Refs + CAS                                     | Durable Object per ref (compare-and-swap)                         |
+| scion-server RPCs                              | Worker + Hono HTTP/JSON API                                       |
+| Derived data (blame, path history, skip lists) | Generic recursive framework, eager or deferred via Queues         |
+| scion-daemon / cache tiers                     | Client-side bounded object cache (thin `yag` CLI)                 |
+| git bridge                                     | Import: clone → changesets via Queues. Export: fast-import stream |
+| Agents                                         | Agents SDK / Durable Objects + Workers AI, writing through RPCs   |
 
 See [docs/architecture.md](docs/architecture.md) for the full design and [docs/api.md](docs/api.md) for the RPC surface.
 

@@ -1,0 +1,25 @@
+{
+  "name": "yuma-agent-git",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "worker",
+    "cli"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w worker",
+    "deploy": "npm run deploy -w worker",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "npm test -w worker"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

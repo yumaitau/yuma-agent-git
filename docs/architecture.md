@@ -24,8 +24,14 @@ A tree maps names to child objects for one directory level:
 // R2 key: trees/{sha256hex[0:2]}/{sha256hex}
 {
   "entries": [
-    { "name": "src",      "kind": "tree", "hash": "ab12…" },
-    { "name": "README.md","kind": "blob", "hash": "9f01…", "size": 2043, "mode": "100644" }
+    { "name": "src", "kind": "tree", "hash": "ab12…" },
+    {
+      "name": "README.md",
+      "kind": "blob",
+      "hash": "9f01…",
+      "size": 2043,
+      "mode": "100644"
+    }
   ]
 }
 ```
@@ -90,12 +96,12 @@ CREATE TABLE derived_data (
 
 Types shipped in v1:
 
-| Kind            | Value                                                          | Computed |
-|-----------------|----------------------------------------------------------------|----------|
-| `changed_paths` | Set of paths touched by cs + all ancestors (prefix-collapsed)  | eager    |
-| `skip_list`     | Ancestry skip pointers (heights 2^k) for O(log n) merge-base   | eager    |
-| `path_history`  | Per-touched-path list of ancestor cs ids                       | deferred |
-| `blame`         | Per-file line-range → cs id mapping for files touched          | deferred |
+| Kind            | Value                                                         | Computed |
+| --------------- | ------------------------------------------------------------- | -------- |
+| `changed_paths` | Set of paths touched by cs + all ancestors (prefix-collapsed) | eager    |
+| `skip_list`     | Ancestry skip pointers (heights 2^k) for O(log n) merge-base  | eager    |
+| `path_history`  | Per-touched-path list of ancestor cs ids                      | deferred |
+| `blame`         | Per-file line-range → cs id mapping for files touched         | deferred |
 
 - **Deferred** = computed on first read (cache-aside), or enqueued to a Queue for background computation.
 - **Eager** = computed in the commit RPC's transaction when cheap.

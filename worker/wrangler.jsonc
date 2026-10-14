@@ -1,0 +1,37 @@
+{
+  // yuma-agent-git — Cloudflare Worker (Hono).
+  // No plaintext secrets in this file (CI greps for key material).
+  "name": "yuma-agent-git",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yag-db",
+      // Environment-specific: replace with the id from `wrangler d1 create yag-db`.
+      "database_id": "00000000-0000-0000-0000-000000000001",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yag-objects",
+    },
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "DERIVED_QUEUE",
+        "queue": "derived-data",
+      },
+      {
+        "binding": "AGENT_QUEUE",
+        "queue": "agent-jobs",
+      },
+      {
+        "binding": "IMPORT_QUEUE",
+        "queue": "git-import",
+      },
+    ],
+  },
+}

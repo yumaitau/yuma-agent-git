@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --workspaces --if-present
+
+      - name: Test
+        run: npm test -w worker
+
+      - name: Deploy dry-run
+        run: npx wrangler deploy --dry-run --outdir dist -c worker/wrangler.jsonc
+
+      - name: D1 migrations smoke
+        run: npx wrangler d1 migrations list yag-db --local -c worker/wrangler.jsonc
+
+      - name: No plaintext secrets in wrangler config
+        run: |
+          if grep -nE '(gh[ps]_|-----BEGIN)' worker/wrangler.jsonc; then
+            echo 'secret-looking material found in wrangler.jsonc' >&2
+            exit 1
+          fi
