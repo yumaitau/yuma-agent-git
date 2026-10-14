@@ -47,12 +47,20 @@
         "name": "REF_LOCK",
         "class_name": "RefLockDO",
       },
+      {
+        "name": "AGENT",
+        "class_name": "YagAgent",
+      },
     ],
   },
   "migrations": [
     {
       "tag": "v1",
       "new_classes": ["RefLockDO"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["YagAgent"],
     },
   ],
 }

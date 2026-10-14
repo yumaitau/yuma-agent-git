@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import type { RepoRecord } from '../db/client';
-import { getRepoBySlug } from '../db/repos';
+import { getRepo, getRepoBySlug } from '../db/repos';
 import { apiError } from '../api/errors';
 import { decide, type Perm, type RepoWithCreator } from './rbac';
 import type { Principal } from './principal';
@@ -64,6 +64,34 @@ async function loadWithPerm(c: Context, slug: string, perm: Perm): Promise<RepoL
 /** Read access (404 on any denial — existence is never leaked). */
 export function loadReadableRepo(c: Context, slug: string): Promise<RepoLoad> {
   return loadWithPerm(c, slug, 'read');
+}
+
+/** Read access when the caller already has the repo **id** (task/transcript). */
+export async function loadReadableRepoById(c: Context, id: string): Promise<RepoLoad> {
+  const repo = await getRepo(c.env, id);
+  if (!repo) {
+    return {
+      ok: false,
+      response: apiError(c, 404, 'repo_not_found', `no repo ${id}`),
+    };
+  }
+  const denied = await decideOrResponse(c, repo, 'read');
+  if (denied) return { ok: false, response: denied };
+  return { ok: true, repo };
+}
+
+/** Write access by repo id. */
+export async function loadWritableRepoById(c: Context, id: string): Promise<RepoLoad> {
+  const repo = await getRepo(c.env, id);
+  if (!repo) {
+    return {
+      ok: false,
+      response: apiError(c, 404, 'repo_not_found', `no repo ${id}`),
+    };
+  }
+  const denied = await decideOrResponse(c, repo, 'write');
+  if (denied) return { ok: false, response: denied };
+  return { ok: true, repo };
 }
 
 /** Write access (401 anonymous / 403 insufficient). */

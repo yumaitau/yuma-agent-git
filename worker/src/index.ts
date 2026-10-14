@@ -4,10 +4,12 @@ import type { DerivedMessage } from './core/derived';
 import type { GitImportMessage } from './bridge/exportPush';
 import { derivedQueue } from './queues/derived';
 import { importQueue } from './queues/import';
+import { agentJobsQueue } from './queues/agentJobs';
 
 export { app };
 // Durable Object classes must be exported from the Worker entry.
 export { RefLockDO, RefLock } from './core/refdo';
+export { YagAgent } from './agents/runtime';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {
@@ -21,9 +23,7 @@ export default {
       case 'git-import':
         return importQueue(batch as MessageBatch<GitImportMessage>, env);
       case 'agent-jobs':
-        // TODO(issue #17): agent job consumer
-        batch.retryAll();
-        return;
+        return agentJobsQueue(batch as MessageBatch<{ task_id: string }>, env);
       default:
         console.error(`queue: unknown queue ${batch.queue}, acking`);
         batch.ackAll();

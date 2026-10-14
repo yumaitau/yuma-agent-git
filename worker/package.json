@@ -12,6 +12,9 @@
     "lint": "eslint src test"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "latest",
+    "@modelcontextprotocol/sdk": "latest",
+    "agents": "^0.28.1",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },

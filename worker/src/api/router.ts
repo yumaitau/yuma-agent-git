@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import { agentsRoutes } from './agents';
 import { ancestryRoutes } from './ancestry';
 import { blameRoutes } from './blame';
 import { changesetsRoutes } from './changesets';
@@ -15,6 +16,7 @@ export const apiRouter = new Hono<{ Bindings: Env }>();
 
 apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1' }));
 
+apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', ancestryRoutes);
 apiRouter.route('/', blameRoutes);
 apiRouter.route('/', changesetsRoutes);
