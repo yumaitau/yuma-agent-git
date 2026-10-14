@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import type { RepoRecord } from '../db/client';
 import { apiError, errorResponse } from './errors';
 import { firstParentHistory } from '../core/changesets';
 import {
@@ -10,11 +11,12 @@ import {
 } from '../core/read';
 import { blobKey, getBlob, statBlob } from '../core/blobs';
 import { decompressStream, parseCodec } from '../core/compress';
-import { sha256Hex } from '../core/hashing';
+import { IncrementalSha256, sha256Hex } from '../core/hashing';
 import { getTree, resolvePath } from '../core/trees';
 import {
   ConflictError,
   NotFoundError,
+  ObjectCorruptError,
   ObjectNotFoundError,
   PayloadTooLargeError,
   RequestValidationError,
@@ -32,12 +34,34 @@ import { requireRepoRead } from '../auth/guards';
 export const readRoutes = new Hono<{ Bindings: Env }>();
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
+const SHORT = 'public, max-age=10';
+const NO_STORE = 'private, no-store';
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_RECURSIVE_ENTRIES = 5_000;
+const CS_ID_RE = /^[0-9a-f]{64}$/;
 
-async function etagFor(csId: string, path: string): Promise<string> {
-  const digest = await sha256Hex(new TextEncoder().encode(path));
+async function etagFor(csId: string, variant: string): Promise<string> {
+  const digest = await sha256Hex(new TextEncoder().encode(variant));
   return `"${csId}-${digest.slice(0, 16)}"`;
+}
+
+/**
+ * Cache policy (issue #21: "correctness over speed — default is no-store for
+ * anything auth'd"):
+ *   - private repo                       → `private, no-store`
+ *   - public repo + content-addressed rev (64-hex cs id) → immutable
+ *   - public repo + ref-addressed rev (`ref:main`, `main`) → short TTL:
+ *     the URL is mutable while `main` moves, so it must never be frozen.
+ */
+function cacheHeaders(
+  repo: RepoRecord,
+  requestedRev: string,
+  etag: string,
+): Record<string, string> {
+  if (repo.visibility !== 'public') return { 'cache-control': NO_STORE, etag };
+  return CS_ID_RE.test(requestedRev)
+    ? { 'cache-control': IMMUTABLE, etag }
+    : { 'cache-control': SHORT, etag };
 }
 
 /** Query-param path validation (NFC, no traversal). Empty allowed for tree root. */
@@ -71,19 +95,51 @@ function bytesToB64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Header-safe filename (CR/LF/quotes would split or spoof the header). */
+function safeFilename(name: string): string {
+  // Stripping control characters is the entire point here.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = name.replace(/[\x00-\x1f\x7f"\\;]/g, '_');
+  return cleaned === '' ? 'download' : cleaned;
+}
+
+/** Types a browser would execute on our origin: force download, never inline. */
+const ACTIVE_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'application/xml',
+  'text/javascript',
+  'text/typescript',
+]);
+
+async function loadReadable(
+  c: Parameters<typeof apiError>[0],
+  slug: string,
+): Promise<
+  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
+  | { ok: false; response: Response }
+> {
+  const repo = await getRepoBySlug(c.env, slug);
+  // Guard failure maps to 404 — never leak repo existence (issue #14).
+  if (!repo || !(await requireRepoRead(c.env, c, repo))) {
+    return {
+      ok: false,
+      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
+    };
+  }
+  return { ok: true, repo };
+}
+
 // ---------------------------------------------------------------------------
 // GET /file
 // ---------------------------------------------------------------------------
 
 readRoutes.get('/repos/:repo{.+}/file', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'read access required');
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const rev = c.req.query('cs');
     const rawPath = c.req.query('path');
@@ -105,23 +161,53 @@ readRoutes.get('/repos/:repo{.+}/file', async (c) => {
     }
 
     const size = entry.size ?? (await statBlob(c.env, repo.id, entry.hash)) ?? 0;
-    const etag = await etagFor(cs.id, path);
     const format = c.req.query('format') ?? 'json';
+    const etag = await etagFor(cs.id, `${format}:${path}`);
+    const headers = cacheHeaders(repo, rev, etag);
+    const contentType = contentTypeFor(path);
 
     if (format === 'raw') {
-      // Streamed from R2 — never fully buffered — and decompressed on the way out.
+      // Streamed from R2 — never fully buffered — decompressed on the way out,
+      // and hash-verified while it streams (content addresses are checked on
+      // EVERY read path; a mismatch aborts the stream).
       const obj = await c.env.OBJECTS.get(blobKey(repo.id, entry.hash));
       if (!obj) throw new ObjectNotFoundError('blob', entry.hash);
-      const stream = obj.body.pipeThrough(
-        decompressStream(parseCodec(obj.customMetadata?.encoding)),
+      const hasher = new IncrementalSha256();
+      let decompressor: ReturnType<typeof decompressStream>;
+      try {
+        decompressor = decompressStream(parseCodec(obj.customMetadata?.encoding));
+      } catch (err) {
+        throw new ObjectCorruptError(
+          'blob',
+          entry.hash,
+          err instanceof Error ? err.message : 'unknown encoding',
+        );
+      }
+      const stream = obj.body.pipeThrough(decompressor).pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          transform(chunk, controller) {
+            hasher.update(chunk);
+            controller.enqueue(chunk);
+          },
+          flush() {
+            if (hasher.digestHex() !== entry.hash) {
+              throw new ObjectCorruptError(
+                'blob',
+                entry.hash,
+                'hash mismatch on streaming read',
+              );
+            }
+          },
+        }),
       );
+      const active = ACTIVE_TYPES.has(contentType.split(';')[0] as string);
       return new Response(stream, {
         headers: {
-          'content-type': contentTypeFor(path),
-          'content-disposition': `inline; filename="${entry.name}"`,
+          ...headers,
+          'content-type': contentType,
+          'content-disposition': `${active ? 'attachment' : 'inline'}; filename="${safeFilename(entry.name)}"`,
           'content-length': String(size),
-          'cache-control': IMMUTABLE,
-          etag,
+          'x-content-type-options': 'nosniff',
         },
       });
     }
@@ -145,7 +231,7 @@ readRoutes.get('/repos/:repo{.+}/file', async (c) => {
         content_b64: bytesToB64(blob.content),
       },
       200,
-      { 'cache-control': IMMUTABLE, etag },
+      headers,
     );
   } catch (err) {
     return errorResponse(c, err);
@@ -158,13 +244,9 @@ readRoutes.get('/repos/:repo{.+}/file', async (c) => {
 
 readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'read access required');
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const rev = c.req.query('cs');
     if (!rev) return apiError(c, 400, 'invalid_request', 'cs is required');
@@ -180,16 +262,16 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
     }
     if (path !== '') {
       const entry = await resolvePath(c.env, repo.id, treeHash, path.split('/'));
-      if (!entry)
+      if (!entry) {
         return apiError(c, 404, 'path_not_found', `no path ${path} at ${rev}`, { path });
+      }
       if (entry.kind !== 'tree') {
         return apiError(c, 400, 'not_a_tree', `${path} is not a directory`, { path });
       }
       treeHash = entry.hash;
     }
 
-    const etag = await etagFor(cs.id, path);
-    const headers = { 'cache-control': IMMUTABLE, etag };
+    const headers = cacheHeaders(repo, rev, await etagFor(cs.id, `tree:${path}`));
 
     if (!recursive) {
       const tree = await getTree(c.env, repo.id, treeHash);
@@ -234,27 +316,28 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
 
 readRoutes.get('/repos/:repo{.+}/history', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'read access required');
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const revParam = c.req.query('cs') ?? 'ref:main';
     const rawPath = c.req.query('path');
     const limitRaw = Number(c.req.query('limit') ?? '50');
     const limit =
-      Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 50;
+      Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 50;
 
     const cs = await lookupRev(c.env, repo.id, revParam);
     if (!cs) {
-      if (c.req.query('cs') === undefined) return c.json({ changesets: [] });
+      if (c.req.query('cs') === undefined) {
+        return c.json({ changesets: [] }, 200, { 'cache-control': NO_STORE });
+      }
       return apiError(c, 404, 'revision_not_found', `no revision ${revParam}`);
     }
 
-    const headers = { 'cache-control': 'public, max-age=10' };
+    // History depends on mutable heads and permissions — short TTL max.
+    const headers = {
+      'cache-control': repo.visibility === 'public' ? SHORT : NO_STORE,
+    };
 
     if (rawPath === undefined) {
       const changesets = await firstParentHistory(c.env, repo.id, cs.id, limit);
@@ -280,20 +363,15 @@ readRoutes.get('/repos/:repo{.+}/history', async (c) => {
 
 readRoutes.get('/repos/:repo{.+}/changed-paths', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'read access required');
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const rev = c.req.query('cs');
     if (!rev) return apiError(c, 400, 'invalid_request', 'cs is required');
     const cs = await resolveRevision(c.env, repo.id, rev);
     return c.json({ cs: cs.id, changed_files: cs.changed_files }, 200, {
-      'cache-control': IMMUTABLE,
-      etag: await etagFor(cs.id, 'changed-paths'),
+      ...cacheHeaders(repo, rev, await etagFor(cs.id, 'changed-paths')),
     });
   } catch (err) {
     return errorResponse(c, err);

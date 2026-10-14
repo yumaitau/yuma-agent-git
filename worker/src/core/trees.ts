@@ -160,6 +160,7 @@ export async function getTreeRecursive(
   const maxObjects = opts.maxObjects ?? 10_000;
   const trees = new Map<string, Tree>();
   const queue = [rootHash];
+  let root = true;
   while (queue.length > 0) {
     const hash = queue.shift();
     if (hash === undefined) break;
@@ -168,7 +169,13 @@ export async function getTreeRecursive(
       throw new ObjectWalkLimitError(maxObjects);
     }
     const tree = await getTree(env, repoId, hash);
-    if (tree === null) continue;
+    if (tree === null) {
+      if (root) continue; // absent root: empty walk (caller decides)
+      // A referenced child tree that does not exist is corruption — content
+      // addresses are immutable and committed children always exist.
+      throw new ObjectCorruptError('tree', rootHash, `missing tree ${hash}`);
+    }
+    root = false;
     trees.set(hash, tree);
     for (const entry of tree.entries) {
       if (entry.kind === 'tree' && !trees.has(entry.hash)) {

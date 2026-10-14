@@ -11,6 +11,7 @@ import {
   type ChangesetFields,
 } from './changesets';
 import { PayloadTooLargeError, RequestValidationError } from './errors';
+import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
 
@@ -63,19 +64,27 @@ export interface CommitResult {
  * The transactional write path (architecture §2.1) — lock-free and
  * incremental: cost scales with the change, not the repo.
  *
- * 1. resolve `first_parent` (cs id or `ref:<name>`, read-only — refs are
- *    never moved here)
- * 2. upload/dedupe inline blobs; verify pre-uploaded hashes exist
- * 3. rebuild trees **only along touched paths** (deepest-first, empty trees
- *    pruned git-style)
- * 4. insert the changeset (idempotent, content-addressed) with its root_tree
- * 5. run the eager derived-data hook (issue #9)
+ * 1. normalize + resolve `first_parent` (cs id or `ref:<name>`, read-only —
+ *    refs are never moved here)
+ * 2. resolve every change to a content address (inline hashes computed, never
+ *    uploaded yet) and validate op semantics against the **base** tree:
+ *    `add` ⇔ absent, `mod`/`del` ⇔ present file — no file/dir type conflicts,
+ *    no nested paths (see `validateChanges`)
+ * 3. content-addressed idempotency: an identical changeset returns here with
+ *    **zero** R2 writes
+ * 4. upload/dedupe blobs; rebuild trees **only along touched paths**
+ *    (deepest-first, empty trees pruned git-style)
+ * 5. insert the changeset (idempotent) with its root_tree, then run the eager
+ *    derived-data hook (issue #9)
  */
 export async function commitChanges(
   env: Env,
   repoId: string,
-  req: CommitRequest,
+  rawReq: CommitRequest,
 ): Promise<CommitResult> {
+  // Normalize for every caller (NFC paths, schema bounds) — not just the route.
+  const req = commitRequestSchema.parse(rawReq);
+
   // --- 1. parents ---------------------------------------------------------
   let firstParent: string | null = null;
   let baseRoot: string | null = null;
@@ -101,7 +110,8 @@ export async function commitChanges(
   const extraParents = (req.parents ?? []).filter((p) => p !== firstParent);
   const parents = firstParent === null ? [] : [firstParent, ...extraParents];
 
-  // --- 2. blobs -----------------------------------------------------------
+  // --- 2. resolve changes (hash only — no writes yet) ---------------------
+  assertNoNestedPaths(req.changes.map((c) => c.path));
   const seen = new Set<string>();
   const blobStats: { hash: string; size: number }[] = [];
   const resolvedChanges: FileChange[] = [];
@@ -129,9 +139,8 @@ export async function commitChanges(
           { path: change.path, limit: MAX_INLINE_BYTES },
         );
       }
-      const put = await putBlob(env, repoId, bytes);
-      hash = put.hash;
-      size = put.size;
+      hash = await sha256Hex(bytes);
+      size = bytes.byteLength;
     } else {
       hash = change.blob_sha256;
       const present = await hasBlob(env, repoId, [hash]);
@@ -142,13 +151,21 @@ export async function commitChanges(
           'missing_blob',
         );
       }
-      size = (await statBlob(env, repoId, hash)) ?? 0;
+      const measured = await statBlob(env, repoId, hash);
+      if (measured === null) {
+        throw new RequestValidationError(
+          `pre-uploaded blob ${hash} is missing size metadata`,
+          { blob: hash },
+          'missing_blob',
+        );
+      }
+      size = measured;
     }
     blobStats.push({ hash, size });
     resolvedChanges.push({ path: change.path, op: change.op, hash, size });
   }
 
-  // --- 3. content-addressed idempotency -----------------------------------
+  // --- 3. content-addressed idempotency (before ANY R2 write) -------------
   const fields: ChangesetFields = {
     repo_id: repoId,
     first_parent: firstParent,
@@ -163,7 +180,17 @@ export async function commitChanges(
     return { changeset: existing, blobs: blobStats, deduped: true };
   }
 
-  // --- 4. incremental tree rebuild ---------------------------------------
+  // --- 4. validate op semantics against the base tree ---------------------
+  await validateChanges(env, repoId, baseRoot, resolvedChanges);
+
+  // --- 5. upload blobs, rebuild trees along touched paths, insert --------
+  for (const change of req.changes) {
+    if (change.op === 'del') continue;
+    if ('content_b64' in change) {
+      await putBlob(env, repoId, decodeB64(change.content_b64));
+    }
+    // pre-uploaded blobs are already in R2 by definition
+  }
   const rootTreeHash = await rebuildTrees(env, repoId, baseRoot, resolvedChanges);
 
   const changeset = await createChangeset(env, repoId, {
@@ -171,7 +198,6 @@ export async function commitChanges(
     root_tree: rootTreeHash,
   });
 
-  // --- 5. eager derived data (issue #9) -----------------------------------
   await onChangesetCreated(env, repoId, changeset);
 
   return { changeset, blobs: blobStats, deduped: false };
@@ -187,6 +213,108 @@ export async function onChangesetCreated(
   _cs: Changeset,
 ): Promise<void> {
   // TODO(issue #9): computeEager(env, repoId, cs)
+}
+
+// ---------------------------------------------------------------------------
+// Input + base-state validation
+// ---------------------------------------------------------------------------
+
+/** No change path may be a strict prefix of another (file/dir collision). */
+function assertNoNestedPaths(paths: string[]): void {
+  const sorted = [...paths].sort();
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1] as string;
+    const cur = sorted[i] as string;
+    if (cur.startsWith(`${prev}/`)) {
+      throw new RequestValidationError(
+        `conflicting change paths: ${JSON.stringify(prev)} and ${JSON.stringify(cur)}`,
+        { paths: [prev, cur] },
+        'invalid_change',
+      );
+    }
+  }
+}
+
+interface PathLookup {
+  /** Entry at the path, or null when absent (all ancestors were trees). */
+  entry: TreeEntry | null;
+  /** Set when an ancestor segment exists but is a file (kind conflict). */
+  blobAncestor: string | null;
+}
+
+/**
+ * Enforce file-level op semantics against the base tree — these checks are
+ * what stop a bogus request from silently destroying data (e.g. a `del` of a
+ * path nested under an existing *file* must not prune that file):
+ *   add ⇔ path absent            mod ⇔ path present as file
+ *   del ⇔ path present as file   (directories are not first-class in v1 ops)
+ */
+async function validateChanges(
+  env: Env,
+  repoId: string,
+  baseRoot: string | null,
+  changes: FileChange[],
+): Promise<void> {
+  const treeCache = new Map<string, Tree>();
+  const readTree = async (hash: string): Promise<Tree | null> => {
+    const cached = treeCache.get(hash);
+    if (cached) return cached;
+    const tree = await getTree(env, repoId, hash);
+    if (tree) treeCache.set(hash, tree);
+    return tree;
+  };
+  const lookup = async (path: string): Promise<PathLookup> => {
+    if (baseRoot === null) return { entry: null, blobAncestor: null };
+    let hash = baseRoot;
+    const segments = path.split('/');
+    for (let i = 0; i < segments.length; i++) {
+      const tree = await readTree(hash);
+      if (!tree) return { entry: null, blobAncestor: null };
+      const entry = tree.entries.find((e) => e.name === (segments[i] as string));
+      if (!entry) return { entry: null, blobAncestor: null };
+      if (i === segments.length - 1) return { entry, blobAncestor: null };
+      if (entry.kind !== 'tree') {
+        return {
+          entry: null,
+          blobAncestor: segments.slice(0, i + 1).join('/'),
+        };
+      }
+      hash = entry.hash;
+    }
+    return { entry: null, blobAncestor: null };
+  };
+
+  for (const change of changes) {
+    const { entry, blobAncestor } = await lookup(change.path);
+    if (blobAncestor !== null) {
+      throw new RequestValidationError(
+        `cannot touch ${JSON.stringify(change.path)}: ${JSON.stringify(blobAncestor)} is a file, not a directory`,
+        { path: change.path, conflicts_with: blobAncestor },
+        'invalid_change',
+      );
+    }
+    if (change.op === 'add' && entry !== null) {
+      throw new RequestValidationError(
+        `cannot add ${JSON.stringify(change.path)}: it already exists`,
+        { path: change.path },
+        'invalid_change',
+      );
+    }
+    if (change.op === 'mod' && (entry === null || entry.kind !== 'blob')) {
+      throw new RequestValidationError(
+        `cannot modify ${JSON.stringify(change.path)}: it is not an existing file`,
+        { path: change.path },
+        'invalid_change',
+      );
+    }
+    if (change.op === 'del' && (entry === null || entry.kind !== 'blob')) {
+      throw new RequestValidationError(
+        `cannot delete ${JSON.stringify(change.path)}: it is not an existing file`,
+        { path: change.path },
+        'invalid_change',
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

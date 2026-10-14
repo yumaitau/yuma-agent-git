@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Env } from '../env';
 import type { RefRecord } from '../db/client';
 import { getRef, listRefs } from '../db/repos';
@@ -54,6 +55,12 @@ interface MoveRefErrorBody {
   };
 }
 
+const moveResultSchema = z.object({
+  ok: z.literal(true),
+  from: z.string().min(1).nullable(),
+  to: z.string().min(1),
+});
+
 /**
  * Move a ref through its `RefLockDO` — one DO per (repo, ref), so the
  * compare-and-swap is race-free even under parallel land attempts.
@@ -79,7 +86,18 @@ export async function moveRefViaDO(
   });
 
   const body = (await res.json()) as MoveRefErrorBody & MoveRefResult;
-  if (res.ok) return body;
+  if (res.ok) {
+    // Never trust an unvalidated DO response shape.
+    const parsed = moveResultSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ApiError(
+        502,
+        'ref_lock_bad_response',
+        'ref lock returned an invalid response',
+      );
+    }
+    return parsed.data;
+  }
 
   const error = body.error ?? {};
   const code = error.code ?? 'internal_error';

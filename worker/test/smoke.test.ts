@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { env } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
 import { makeApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
 
@@ -38,5 +38,21 @@ describe('smoke', () => {
     expect(await sha256(new TextEncoder().encode('abc'))).toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
+  });
+});
+
+describe('worker entry', () => {
+  it('serves /healthz through the exported Worker fetch handler', async () => {
+    const res = await SELF.fetch('http://x/healthz');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it('returns the error envelope for unrouted URLs', async () => {
+    const res = await SELF.fetch('http://x/nope/nothing');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      error: { code: 'not_found', message: 'no such route' },
+    });
   });
 });

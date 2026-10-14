@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { getRef, setRef } from '../db/repos';
 import { isAncestorProvisional } from './ancestry';
+import { ApiError } from './errors';
+import { validateRefName } from './refs';
 
 const moveSchema = z.object({
   repo_id: z.string().min(1),
@@ -67,13 +69,53 @@ export class RefLockDO {
         })),
       });
     }
-    // DOs interleave events at await points; blockConcurrencyWhile makes the
-    // read-check-write below atomic (a real CAS, not a hopeful one).
-    return this.state.blockConcurrencyWhile(() => this.moveRef(parsed.data));
+    const args = parsed.data;
+
+    // Fast-forward check runs OUTSIDE the gate: reachability over immutable
+    // changesets never changes, and keeping the D1 walk out of
+    // blockConcurrencyWhile keeps the gate short (it resets the DO on throw
+    // or after 30s).
+    let fastForward = true;
+    if (!args.force && args.from !== null && args.to !== args.from) {
+      try {
+        fastForward = await isAncestorProvisional(
+          this.env,
+          args.repo_id,
+          args.from,
+          args.to,
+        );
+      } catch (err) {
+        console.error('ref-lock ancestry check failed', err);
+        return fail(500, 'internal_error', 'ancestry check failed');
+      }
+    }
+
+    // The CAS itself: blockConcurrencyWhile makes the read-check-write atomic
+    // (a DO otherwise interleaves events at await points).
+    return this.state.blockConcurrencyWhile(async () => {
+      try {
+        return await this.moveRef(args, fastForward);
+      } catch (err) {
+        // Never let an exception escape the gate: it would terminate and
+        // reset the whole DO, failing queued moves for this ref.
+        if (err instanceof ApiError) {
+          return fail(err.status, err.code, err.message, err.details);
+        }
+        console.error('ref-lock move failed', err);
+        return fail(500, 'internal_error', 'ref move failed');
+      }
+    });
   }
 
-  private async moveRef(args: z.infer<typeof moveSchema>): Promise<Response> {
+  private async moveRef(
+    args: z.infer<typeof moveSchema>,
+    fastForward: boolean,
+  ): Promise<Response> {
+    // Defense in depth: never let an unvalidated name reach idFromName callers
+    // (or create a "zombie" ref) even if a future call site skips the check.
+    validateRefName(args.name);
     const { repo_id: repoId, name, from, to, force } = args;
+
     const current = await getRef(this.env, repoId, name);
 
     if (current === null) {
@@ -94,16 +136,11 @@ export class RefLockDO {
       });
     }
 
-    if (!force && from !== null && to !== from) {
-      // Fast-forward only: `to` must descend from `from`.
-      // PROVISIONAL ancestry (issue #8 replaces with skip-list isAncestor).
-      const fastForward = await isAncestorProvisional(this.env, repoId, from, to);
-      if (!fastForward) {
-        return fail(409, 'ref_not_fast_forward', `ref ${name} is not a fast-forward`, {
-          from,
-          to,
-        });
-      }
+    if (!fastForward) {
+      return fail(409, 'ref_not_fast_forward', `ref ${name} is not a fast-forward`, {
+        from,
+        to,
+      });
     }
 
     await setRef(this.env, repoId, name, to);

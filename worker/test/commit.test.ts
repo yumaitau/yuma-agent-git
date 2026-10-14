@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema, sha256 } from './helpers';
+import { cleanDb, instrumentObjects, makeApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
-import { createRepo, getRepoBySlug, setRef } from '../src/db/repos';
+import { createRepo, getRepoBySlug, listRefs, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import { firstParentHistory } from '../src/core/changesets';
 import { resolvePath } from '../src/core/trees';
@@ -18,17 +18,6 @@ const enc = new TextEncoder();
 
 function b64(text: string): string {
   return btoa(text);
-}
-
-async function objectCount(repoId: string): Promise<number> {
-  let n = 0;
-  let cursor: string | undefined;
-  do {
-    const res = await testEnv.OBJECTS.list({ prefix: `repos/${repoId}/`, cursor });
-    n += res.objects.length;
-    cursor = res.truncated ? res.cursor : undefined;
-  } while (cursor !== undefined);
-  return n;
 }
 
 async function postCommit(slug: string, body: unknown): Promise<Response> {
@@ -88,39 +77,81 @@ describe('commitChanges', () => {
     expect(await sha256(blob?.content as Uint8Array)).toBe(entry?.hash);
   });
 
-  it('rewrites only trees along the touched path (incremental, lock-free)', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/incremental' });
-    const root = await commitChanges(dbEnv, repo.id, {
+  it('rewrites only trees along the touched path — cost independent of repo size', async () => {
+    // Two repos: identical touch, wildly different amount of untouched content.
+    const build = async (slug: string, siblings: number): Promise<number> => {
+      const repo = await createRepo(dbEnv, { slug });
+      const rootChanges = [
+        { path: 'a/b/c/f1.txt', op: 'add' as const, content_b64: b64('one') },
+        { path: 'a/b/c/f2.txt', op: 'add' as const, content_b64: b64('two') },
+        { path: 'x/y/f3.txt', op: 'add' as const, content_b64: b64('three') },
+      ];
+      for (let i = 0; i < siblings; i++) {
+        rootChanges.push({
+          path: `s${i}/t.txt`,
+          op: 'add' as const,
+          content_b64: b64(`sibling ${i}`),
+        });
+      }
+      const root = await commitChanges(dbEnv, repo.id, {
+        first_parent: null,
+        message: 'root',
+        author,
+        changes: rootChanges,
+      });
+      const rootTree = root.changeset.root_tree as string;
+      const cDirBefore = await resolvePath(dbEnv, repo.id, rootTree, ['a', 'b', 'c']);
+      const xyBefore = await resolvePath(dbEnv, repo.id, rootTree, ['x', 'y']);
+
+      const probe = instrumentObjects(testEnv);
+      const child = await commitChanges(probe.env, repo.id, {
+        first_parent: root.changeset.id,
+        message: 'touch f1',
+        author,
+        changes: [{ path: 'a/b/c/f1.txt', op: 'mod', content_b64: b64('ONE') }],
+      });
+      const childTree = child.changeset.root_tree as string;
+
+      // the touched chain was rewritten…
+      const cDirAfter = await resolvePath(dbEnv, repo.id, childTree, ['a', 'b', 'c']);
+      expect(cDirAfter?.hash).not.toBe(cDirBefore?.hash);
+      // …while the untouched subtree keeps its exact tree hash…
+      const xyAfter = await resolvePath(dbEnv, repo.id, childTree, ['x', 'y']);
+      expect(xyAfter?.hash).toBe(xyBefore?.hash);
+      // …and is NEVER fetched or written: no untouched subtree hash in any call
+      const untouchedHashes = [xyBefore?.hash];
+      for (let i = 0; i < siblings; i++) {
+        const entry = await resolvePath(dbEnv, repo.id, rootTree, [`s${i}`]);
+        untouchedHashes.push(entry?.hash);
+      }
+      for (const key of [...probe.puts, ...probe.gets]) {
+        for (const hash of untouchedHashes) {
+          expect(key.includes(hash as string)).toBe(false);
+        }
+      }
+      // exactly 1 new blob + 4 rewritten trees (a/b/c, a/b, a, root)
+      expect(probe.puts).toHaveLength(5);
+      expect(probe.puts.filter((k) => k.includes('/blobs/'))).toHaveLength(1);
+      expect(probe.puts.filter((k) => k.includes('/trees/'))).toHaveLength(4);
+
+      return probe.puts.length + probe.gets.length;
+    };
+
+    const small = await build('acme/incremental-small', 1);
+    const large = await build('acme/incremental-large', 30);
+    // the whole point of the design: identical work regardless of repo size
+    expect(large).toBe(small);
+  });
+
+  it('never moves refs as part of a commit (lock-free write path)', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/no-refs' });
+    await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
       author,
-      changes: [
-        { path: 'a/b/c/f1.txt', op: 'add', content_b64: b64('one') },
-        { path: 'a/b/c/f2.txt', op: 'add', content_b64: b64('two') },
-        { path: 'x/y/f3.txt', op: 'add', content_b64: b64('three') },
-      ],
+      changes: [{ path: 'a.txt', op: 'add', content_b64: b64('a') }],
     });
-    const rootTree = root.changeset.root_tree as string;
-    const cDirBefore = await resolvePath(dbEnv, repo.id, rootTree, ['a', 'b', 'c']);
-    const xyBefore = await resolvePath(dbEnv, repo.id, rootTree, ['x', 'y']);
-    const before = await objectCount(repo.id);
-
-    const child = await commitChanges(dbEnv, repo.id, {
-      first_parent: root.changeset.id,
-      message: 'touch f1',
-      author,
-      changes: [{ path: 'a/b/c/f1.txt', op: 'mod', content_b64: b64('ONE') }],
-    });
-    const childTree = child.changeset.root_tree as string;
-    const cDirAfter = await resolvePath(dbEnv, repo.id, childTree, ['a', 'b', 'c']);
-    const xyAfter = await resolvePath(dbEnv, repo.id, childTree, ['x', 'y']);
-
-    // untouched subtree keeps its exact tree hash and is never rewritten
-    expect(xyAfter?.hash).toBe(xyBefore?.hash);
-    expect(cDirAfter?.hash).not.toBe(cDirBefore?.hash);
-
-    // exactly: 1 new blob + 4 rewritten trees (a/b/c, a/b, a, root)
-    expect(await objectCount(repo.id)).toBe(before + 5);
+    expect(await listRefs(dbEnv, repo.id)).toEqual([]);
   });
 
   it('deletes: path absent from the new root tree, present in the parent', async () => {
@@ -218,9 +249,16 @@ describe('commitChanges', () => {
         size: 1,
       },
     ]);
+
+    // changed_files is relative to the FIRST parent — and so is the tree:
+    // x.txt (first parent) and z.txt are in it, y.txt (second parent only) is not
+    const tree = merge.changeset.root_tree as string;
+    expect(await resolvePath(dbEnv, repo.id, tree, ['z.txt'])).not.toBeNull();
+    expect(await resolvePath(dbEnv, repo.id, tree, ['x.txt'])).not.toBeNull();
+    expect(await resolvePath(dbEnv, repo.id, tree, ['y.txt'])).toBeNull();
   });
 
-  it('is idempotent: identical request reuses the changeset and writes no objects', async () => {
+  it('is idempotent: identical request reuses the changeset with ZERO R2 I/O', async () => {
     const repo = await createRepo(dbEnv, { slug: 'acme/idem' });
     const req = {
       first_parent: null,
@@ -228,17 +266,98 @@ describe('commitChanges', () => {
       author,
       changes: [{ path: 'a.txt', op: 'add' as const, content_b64: b64('content') }],
     };
-    const first = await commitChanges(dbEnv, repo.id, req);
-    const afterFirst = await objectCount(repo.id);
-    const second = await commitChanges(dbEnv, repo.id, req);
+    const probe = instrumentObjects(testEnv);
+    const first = await commitChanges(probe.env, repo.id, req);
+    const firstWrites = probe.puts.length;
+    expect(firstWrites).toBeGreaterThan(0);
+
+    probe.puts.length = 0;
+    probe.gets.length = 0;
+    probe.heads.length = 0;
+    const second = await commitChanges(probe.env, repo.id, req);
 
     expect(second.deduped).toBe(true);
     expect(second.changeset.id).toBe(first.changeset.id);
     expect(second.changeset.created_at).toBe(first.changeset.created_at);
-    expect(await objectCount(repo.id)).toBe(afterFirst);
+    // no re-upload, no re-put, not even a dedupe head-check: zero object I/O
+    expect(probe.puts).toEqual([]);
+    expect(probe.gets).toEqual([]);
+    expect(probe.heads).toEqual([]);
     expect(await firstParentHistory(dbEnv, repo.id, first.changeset.id, 10)).toHaveLength(
       1,
     );
+  });
+
+  it('rejects change sets that would corrupt the tree', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/conflicts' });
+    const root = await commitChanges(dbEnv, repo.id, {
+      first_parent: null,
+      message: 'root with file a',
+      author,
+      changes: [{ path: 'a', op: 'add', content_b64: b64('I am file a') }],
+    });
+
+    // del of a path nested under an existing FILE must not destroy that file
+    await expect(
+      commitChanges(dbEnv, repo.id, {
+        first_parent: root.changeset.id,
+        message: 'bogus',
+        author,
+        changes: [{ path: 'a/b/c.txt', op: 'del' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_change' });
+    expect(
+      await resolvePath(dbEnv, repo.id, root.changeset.root_tree as string, ['a']),
+    ).toMatchObject({ kind: 'blob' });
+
+    // add over an existing file
+    await expect(
+      commitChanges(dbEnv, repo.id, {
+        first_parent: root.changeset.id,
+        message: 'bogus',
+        author,
+        changes: [{ path: 'a', op: 'add', content_b64: b64('other') }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_change' });
+
+    // mod of a missing path
+    await expect(
+      commitChanges(dbEnv, repo.id, {
+        first_parent: root.changeset.id,
+        message: 'bogus',
+        author,
+        changes: [{ path: 'missing.txt', op: 'mod', content_b64: b64('x') }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_change' });
+
+    // nested paths in one commit (file/dir collision)
+    await expect(
+      commitChanges(dbEnv, repo.id, {
+        first_parent: root.changeset.id,
+        message: 'bogus',
+        author,
+        changes: [
+          { path: 'd', op: 'add', content_b64: b64('file d') },
+          { path: 'd/e.txt', op: 'add', content_b64: b64('inside d') },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_change' });
+
+    // del of a directory
+    const withDirs = await commitChanges(dbEnv, repo.id, {
+      first_parent: root.changeset.id,
+      message: 'dirs',
+      author,
+      changes: [{ path: 'dir/one.txt', op: 'add', content_b64: b64('1') }],
+    });
+    await expect(
+      commitChanges(dbEnv, repo.id, {
+        first_parent: withDirs.changeset.id,
+        message: 'bogus',
+        author,
+        changes: [{ path: 'dir', op: 'del' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_change' });
   });
 
   it('resolves first_parent via ref:main and bare ref names', async () => {

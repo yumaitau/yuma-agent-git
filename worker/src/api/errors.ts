@@ -6,6 +6,7 @@ import {
   ObjectCorruptError,
   ObjectNotFoundError,
   ObjectWalkLimitError,
+  RequestValidationError,
 } from '../core/errors';
 
 /** The `{ error: { code, message } }` response envelope. */
@@ -17,6 +18,19 @@ export function apiError(
   extra: Record<string, unknown> = {},
 ): Response {
   return c.json({ error: { code, message, ...extra } }, status as ContentfulStatusCode);
+}
+
+/**
+ * Parse a JSON request body at the edge: malformed bodies are a client error
+ * (`400 invalid_json`) decided here — not by a blanket SyntaxError mapping,
+ * which would misclassify server-side parse failures.
+ */
+export async function readJsonBody(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    throw new RequestValidationError('malformed JSON body', {}, 'invalid_json');
+  }
 }
 
 /**
@@ -40,9 +54,6 @@ export function errorResponse(c: Context, err: unknown): Response {
   if (err instanceof ObjectCorruptError) {
     console.error('corrupt object', err);
     return apiError(c, 500, err.code, err.message);
-  }
-  if (err instanceof SyntaxError) {
-    return apiError(c, 400, 'invalid_json', 'malformed JSON body');
   }
   console.error(err);
   return apiError(c, 500, 'internal_error', 'internal error');

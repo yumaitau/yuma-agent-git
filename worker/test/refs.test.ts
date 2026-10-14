@@ -210,6 +210,59 @@ describe('ref compare-and-swap (RefLockDO)', () => {
     }
   });
 
+  it('force bypasses staleness — pinned response semantics', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/force' });
+    const [cs0, cs1, cs2] = (await makeChain(repo.id, 2)) as [
+      Changeset,
+      Changeset,
+      Changeset,
+    ];
+    await moveRefViaDO(dbEnv, repo.id, 'main', { from: null, to: cs0.id });
+    await moveRefViaDO(dbEnv, repo.id, 'main', { from: cs0.id, to: cs1.id });
+
+    // stale from + force: lands anyway, response `from` reports the ACTUAL head
+    const forced = await moveRefViaDO(dbEnv, repo.id, 'main', {
+      from: cs0.id,
+      to: cs2.id,
+      force: true,
+    });
+    expect(forced).toEqual({ ok: true, from: cs1.id, to: cs2.id });
+    expect(await readRefHead(dbEnv, repo.id, 'main')).toBe(cs2.id);
+  });
+
+  it('converges under a parallel stale-retry storm (tasks never go backward)', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/storm' });
+    const chain = await makeChain(repo.id, 8);
+    await moveRefViaDO(dbEnv, repo.id, 'main', {
+      from: null,
+      to: (chain[0] as Changeset).id,
+    });
+
+    // Every task tries to land its chain link with a stale-retry loop. Chain
+    // order makes cs8 the unique maximal target — it always lands, and nothing
+    // can ever move the ref backward (non-fast-forwards are rejected), so the
+    // final head MUST be the tip.
+    const settle = async (target: string): Promise<'landed' | 'superseded'> => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const current = await readRefHead(dbEnv, repo.id, 'main');
+        if (current === target) return 'landed';
+        try {
+          await moveRefViaDO(dbEnv, repo.id, 'main', { from: current, to: target });
+          return 'landed';
+        } catch (err) {
+          if (!(err instanceof ConflictError)) throw err;
+          if (err.code === 'ref_not_fast_forward') return 'superseded';
+        }
+      }
+      throw new Error('did not settle');
+    };
+
+    const results = await Promise.all(chain.map((cs) => settle((cs as Changeset).id)));
+    expect(results).toHaveLength(9);
+    expect(results.every((r) => r === 'landed' || r === 'superseded')).toBe(true);
+    expect(await readRefHead(dbEnv, repo.id, 'main')).toBe((chain[8] as Changeset).id);
+  });
+
   it('DO ids are deterministic per (repo, ref)', () => {
     const a1 = testEnv.REF_LOCK.idFromName('repo-1:main');
     const a2 = testEnv.REF_LOCK.idFromName('repo-1:main');

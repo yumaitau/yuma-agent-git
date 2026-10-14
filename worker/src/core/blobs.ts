@@ -62,8 +62,10 @@ export async function putBlobByHash(
   const key = blobKey(repoId, hash);
   const existing = await env.OBJECTS.head(key);
   if (existing) {
-    const size = Number(existing.customMetadata?.size ?? '0');
-    return { hash, size: Number.isFinite(size) ? size : 0, stored: false };
+    const size = await statBlob(env, repoId, hash);
+    if (size !== null) return { hash, size, stored: false };
+    // Metadata lost on a foreign write: fall through and rewrite canonical
+    // metadata for the same content address.
   }
   const content = await decodeOrThrow(hash, compressedBytes, codec);
   const actual = await sha256Hex(content);
@@ -94,11 +96,7 @@ export async function getBlob(
   const obj = await env.OBJECTS.get(blobKey(repoId, hash));
   if (!obj) return null;
   const stored = new Uint8Array(await obj.arrayBuffer());
-  const content = await decodeOrThrow(
-    hash,
-    stored,
-    parseCodec(obj.customMetadata?.encoding),
-  );
+  const content = await decodeOrThrow(hash, stored, obj.customMetadata?.encoding);
   const actual = await sha256Hex(content);
   if (actual !== hash) {
     throw new ObjectCorruptError('blob', hash, `hash mismatch: got ${actual}`);
@@ -109,10 +107,10 @@ export async function getBlob(
 async function decodeOrThrow(
   hash: string,
   bytes: Uint8Array,
-  codec: ReturnType<typeof parseCodec>,
+  encoding: string | undefined,
 ): Promise<Uint8Array> {
   try {
-    return await decompressBytes(bytes, codec);
+    return await decompressBytes(bytes, parseCodec(encoding));
   } catch (err) {
     throw new ObjectCorruptError(
       'blob',
@@ -146,7 +144,8 @@ export async function hasBlob(
 
 /**
  * Uncompressed size of a stored blob (from write-time metadata), or null when
- * not stored. Avoids downloading content.
+ * not stored **or when metadata is missing** (fail closed: size feeds tree
+ * entries and changeset ids, a lie there is permanent).
  */
 export async function statBlob(
   env: Env,
@@ -155,6 +154,8 @@ export async function statBlob(
 ): Promise<number | null> {
   const head = await env.OBJECTS.head(blobKey(repoId, hash));
   if (!head) return null;
-  const size = Number(head.customMetadata?.size ?? '0');
-  return Number.isFinite(size) ? size : 0;
+  const raw = head.customMetadata?.size;
+  if (raw === undefined) return null;
+  const size = Number(raw);
+  return Number.isFinite(size) && size >= 0 ? size : null;
 }

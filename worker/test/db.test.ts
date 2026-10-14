@@ -112,13 +112,37 @@ describe('db schema + helpers', () => {
   it('CHECK constraints reject bad roles and statuses', async () => {
     const repo = await createRepo(dbEnv, { slug: 'acme/widgets' });
 
+    // valid rows first: proves the INSERTs are well-formed (a typo'd column
+    // would otherwise make every rejection below pass for the wrong reason)
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role}) VALUES (?, ?, ?)`,
+      [repo.id, 'user-ok', 'admin'],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.agentTasks} (${C.agentTasks.id}, ${C.agentTasks.repoId}, ${C.agentTasks.kind}, ${C.agentTasks.prompt}, ${C.agentTasks.status}, ${C.agentTasks.createdBy}, ${C.agentTasks.createdAt}, ${C.agentTasks.updatedAt}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['t-ok', repo.id, 'freeform', 'hi', 'queued', 'me', 1, 1],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.importJobs} (${C.importJobs.id}, ${C.importJobs.repoId}, ${C.importJobs.source}, ${C.importJobs.mode}, ${C.importJobs.status}, ${C.importJobs.createdAt}, ${C.importJobs.updatedAt}) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['j-ok', repo.id, 'github:a/b', 'snapshot', 'queued', 1, 1],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.pathRules} (${C.pathRules.repoId}, ${C.pathRules.pathPrefix}, ${C.pathRules.effect}, ${C.pathRules.principal}, ${C.pathRules.perms}) VALUES (?, ?, ?, ?, ?)`,
+      [repo.id, 'ok/', 'grant', '*', JSON.stringify(['read'])],
+    );
+    expect(await q(dbEnv, `SELECT * FROM ${T.repoMembers}`)).toHaveLength(1);
+
     await expect(
       run(
         dbEnv,
         `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role}) VALUES (?, ?, ?)`,
         [repo.id, 'user-1', 'superuser'],
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/CHECK constraint/i);
 
     await expect(
       run(

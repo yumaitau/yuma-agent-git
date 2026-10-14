@@ -43,13 +43,16 @@ export function preferredCodec(): Codec {
   return preferred;
 }
 
-/** Parse a stored `encoding` value; throws on unknown codecs. */
+/**
+ * Parse a stored `encoding` value. Fails closed on missing/unknown codecs:
+ * the codec is not covered by the content hash, so guessing wrong would
+ * corrupt reads. Every write path sets it.
+ */
 export function parseCodec(encoding: string | undefined): Codec {
-  const codec = encoding ?? preferredCodec();
-  if (codec !== 'zstd' && codec !== 'deflate-raw') {
-    throw new TypeError(`unknown object encoding: ${encoding}`);
+  if (encoding !== 'zstd' && encoding !== 'deflate-raw') {
+    throw new TypeError(`unknown object encoding: ${encoding ?? '(missing)'}`);
   }
-  return codec;
+  return encoding;
 }
 
 function sourceStream(data: Uint8Array): ReadableStream<Uint8Array> {

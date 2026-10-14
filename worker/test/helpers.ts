@@ -45,6 +45,59 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export interface ObjectProbe {
+  env: Env;
+  puts: string[];
+  gets: string[];
+  heads: string[];
+}
+
+/**
+ * Env with R2 access instrumented — lets tests assert *how much* object I/O an
+ * operation performs (content-addressed dedupe makes key counts blind to
+ * redundant work, so claims like "only touched trees are written" need call
+ * accounting).
+ */
+export function instrumentObjects(base: TestEnv): ObjectProbe {
+  const puts: string[] = [];
+  const gets: string[] = [];
+  const heads: string[] = [];
+  const target = base.OBJECTS;
+  const proxied = new Proxy(target, {
+    get(t, prop, _recv) {
+      if (prop === 'put') {
+        return (key: string, ...rest: unknown[]): unknown => {
+          puts.push(key);
+          return (t.put as (...a: unknown[]) => unknown).call(t, key, ...rest);
+        };
+      }
+      if (prop === 'get') {
+        return (key: string, ...rest: unknown[]): unknown => {
+          gets.push(key);
+          return (t.get as (...a: unknown[]) => unknown).call(t, key, ...rest);
+        };
+      }
+      if (prop === 'head') {
+        return (key: string, ...rest: unknown[]): unknown => {
+          heads.push(key);
+          return (t.head as (...a: unknown[]) => unknown).call(t, key, ...rest);
+        };
+      }
+      const v = Reflect.get(t, prop, t) as unknown;
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
+  // Shadow OBJECTS on a wrapper — never assign into the miniflare env itself
+  // (its bindings forward assignments and the probe would leak onto the base
+  // env, silently counting unrelated calls).
+  const env = new Proxy(base, {
+    get(t, prop, _recv) {
+      return prop === 'OBJECTS' ? proxied : Reflect.get(t, prop, t);
+    },
+  }) as TestEnv;
+  return { env, puts, gets, heads };
+}
+
 interface FetchLike {
   (request: Request): Response | Promise<Response>;
 }

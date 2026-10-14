@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema } from './helpers';
+import { cleanDb, makeApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import type { Changeset } from '../src/core/changesets';
 import { putBlob } from '../src/core/blobs';
+import { compressBytes, preferredCodec } from '../src/core/compress';
 import { resolveRevision } from '../src/core/read';
 
 const testEnv = env as unknown as TestEnv;
 const dbEnv = testEnv as unknown as Env;
 const author = { name: 'Ada', email: 'ada@example.com' };
+const enc = new TextEncoder();
 
 function b64(text: string): string {
   return btoa(text);
@@ -36,13 +38,16 @@ async function get(path: string): Promise<Response> {
  *   cs2:        mod src/app.ts='v2'
  *   cs3:        del docs/readme.md
  */
-async function seedHistory(slug: string): Promise<{
+async function seedHistory(
+  slug: string,
+  visibility: 'private' | 'public' = 'private',
+): Promise<{
   repoId: string;
   cs1: Changeset;
   cs2: Changeset;
   cs3: Changeset;
 }> {
-  const repo = await createRepo(dbEnv, { slug });
+  const repo = await createRepo(dbEnv, { slug, visibility });
   const cs1 = (
     await commitChanges(dbEnv, repo.id, {
       first_parent: null,
@@ -218,7 +223,8 @@ describe('read RPCs', () => {
 
     const all = await get('/acme/history/history?cs=ref:main');
     expect(all.status).toBe(200);
-    expect(all.headers.get('cache-control')).toBe('public, max-age=10');
+    // principal-dependent metadata on a private repo: never cacheable
+    expect(all.headers.get('cache-control')).toBe('private, no-store');
     const allBody = (await all.json()) as { changesets: { id: string }[] };
     expect(allBody.changesets.map((c) => c.id)).toEqual([cs3.id, cs2.id, cs1.id]);
 
@@ -237,8 +243,8 @@ describe('read RPCs', () => {
     );
   });
 
-  it('sets immutable cache headers + etags on content-addressed reads', async () => {
-    const { cs1 } = await seedHistory('acme/cache');
+  it('immutable only for content-addressed reads of PUBLIC repos', async () => {
+    const { cs1 } = await seedHistory('acme/cache', 'public');
 
     const file = await get(`/acme/cache/file?cs=${cs1.id}&path=src/app.ts`);
     expect(file.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
@@ -247,6 +253,11 @@ describe('read RPCs', () => {
     const tree = await get(`/acme/cache/tree?cs=${cs1.id}&path=src`);
     expect(tree.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(tree.headers.get('etag')).toMatch(new RegExp(`^"${cs1.id}-[0-9a-f]{16}"$`));
+
+    // ref-addressed revs are MUTABLE URLs — must never be frozen in caches
+    const byRef = await get('/acme/cache/file?cs=ref:main&path=src/app.ts');
+    expect(byRef.headers.get('cache-control')).toBe('public, max-age=10');
+    expect(byRef.headers.get('cache-control')).not.toContain('immutable');
 
     const changed = await get(`/acme/cache/changed-paths?cs=${cs1.id}`);
     expect(changed.status).toBe(200);
@@ -262,6 +273,20 @@ describe('read RPCs', () => {
       'docs/readme.md',
       'src/app.ts',
     ]);
+  });
+
+  it('private repos are never publicly cacheable (issue #21 contract)', async () => {
+    const { cs1 } = await seedHistory('acme/priv');
+    for (const path of [
+      `file?cs=${cs1.id}&path=src/app.ts`,
+      `tree?cs=${cs1.id}`,
+      `changed-paths?cs=${cs1.id}`,
+      'history?cs=ref:main',
+    ]) {
+      const res = await get(`/acme/priv/${path}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('private, no-store');
+    }
   });
 
   it('413s large files on the JSON path and streams them raw', async () => {
@@ -285,6 +310,75 @@ describe('read RPCs', () => {
     const raw = await get('/acme/big/file?format=raw&cs=ref:main&path=big.bin');
     expect(raw.status).toBe(200);
     expect(raw.headers.get('content-length')).toBe(String(big.byteLength));
-    await raw.body?.cancel();
+    // consume the whole stream and verify the content address byte-for-byte
+    const streamed = new Uint8Array(await raw.arrayBuffer());
+    expect(streamed.byteLength).toBe(big.byteLength);
+    expect(await sha256(streamed)).toBe(put.hash);
+  });
+
+  it('raw reads verify the content address and abort the stream on corruption', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/corrupt' });
+    const content = enc.encode('trustworthy bytes');
+    const hash = await sha256(content);
+    const committed = await commitChanges(dbEnv, repo.id, {
+      first_parent: null,
+      message: 'file',
+      author,
+      changes: [{ path: 'real.txt', op: 'add', content_b64: bytesToB64(content) }],
+    });
+    await setRef(dbEnv, repo.id, 'main', committed.changeset.id);
+    // well-formed compressed bytes of DIFFERENT content under the same address,
+    // with valid codec metadata so only the hash check can catch it
+    const evil = enc.encode('EVIL REPLACEMENT BYTES');
+    const codec = preferredCodec();
+    const compressed = await compressBytes(evil, codec);
+    await testEnv.OBJECTS.put(
+      `repos/${repo.id}/blobs/${hash.slice(0, 2)}/${hash}`,
+      compressed,
+      {
+        customMetadata: { size: String(evil.byteLength), encoding: codec },
+      },
+    );
+
+    const json = await get('/acme/corrupt/file?cs=ref:main&path=real.txt');
+    expect(json.status).toBe(500);
+    expect(((await json.json()) as { error: { code: string } }).error.code).toBe(
+      'object_corrupt',
+    );
+
+    const raw = await get('/acme/corrupt/file?format=raw&cs=ref:main&path=real.txt');
+    expect(raw.status).toBe(200); // headers already sent when corruption is caught
+    await expect(raw.arrayBuffer()).rejects.toThrow();
+  });
+
+  it('serves active content as attachments with nosniff', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/xss' });
+    const committed = await commitChanges(dbEnv, repo.id, {
+      first_parent: null,
+      message: 'webby',
+      author,
+      changes: [
+        {
+          path: 'poc.html',
+          op: 'add',
+          content_b64: b64('<script>alert(1)</script>'),
+        },
+        { path: 'pic.svg', op: 'add', content_b64: b64('<svg onload="alert(1)"/>') },
+        { path: 'ok.json', op: 'add', content_b64: b64('{"fine":true}') },
+      ],
+    });
+    await setRef(dbEnv, repo.id, 'main', committed.changeset.id);
+
+    const html = await get('/acme/xss/file?format=raw&cs=ref:main&path=poc.html');
+    expect(html.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(html.headers.get('content-disposition')).toContain('attachment');
+
+    const svg = await get('/acme/xss/file?format=raw&cs=ref:main&path=pic.svg');
+    expect(svg.headers.get('content-disposition')).toContain('attachment');
+
+    const json = await get('/acme/xss/file?format=raw&cs=ref:main&path=ok.json');
+    expect(json.headers.get('content-disposition')).toContain('inline');
+    expect(json.headers.get('x-content-type-options')).toBe('nosniff');
+    await json.body?.cancel();
   });
 });
