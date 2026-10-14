@@ -20,6 +20,8 @@ export async function seedSchema(env: TestEnv): Promise<void> {
 
 /** Table names in safe wipe order (children before parents). */
 const WIPE_ORDER = [
+  'webhook_deliveries',
+  'installations',
   'api_tokens',
   'oauth_states',
   'path_rules',
@@ -130,6 +132,40 @@ export function instrumentDb(base: TestEnv): DbProbe {
     },
   }) as TestEnv;
   return { env, prepares };
+}
+
+export interface QueueProbe {
+  env: TestEnv;
+  sends: { queue: string; body: unknown }[];
+}
+
+/** Env with queue sends recorded — lets tests assert what got enqueued. */
+export function instrumentQueues(base: TestEnv): QueueProbe {
+  const sends: { queue: string; body: unknown }[] = [];
+  const wrap = (name: 'IMPORT_QUEUE' | 'DERIVED_QUEUE' | 'AGENT_QUEUE'): unknown => {
+    const target = base[name] as unknown as { send: (b: unknown) => Promise<void> };
+    return new Proxy(target, {
+      get(t, prop, _recv) {
+        if (prop === 'send') {
+          return (body: unknown): Promise<void> => {
+            sends.push({ queue: name, body });
+            return t.send.call(t, body);
+          };
+        }
+        const v = Reflect.get(t, prop, t) as unknown;
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+  };
+  const env = new Proxy(base, {
+    get(t, prop, _recv) {
+      if (prop === 'IMPORT_QUEUE' || prop === 'DERIVED_QUEUE' || prop === 'AGENT_QUEUE') {
+        return wrap(prop);
+      }
+      return Reflect.get(t, prop, t);
+    },
+  }) as TestEnv;
+  return { env, sends };
 }
 
 interface FetchLike {

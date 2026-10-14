@@ -118,6 +118,8 @@ export const T = {
   importJobs: 'import_jobs',
   oauthStates: 'oauth_states',
   apiTokens: 'api_tokens',
+  installations: 'installations',
+  webhookDeliveries: 'webhook_deliveries',
 } as const;
 
 /** Column names, per table. */
@@ -193,6 +195,19 @@ export const C = {
     createdBy: 'created_by',
     createdAt: 'created_at',
     updatedAt: 'updated_at',
+  },
+  installations: {
+    installationId: 'installation_id',
+    accountLogin: 'account_login',
+    accountId: 'account_id',
+    repos: 'repos',
+    updatedAt: 'updated_at',
+  },
+  webhookDeliveries: {
+    deliveryId: 'delivery_id',
+    event: 'event',
+    receivedAt: 'received_at',
+    status: 'status',
   },
   oauthStates: {
     stateHash: 'state_hash',

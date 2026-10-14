@@ -1,5 +1,14 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
+
+// Real RSA keypair so app-JWT signing is exercised with real crypto; the
+// public half goes along as a test-only binding for signature assertions.
+const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
 
 /**
  * Tests run against real in-memory D1 / R2 / DO / Queue bindings from
@@ -20,6 +29,11 @@ export default defineConfig({
           TEST_MIGRATIONS: await readD1Migrations({ migrationsDir: 'migrations' }),
           GITHUB_CLIENT_ID: 'test-client-id',
           GITHUB_CLIENT_SECRET: 'test-client-secret',
+          GITHUB_APP_ID: '12345',
+          GITHUB_APP_SLUG: 'yuma-agent-git',
+          GITHUB_APP_PRIVATE_KEY: privateKey,
+          TEST_GITHUB_APP_PUBLIC_KEY: publicKey,
+          GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
         },
       },
     })),

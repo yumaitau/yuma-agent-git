@@ -2,8 +2,10 @@ import { Hono } from 'hono';
 import { apiRouter } from './api/router';
 import { apiError, errorResponse } from './api/errors';
 import { authRoutes } from './auth/oauth';
+import { githubRoutes } from './bridge/github';
 import { authMiddleware } from './auth/session';
 import { tokensRoutes } from './auth/tokens';
+import { webhooksRoutes } from './api/webhooks';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -17,8 +19,12 @@ app.use('*', authMiddleware);
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
+// These modules declare absolute paths (outside /api/v1): OAuth, webhooks,
+// the GitHub App handshake, and token management.
 app.route('/', authRoutes);
 app.route('/', tokensRoutes);
+app.route('/', webhooksRoutes);
+app.route('/', githubRoutes);
 app.route('/api/v1', apiRouter);
 
 // Every response follows the error envelope — including unrouted URLs.

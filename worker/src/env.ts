@@ -17,4 +17,11 @@ export interface Env {
   /** GitHub OAuth app credentials (issue #12) — set via secrets/.dev.vars. */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /** GitHub App credentials (issue #13). */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_WEBHOOK_SECRET?: string;
+  GITHUB_APP_SLUG?: string;
+  /** Test-only: public half of the app signing key. */
+  TEST_GITHUB_APP_PUBLIC_KEY?: string;
 }
