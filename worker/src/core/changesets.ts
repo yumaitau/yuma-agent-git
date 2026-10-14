@@ -46,7 +46,7 @@ export interface ChangesetFields {
   changed_files: FileChange[];
 }
 
-export interface CreateChangesetInput extends ChangesetFields {
+export interface CreateChangesetInput extends Omit<ChangesetFields, 'repo_id'> {
   /** Server-set when omitted (epoch ms). */
   created_at?: number;
   root_tree?: string | null;

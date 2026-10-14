@@ -226,6 +226,7 @@ function header(
   typeflag: string,
   mode = 0o644,
   linkname = '',
+  mtime = 0,
 ): Uint8Array {
   const block = new Uint8Array(BLOCK);
   const enc = new TextEncoder();
@@ -237,7 +238,7 @@ function header(
   write(octal(0, 8), 108, 8);
   write(octal(0, 8), 116, 8);
   write(octal(size, 12), 124, 12);
-  write(octal(0, 12), 136, 12);
+  write(octal(Math.floor(mtime), 12), 136, 12);
   write('        ', 148, 8); // checksum placeholder
   block[156] = enc.encode(typeflag)[0] as number;
   write(linkname, 157, 100);
@@ -261,7 +262,13 @@ function pad(size: number): Uint8Array {
 export function tarEntry(
   name: string,
   body: Uint8Array,
-  opts: { type?: 'file' | 'symlink'; mode?: number; paxSize?: number } = {},
+  opts: {
+    type?: 'file' | 'symlink';
+    mode?: number;
+    paxSize?: number;
+    /** Unix seconds — tarball export stamps the changeset's time. */
+    mtime?: number;
+  } = {},
 ): Uint8Array {
   const chunks: Uint8Array[] = [];
   const usePax = name.length > 100;
@@ -282,6 +289,7 @@ export function tarEntry(
       type,
       opts.mode ?? (type === '2' ? 0o777 : 0o644),
       type === '2' ? new TextDecoder().decode(body) : '',
+      opts.mtime ?? 0,
     ),
   );
   if (type !== '2') {

@@ -1,7 +1,7 @@
 import { app } from './app';
 import type { Env } from './env';
 import type { DerivedMessage } from './core/derived';
-import type { ImportMessage } from './bridge/import';
+import type { GitImportMessage } from './bridge/exportPush';
 import { derivedQueue } from './queues/derived';
 import { importQueue } from './queues/import';
 
@@ -19,7 +19,7 @@ export default {
       case 'derived-data':
         return derivedQueue(batch as MessageBatch<DerivedMessage>, env);
       case 'git-import':
-        return importQueue(batch as MessageBatch<ImportMessage>, env);
+        return importQueue(batch as MessageBatch<GitImportMessage>, env);
       case 'agent-jobs':
         // TODO(issue #17): agent job consumer
         batch.retryAll();

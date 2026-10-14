@@ -120,6 +120,7 @@ export const T = {
   apiTokens: 'api_tokens',
   installations: 'installations',
   webhookDeliveries: 'webhook_deliveries',
+  exportJobs: 'export_jobs',
 } as const;
 
 /** Column names, per table. */
@@ -208,6 +209,17 @@ export const C = {
     event: 'event',
     receivedAt: 'received_at',
     status: 'status',
+  },
+  exportJobs: {
+    id: 'id',
+    repoId: 'repo_id',
+    direction: 'direction',
+    target: 'target',
+    headCs: 'head_cs',
+    githubSha: 'github_sha',
+    status: 'status',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
   },
   oauthStates: {
     stateHash: 'state_hash',
