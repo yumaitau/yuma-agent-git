@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { apiRouter } from './api/router';
 import { apiError, errorResponse } from './api/errors';
+import { adminRoutes } from './api/admin';
 import { authRoutes } from './auth/oauth';
 import { githubRoutes } from './bridge/github';
 import { authMiddleware } from './auth/session';
 import { tokensRoutes } from './auth/tokens';
+import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import type { AppEnv } from './auth/principal';
 
@@ -25,6 +27,8 @@ app.route('/', authRoutes);
 app.route('/', tokensRoutes);
 app.route('/', webhooksRoutes);
 app.route('/', githubRoutes);
+app.route('/', adminRoutes);
+app.route('/', reposRoutes);
 app.route('/api/v1', apiRouter);
 
 // Every response follows the error envelope — including unrouted URLs.

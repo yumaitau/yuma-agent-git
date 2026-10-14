@@ -4,8 +4,7 @@ import type { Env } from '../env';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { getChangeset } from '../core/changesets';
 import { listRefs, getRef, moveRefViaDO, validateRefName } from '../core/refs';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead, requireRepoWrite } from '../auth/guards';
+import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
 
 /**
  * Ref routes (architecture §1.4) — refs are discouraged global state; moves
@@ -23,24 +22,6 @@ const moveRefSchema = z.object({
   to: z.string().min(1),
   force: z.boolean().optional(),
 });
-
-async function loadReadable(
-  c: Parameters<typeof apiError>[0],
-  slug: string,
-): Promise<
-  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
-  | { ok: false; response: Response }
-> {
-  const repo = await getRepoBySlug(c.env, slug);
-  // Guard failure maps to 404 — never leak repo existence (issue #14).
-  if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  return { ok: true, repo };
-}
 
 refsRoutes.get('/repos/:repo{.+}/refs', async (c) => {
   try {
@@ -82,13 +63,9 @@ refsRoutes.get('/repos/:repo{.+}/refs/:name{.+}', async (c) => {
 
 refsRoutes.put('/repos/:repo{.+}/refs/:name{.+}', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoWrite(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'write access required');
-    }
+    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
     const name = validateRefName(c.req.param('name'));
 
     const body = await readJsonBody(c);

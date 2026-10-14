@@ -7,8 +7,7 @@ import { blameFile, BLAME_TRUNCATED_CS, type BlameRange } from '../core/derived/
 import { parseChangesetRow, q } from '../db/client';
 import { C, T } from '../db/schema';
 import { sha256Hex } from '../core/hashing';
-import { getRepoBySlug } from '../db/repos';
-import { requirePathHistory, requireRepoRead } from '../auth/guards';
+import { guardPathHistory, loadReadableRepo as loadReadable } from '../auth/guards';
 
 /**
  * Blame RPC (architecture §2):
@@ -25,10 +24,9 @@ const CS_ID_RE = /^[0-9a-f]{64}$/;
 
 blameRoutes.get('/repos/:repo{.+}/blame', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const rev = c.req.query('cs');
     const rawPath = c.req.query('path');
@@ -36,10 +34,9 @@ blameRoutes.get('/repos/:repo{.+}/blame', async (c) => {
       return apiError(c, 400, 'invalid_request', 'cs and path are required');
     }
     const path = normalizeQueryPath(rawPath, false);
-    // history permission on the specific path (issue #14 enforces path_rules)
-    if (!(await requirePathHistory(c.env, c, repo, path))) {
-      return apiError(c, 404, 'path_not_found', `no file ${path}`, { path });
-    }
+    // history permission on the specific path — path rules apply
+    const denied = await guardPathHistory(c, repo, path);
+    if (denied) return denied;
 
     const cs = await lookupRev(c.env, repo.id, rev);
     if (!cs) {

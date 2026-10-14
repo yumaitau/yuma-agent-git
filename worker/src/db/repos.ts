@@ -17,6 +17,8 @@ export interface CreateRepoInput {
   visibility?: 'private' | 'public';
   githubInstallationId?: number | null;
   githubRepoId?: number | null;
+  /** Creating user — repo creators are admins (issue #14). */
+  createdBy?: string | null;
 }
 
 /** Insert a repository row (id = ULID). */
@@ -28,6 +30,7 @@ export async function createRepo(
   const row = {
     id: ulid(now),
     slug: input.slug,
+    created_by: input.createdBy ?? null,
     github_installation_id: input.githubInstallationId ?? null,
     github_repo_id: input.githubRepoId ?? null,
     default_branch: input.defaultBranch ?? 'main',
@@ -39,8 +42,8 @@ export async function createRepo(
     `INSERT INTO ${T.repos}
        (${C.repos.id}, ${C.repos.slug}, ${C.repos.githubInstallationId},
         ${C.repos.githubRepoId}, ${C.repos.defaultBranch}, ${C.repos.createdAt},
-        ${C.repos.visibility})
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ${C.repos.visibility}, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.slug,
@@ -49,6 +52,7 @@ export async function createRepo(
       row.default_branch,
       row.created_at,
       row.visibility,
+      row.created_by,
     ],
   );
   return parseRepoRow(row);

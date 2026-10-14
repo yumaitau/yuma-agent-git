@@ -168,6 +168,19 @@ export function instrumentQueues(base: TestEnv): QueueProbe {
   return { env, sends };
 }
 
+/** Signed-in user + session cookie — fixtures for guarded routes. */
+export async function loginAs(
+  env: TestEnv,
+  githubId: number,
+  login: string,
+): Promise<{ userId: string; cookie: string; headers: Record<string, string> }> {
+  const { upsertUser, createSession } = await import('../src/auth/session');
+  const user = await upsertUser(env as unknown as Env, { id: githubId, login });
+  const session = await createSession(env as unknown as Env, user.id);
+  const cookie = `yag_session=${session.token}`;
+  return { userId: user.id, cookie, headers: { cookie } };
+}
+
 interface FetchLike {
   (request: Request): Response | Promise<Response>;
 }

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema, sha256 } from './helpers';
+import { cleanDb, loginAs, makeApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
-import { createRepo, setRef } from '../src/db/repos';
+import { createRepo, getRepoBySlug, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
+import { C, T } from '../src/db/schema';
+import { run } from '../src/db/client';
 import { compressBytes, preferredCodec } from '../src/core/compress';
 
 const testEnv = env as unknown as TestEnv;
@@ -163,12 +165,15 @@ describe('objects API (sparse checkout protocol)', () => {
   });
 
   it('PUT /blob verifies the declared content address', async () => {
+    const auth = await loginAs(testEnv, 1, 'ada');
     await seedRepo('acme/upload');
     const bytes = Buffer.from('big file content\n');
     const hash = await sha256(new Uint8Array(bytes));
+    await grantWrite('acme/upload', auth.userId);
 
     const ok = await api(`/acme/upload/blob?sha256=${hash}&encoding=identity`, {
       method: 'PUT',
+      headers: auth.headers,
       body: new Uint8Array(bytes),
     });
     expect(ok.status).toBe(201);
@@ -178,6 +183,7 @@ describe('objects API (sparse checkout protocol)', () => {
       `/acme/upload/blob?sha256=${'0'.repeat(64)}&encoding=identity`,
       {
         method: 'PUT',
+        headers: auth.headers,
         body: new Uint8Array(bytes),
       },
     );
@@ -188,11 +194,21 @@ describe('objects API (sparse checkout protocol)', () => {
 
     const noHash = await api('/acme/upload/blob', {
       method: 'PUT',
+      headers: auth.headers,
       body: new Uint8Array(bytes),
     });
     expect(noHash.status).toBe(400);
   });
 });
+
+async function grantWrite(slug: string, userId: string): Promise<void> {
+  const repo = await getRepoBySlug(dbEnv, slug);
+  await run(
+    dbEnv,
+    `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role}) VALUES (?, ?, 'write')`,
+    [repo!.id, userId],
+  );
+}
 
 async function getRepoId(slug: string): Promise<string | null> {
   const { getRepoBySlug } = await import('../src/db/repos');

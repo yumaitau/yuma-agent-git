@@ -41,12 +41,14 @@ describe('db schema + helpers', () => {
   });
 
   it('rejects duplicate slugs (UNIQUE)', async () => {
-    await createRepo(dbEnv, { slug: 'acme/widgets' });
-    await expect(createRepo(dbEnv, { slug: 'acme/widgets' })).rejects.toThrow();
+    await createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' });
+    await expect(
+      createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' }),
+    ).rejects.toThrow();
   });
 
   it('round-trips a changeset row through the zod parser', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/widgets' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' });
     const row = {
       id: 'a'.repeat(64),
       repo_id: repo.id,
@@ -95,7 +97,7 @@ describe('db schema + helpers', () => {
   });
 
   it('writes and reads refs (raw helpers)', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/widgets' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' });
     await setRef(dbEnv, repo.id, 'main', 'a'.repeat(64), 1);
     expect(await getRef(dbEnv, repo.id, 'main')).toEqual({
       repo_id: repo.id,
@@ -110,7 +112,7 @@ describe('db schema + helpers', () => {
   });
 
   it('CHECK constraints reject bad roles and statuses', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/widgets' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' });
 
     // valid rows first: proves the INSERTs are well-formed (a typo'd column
     // would otherwise make every rejection below pass for the wrong reason)
@@ -170,7 +172,7 @@ describe('db schema + helpers', () => {
   });
 
   it('path_rules perms JSON parses through the row parser', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/widgets' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/widgets', visibility: 'public' });
     await run(
       dbEnv,
       `INSERT INTO ${T.pathRules} (${C.pathRules.repoId}, ${C.pathRules.pathPrefix}, ${C.pathRules.effect}, ${C.pathRules.principal}, ${C.pathRules.perms}) VALUES (?, ?, ?, ?, ?)`,

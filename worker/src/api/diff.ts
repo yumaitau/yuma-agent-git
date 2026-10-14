@@ -4,8 +4,7 @@ import { apiError, errorResponse } from './errors';
 import { diffRevisions } from '../core/diff';
 import { lookupRev } from '../core/read';
 import { sha256Hex } from '../core/hashing';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead } from '../auth/guards';
+import { loadReadableRepo as loadReadable } from '../auth/guards';
 
 /**
  * Diff RPC (architecture §2.2):
@@ -22,10 +21,9 @@ const MAX_TEXTS_BYTES = 4 * 1024 * 1024;
 
 diffRoutes.get('/repos/:repo{.+}/diff', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
+    const loaded = await loadReadable(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const fromRev = c.req.query('from');
     const toRev = c.req.query('to');

@@ -4,8 +4,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 import { commitChanges, commitRequestSchema } from '../core/commit';
 import { firstParentHistory, getChangeset } from '../core/changesets';
 import { lookupRev } from '../core/read';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead, requireRepoWrite } from '../auth/guards';
+import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
 
 /**
  * Changeset routes (architecture §2):
@@ -18,30 +17,6 @@ export const changesetsRoutes = new Hono<{ Bindings: Env }>();
 /** Metadata routes are principal-dependent: never cache them (issue #21). */
 const NO_STORE = 'private, no-store';
 
-async function loadReadable(
-  c: Parameters<typeof apiError>[0],
-  slug: string,
-): Promise<
-  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
-  | { ok: false; response: Response }
-> {
-  const repo = await getRepoBySlug(c.env, slug);
-  if (!repo) {
-    // Guard failure maps to 404 too — never leak repo existence (issue #14).
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  if (!(await requireRepoRead(c.env, c, repo))) {
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  return { ok: true, repo };
-}
-
 function intParam(raw: string | undefined, def: number, max: number): number {
   const n = Number(raw ?? def);
   return Number.isInteger(n) && n > 0 ? Math.min(n, max) : def;
@@ -49,13 +24,9 @@ function intParam(raw: string | undefined, def: number, max: number): number {
 
 changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoWrite(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'write access required');
-    }
+    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const body = await readJsonBody(c);
     const parsed = commitRequestSchema.safeParse(body);

@@ -121,7 +121,10 @@ describe('derived-data framework', () => {
   });
 
   it('recursive kinds compute from parent values and self-heal', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/recursion' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/recursion',
+      visibility: 'public',
+    });
     const ids = await chain(repo.id, 5);
 
     const tip = await getDerived<CountPayload>(
@@ -149,7 +152,7 @@ describe('derived-data framework', () => {
   });
 
   it('eager kinds are written by the commit hook in one batch', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/eager' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/eager', visibility: 'public' });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -208,7 +211,7 @@ describe('derived-data framework', () => {
   });
 
   it('queue consumer writes rows; poison messages are terminally acked', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/queue' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/queue', visibility: 'public' });
     const ids = await chain(repo.id, 2);
 
     // happy path: message for a deferred kind computes + stores the row
@@ -263,7 +266,7 @@ describe('derived-data framework', () => {
   });
 
   it('payload guard stores the oversize sentinel for huge payloads', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/oversize' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/oversize', visibility: 'public' });
     const ids = await chain(repo.id, 1);
     await getDerived<TinyPayload>(dbEnv, repo.id, 'test_tiny', ids[0] as string);
 
@@ -272,7 +275,10 @@ describe('derived-data framework', () => {
   });
 
   it('concurrent cache-aside misses settle on a single row', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/concurrent' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/concurrent',
+      visibility: 'public',
+    });
     const ids = await chain(repo.id, 2);
     const target = ids[1] as string;
     await run(dbEnv, `DELETE FROM ${T.derivedData} WHERE ${C.derivedData.kind} = ?`, [

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentObjects, makeApp, seedSchema } from './helpers';
+import { cleanDb, instrumentObjects, loginAs, makeApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -27,7 +27,7 @@ async function get(path: string): Promise<Response> {
  */
 async function seedBranches(
   slug: string,
-  visibility: 'private' | 'public' = 'private',
+  visibility: 'private' | 'public' = 'public',
 ): Promise<{
   repoId: string;
   base: Changeset;
@@ -191,7 +191,7 @@ describe('diffRevisions', () => {
   });
 
   it('truncates at maxFiles', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/trunc' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/trunc', visibility: 'public' });
     const changes = [];
     for (let i = 0; i < 10; i++) {
       changes.push({ path: `f${i}.txt`, op: 'add' as const, content_b64: b64(`f${i}`) });
@@ -228,7 +228,7 @@ describe('diffRevisions', () => {
   });
 
   it('text diffs: binaries and oversized files excluded, hunks well-formed', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/text' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/text', visibility: 'public' });
     const root = (
       await commitChanges(dbEnv, repo.id, {
         first_parent: null,
@@ -337,7 +337,15 @@ describe('diff route', () => {
   });
 
   it('merge base is skip-list real; private diffs stay uncacheable', async () => {
-    const { repoId, base } = await seedBranches('acme/prov');
+    const auth = await loginAs(testEnv, 1, 'ada');
+    const { repoId, base } = await seedBranches('acme/prov', 'private');
+    const { run } = await import('../src/db/client');
+    const { C, T } = await import('../src/db/schema');
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role}) VALUES (?, ?, 'read')`,
+      [repoId, auth.userId],
+    );
     // sibling branches with NO common first-parent walk through `from`… the
     // provisional walk is exercised because neither is an ancestor of the other
     const a = (
@@ -357,7 +365,11 @@ describe('diff route', () => {
       })
     ).changeset;
 
-    const res = await get(`/acme/prov/diff?from=${a.id}&to=${b.id}`);
+    const res = await makeApp(testEnv)(
+      new Request(`https://x/api/v1/repos/acme/prov/diff?from=${a.id}&to=${b.id}`, {
+        headers: auth.headers,
+      }),
+    );
     expect(res.status).toBe(200);
     // provisional merge-base flags are GONE (issue #8 replaced the fallback)
     expect(res.headers.get('x-yag-provisional')).toBeNull();

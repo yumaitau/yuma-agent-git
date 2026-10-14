@@ -56,7 +56,7 @@ async function seedOverlapping(slug: string): Promise<{
   repoId: string;
   cs: Changeset[];
 }> {
-  const repo = await createRepo(dbEnv, { slug });
+  const repo = await createRepo(dbEnv, { slug, visibility: 'public' });
   const cs: Changeset[] = [];
   let parent: string | null = null;
   const steps = [

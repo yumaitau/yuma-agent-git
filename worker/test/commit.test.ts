@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentObjects, makeApp, seedSchema, sha256 } from './helpers';
+import {
+  cleanDb,
+  instrumentObjects,
+  loginAs,
+  makeApp,
+  seedSchema,
+  sha256,
+} from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, getRepoBySlug, listRefs, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -16,6 +23,8 @@ const author = { name: 'Ada', email: 'ada@example.com' };
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
+let auth: Awaited<ReturnType<typeof loginAs>>;
+
 function b64(text: string): string {
   return btoa(text);
 }
@@ -25,7 +34,7 @@ async function postCommit(slug: string, body: unknown): Promise<Response> {
   return app(
     new Request(`http://x/api/v1/repos/${slug}/changesets`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...auth.headers },
       body: JSON.stringify(body),
     }),
   );
@@ -48,7 +57,7 @@ describe('commitChanges', () => {
   });
 
   it('creates a root changeset: tree resolvable, blob retrievable + hash-verified', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/root' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/root', visibility: 'public' });
     const text = 'export const x = 1;\n';
     const result = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
@@ -144,7 +153,7 @@ describe('commitChanges', () => {
   });
 
   it('never moves refs as part of a commit (lock-free write path)', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/no-refs' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/no-refs', visibility: 'public' });
     await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -155,7 +164,7 @@ describe('commitChanges', () => {
   });
 
   it('deletes: path absent from the new root tree, present in the parent', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/delete' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/delete', visibility: 'public' });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -192,7 +201,7 @@ describe('commitChanges', () => {
   });
 
   it('drops empty directories git-style', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/emptydir' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/emptydir', visibility: 'public' });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -211,7 +220,7 @@ describe('commitChanges', () => {
   });
 
   it('stores merge commits with parents and changed_files relative to first parent', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/merge' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/merge', visibility: 'public' });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -259,7 +268,7 @@ describe('commitChanges', () => {
   });
 
   it('is idempotent: identical request reuses the changeset with ZERO R2 I/O', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/idem' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/idem', visibility: 'public' });
     const req = {
       first_parent: null,
       message: 'root',
@@ -289,7 +298,10 @@ describe('commitChanges', () => {
   });
 
   it('rejects change sets that would corrupt the tree', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/conflicts' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/conflicts',
+      visibility: 'public',
+    });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root with file a',
@@ -361,7 +373,7 @@ describe('commitChanges', () => {
   });
 
   it('resolves first_parent via ref:main and bare ref names', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/refs' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/refs', visibility: 'public' });
     const root = await commitChanges(dbEnv, repo.id, {
       first_parent: null,
       message: 'root',
@@ -386,10 +398,15 @@ describe('changeset routes', () => {
   beforeEach(async () => {
     await seedSchema(testEnv);
     await cleanDb(testEnv);
+    auth = await loginAs(testEnv, 1, 'ada');
   });
 
   it('POST creates a changeset (201) and GET serves it back', async () => {
-    await createRepo(dbEnv, { slug: 'acme/routes' });
+    await createRepo(dbEnv, {
+      slug: 'acme/routes',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const res = await postCommit('acme/routes', baseBody());
     expect(res.status).toBe(201);
     const created = (await res.json()) as {
@@ -417,7 +434,11 @@ describe('changeset routes', () => {
   });
 
   it('POST is idempotent over HTTP: second call 200 + deduped', async () => {
-    await createRepo(dbEnv, { slug: 'acme/http-idem' });
+    await createRepo(dbEnv, {
+      slug: 'acme/http-idem',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const first = await postCommit('acme/http-idem', baseBody());
     expect(first.status).toBe(201);
     const second = await postCommit('acme/http-idem', baseBody());
@@ -433,7 +454,11 @@ describe('changeset routes', () => {
   });
 
   it('GET /changesets walks first-parent history from head', async () => {
-    await createRepo(dbEnv, { slug: 'acme/history' });
+    await createRepo(dbEnv, {
+      slug: 'acme/history',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const root = await postCommit('acme/history', baseBody({ message: 'one' }));
     const rootBody = (await root.json()) as { changeset: { id: string } };
 
@@ -476,7 +501,11 @@ describe('changeset routes', () => {
   });
 
   it('rejects invalid requests with the error envelope', async () => {
-    await createRepo(dbEnv, { slug: 'acme/bad' });
+    await createRepo(dbEnv, {
+      slug: 'acme/bad',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
 
     const unknownRepo = await postCommit('acme/nope', baseBody());
     expect(unknownRepo.status).toBe(404);
@@ -538,7 +567,7 @@ describe('changeset routes', () => {
     const malformed = await makeApp(testEnv)(
       new Request('http://x/api/v1/repos/acme/bad/changesets', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...auth.headers },
         body: '{not json',
       }),
     );

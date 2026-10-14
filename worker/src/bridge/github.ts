@@ -303,11 +303,11 @@ const connectSchema = z.object({
 githubRoutes.post('/api/v1/repos/:repo{.+}/connect', async (c) => {
   try {
     if (!c.get('user')) return apiError(c, 401, 'unauthorized', 'session required');
-    const { getRepoBySlug } = await import('../db/repos');
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
+    // repo admin required on the yag side too (issue #14)
+    const { loadAdminRepo } = await import('../auth/guards');
+    const loaded = await loadAdminRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const body = await readJsonBody(c);
     const parsed = connectSchema.safeParse(body);

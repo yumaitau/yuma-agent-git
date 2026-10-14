@@ -52,7 +52,7 @@ describe('skip-list ancestry', () => {
   });
 
   it('linear chain: isAncestor pairs, exact distances, merge-base = min(i,j)', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/linear' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/linear', visibility: 'public' });
     const ids = await chain(repo.id, 100);
 
     for (const [a, b] of [
@@ -85,7 +85,7 @@ describe('skip-list ancestry', () => {
   });
 
   it('branching DAG: merge-base at the fork, cross-branch isAncestor false', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/dag' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/dag', visibility: 'public' });
     const ids = await chain(repo.id, 51); // cs0..cs50
     const fork = ids[50] as string;
 
@@ -127,7 +127,7 @@ describe('skip-list ancestry', () => {
   });
 
   it('deep chain: O(log n) — merge-base stays ≤ 40 D1 reads on 1000 changesets', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/deep' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/deep', visibility: 'public' });
 
     // bulk-seed 1000 changeset rows with direct D1 inserts (no HTTP)
     const mkRow = (i: number): unknown[] => [
@@ -174,7 +174,7 @@ describe('skip-list ancestry', () => {
   });
 
   it('computes entries lazily when rows were seeded without derived data', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/lazy' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/lazy', visibility: 'public' });
     const ids = await chain(repo.id, 6);
     // wipe derived data to simulate pre-framework rows
     await run(dbEnv, `DELETE FROM ${T.derivedData}`);
@@ -190,7 +190,10 @@ describe('skip-list ancestry', () => {
   });
 
   it('is deterministic: recomputation yields identical payloads', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/determinism' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/determinism',
+      visibility: 'public',
+    });
     const ids = await chain(repo.id, 5);
     const cs4 = await getChangeset(dbEnv, repo.id, ids[4] as string);
     const before = await getSkipListEntry(dbEnv, repo.id, ids[4] as string);
@@ -201,7 +204,7 @@ describe('skip-list ancestry', () => {
   });
 
   it('isAncestorDag covers merge second-parents that the spine cannot', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/mergeff' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/mergeff', visibility: 'public' });
     const ids = await chain(repo.id, 1);
     const root = ids[0] as string;
     const a = (
@@ -264,7 +267,7 @@ describe('ancestry routes', () => {
   });
 
   it('validates params and revisions', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/bad' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/bad', visibility: 'public' });
     const ids = await chain(repo.id, 1);
 
     expect((await get('/acme/bad/merge-base')).status).toBe(400);

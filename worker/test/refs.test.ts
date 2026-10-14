@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema } from './helpers';
+import { cleanDb, loginAs, makeApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, getRef, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -12,6 +12,7 @@ import { ConflictError, RequestValidationError } from '../src/core/errors';
 const testEnv = env as unknown as TestEnv;
 const dbEnv = testEnv as unknown as Env;
 const author = { name: 'Ada', email: 'ada@example.com' };
+let auth: Awaited<ReturnType<typeof loginAs>>;
 
 function b64(text: string): string {
   return btoa(text);
@@ -42,7 +43,7 @@ async function putRef(slug: string, name: string, body: unknown): Promise<Respon
   return app()(
     new Request(`http://x/api/v1/repos/${slug}/refs/${name}`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...auth.headers },
       body: JSON.stringify(body),
     }),
   );
@@ -61,7 +62,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('CAS success: creates the ref (from: null) then moves with the correct from', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/cas' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/cas', visibility: 'public' });
     const [cs0, cs1] = await makeChain(repo.id, 1);
 
     const created = await moveRefViaDO(dbEnv, repo.id, 'main', {
@@ -80,7 +81,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('CAS failure: concurrent-style stale moves lose with expected/actual', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/stale' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/stale', visibility: 'public' });
     const chain = await makeChain(repo.id, 5);
     const root = chain[0] as Changeset;
     await moveRefViaDO(dbEnv, repo.id, 'main', { from: null, to: root.id });
@@ -103,7 +104,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('serializes 20 queued moves (stale-retry loop) with a correct final head', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/queue' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/queue', visibility: 'public' });
     const chain = await makeChain(repo.id, 20);
     await moveRefViaDO(dbEnv, repo.id, 'main', {
       from: null,
@@ -127,7 +128,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('enforces fast-forward unless forced', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/ff' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/ff', visibility: 'public' });
     const [base] = (await makeChain(repo.id, 0)) as [Changeset];
     // sibling branches from base
     const branchA = await commitChanges(dbEnv, repo.id, {
@@ -180,7 +181,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('rejects stale from: null when the ref exists', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/nullfrom' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/nullfrom', visibility: 'public' });
     const [cs0] = await makeChain(repo.id, 0);
     await moveRefViaDO(dbEnv, repo.id, 'main', { from: null, to: (cs0 as Changeset).id });
     await expect(
@@ -211,7 +212,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('force bypasses staleness — pinned response semantics', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/force' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/force', visibility: 'public' });
     const [cs0, cs1, cs2] = (await makeChain(repo.id, 2)) as [
       Changeset,
       Changeset,
@@ -231,7 +232,7 @@ describe('ref compare-and-swap (RefLockDO)', () => {
   });
 
   it('converges under a parallel stale-retry storm (tasks never go backward)', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/storm' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/storm', visibility: 'public' });
     const chain = await makeChain(repo.id, 8);
     await moveRefViaDO(dbEnv, repo.id, 'main', {
       from: null,
@@ -278,10 +279,15 @@ describe('ref routes', () => {
   beforeEach(async () => {
     await seedSchema(testEnv);
     await cleanDb(testEnv);
+    auth = await loginAs(testEnv, 1, 'ada');
   });
 
   it('PUT creates and moves refs over HTTP; GET serves them', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/routes' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/routes',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const [cs0, cs1] = (await makeChain(repo.id, 1)) as [Changeset, Changeset];
 
     const created = await putRef('acme/routes', 'main', {
@@ -323,7 +329,11 @@ describe('ref routes', () => {
   });
 
   it('PUT reports stale moves as 409 with expected/actual in the envelope', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/http-stale' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/http-stale',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const [cs0, cs1, cs2] = (await makeChain(repo.id, 2)) as [
       Changeset,
       Changeset,
@@ -352,7 +362,11 @@ describe('ref routes', () => {
   });
 
   it('validates names and targets at the edge', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/validate' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/validate',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const [cs0] = (await makeChain(repo.id, 0)) as [Changeset];
 
     const unknownRepo = await putRef('acme/nope', 'main', {
@@ -384,7 +398,11 @@ describe('ref routes', () => {
   });
 
   it('ref:main resolution in commits follows CAS moves', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/wired' });
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/wired',
+      visibility: 'public',
+      createdBy: auth.userId,
+    });
     const [cs0] = (await makeChain(repo.id, 0)) as [Changeset];
     await setRef(dbEnv, repo.id, 'main', cs0.id);
 

@@ -4,8 +4,8 @@ import { apiError, errorResponse } from './errors';
 import { ancestorDistance, isAncestor, mergeBase } from '../core/ancestry';
 import { lookupRev } from '../core/read';
 import { sha256Hex } from '../core/hashing';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead } from '../auth/guards';
+import { loadReadableRepo as loadReadable } from '../auth/guards';
+import type { RepoWithCreator } from '../auth/rbac';
 
 /**
  * Ancestry RPCs (architecture §2) — O(log n) skip-list queries:
@@ -20,25 +20,8 @@ export const ancestryRoutes = new Hono<{ Bindings: Env }>();
 
 const CS_ID_RE = /^[0-9a-f]{64}$/;
 
-async function loadReadable(
-  c: Parameters<typeof apiError>[0],
-  slug: string,
-): Promise<
-  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
-  | { ok: false; response: Response }
-> {
-  const repo = await getRepoBySlug(c.env, slug);
-  if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  return { ok: true, repo };
-}
-
 async function cacheHeaders(
-  repo: Awaited<ReturnType<typeof getRepoBySlug>>,
+  repo: RepoWithCreator | null,
   revs: string[],
   variant: string,
 ): Promise<Record<string, string>> {

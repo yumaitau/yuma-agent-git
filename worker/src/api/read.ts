@@ -18,8 +18,7 @@ import {
   PayloadTooLargeError,
   RequestValidationError,
 } from '../core/errors';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead } from '../auth/guards';
+import { loadReadableRepo as loadReadable } from '../auth/guards';
 
 /**
  * Read RPCs — queries with no checkout (architecture §2):
@@ -109,24 +108,6 @@ const ACTIVE_TYPES = new Set([
   'text/javascript',
   'text/typescript',
 ]);
-
-async function loadReadable(
-  c: Parameters<typeof apiError>[0],
-  slug: string,
-): Promise<
-  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
-  | { ok: false; response: Response }
-> {
-  const repo = await getRepoBySlug(c.env, slug);
-  // Guard failure maps to 404 — never leak repo existence (issue #14).
-  if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  return { ok: true, repo };
-}
 
 // ---------------------------------------------------------------------------
 // GET /file

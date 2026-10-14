@@ -153,7 +153,7 @@ describe('installation lifecycle + push handoff', () => {
     expect(JSON.parse((row as { repos: string }).repos)).toHaveLength(2);
 
     // deleted removes the installation AND disconnects its repos
-    const repo = await createRepo(dbEnv, { slug: 'acme/app' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/app', visibility: 'public' });
     await run(
       dbEnv,
       `UPDATE ${T.repos} SET ${C.repos.githubInstallationId} = 9, ${C.repos.githubRepoId} = 777 WHERE ${C.repos.id} = ?`,
@@ -172,7 +172,7 @@ describe('installation lifecycle + push handoff', () => {
 
   it('push on a connected repo queues a sync job; unconnected pushes are ignored', async () => {
     const probe = instrumentQueues(testEnv);
-    const repo = await createRepo(dbEnv, { slug: 'acme/app' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/app', visibility: 'public' });
     await run(
       dbEnv,
       `UPDATE ${T.repos} SET ${C.repos.githubRepoId} = 777 WHERE ${C.repos.id} = ?`,

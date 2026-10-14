@@ -41,7 +41,7 @@ async function seedEvolution(slug: string): Promise<{
   cs3: Changeset;
   cs4: Changeset;
 }> {
-  const repo = await createRepo(dbEnv, { slug });
+  const repo = await createRepo(dbEnv, { slug, visibility: 'public' });
   const cs1 = (
     await commitChanges(dbEnv, repo.id, {
       first_parent: null,
@@ -144,7 +144,7 @@ describe('blame', () => {
   });
 
   it('re-added files blame to the re-add; moves blame wholly to the add', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/readd' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/readd', visibility: 'public' });
     const root = (
       await commitChanges(dbEnv, repo.id, {
         first_parent: null,
@@ -182,7 +182,7 @@ describe('blame', () => {
   });
 
   it('deep chains 202 + enqueue past the budget; consumer completes', async () => {
-    const repo = await createRepo(dbEnv, { slug: 'acme/deep' });
+    const repo = await createRepo(dbEnv, { slug: 'acme/deep', visibility: 'public' });
     let parent: string | null = null;
     let content = 'x0\n';
     const ids: string[] = [];

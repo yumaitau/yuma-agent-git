@@ -8,8 +8,7 @@ import { getTree, getTreeRecursive } from '../core/trees';
 import { sha256Hex } from '../core/hashing';
 import { RequestValidationError } from '../core/errors';
 import { resolveRevision } from '../core/read';
-import { getRepoBySlug } from '../db/repos';
-import { requireRepoRead, requireRepoWrite } from '../auth/guards';
+import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
 
 /**
  * Sparse-checkout protocol (architecture §2.4) — want-only negotiation:
@@ -41,23 +40,6 @@ const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 function cacheHeaders(visibility: string): Record<string, string> {
   return { 'cache-control': visibility === 'public' ? IMMUTABLE : NO_STORE };
-}
-
-async function loadReadable(
-  c: Parameters<typeof apiError>[0],
-  slug: string,
-): Promise<
-  | { ok: true; repo: NonNullable<Awaited<ReturnType<typeof getRepoBySlug>>> }
-  | { ok: false; response: Response }
-> {
-  const repo = await getRepoBySlug(c.env, slug);
-  if (!repo || !(await requireRepoRead(c.env, c, repo))) {
-    return {
-      ok: false,
-      response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`),
-    };
-  }
-  return { ok: true, repo };
 }
 
 // ---------------------------------------------------------------------------
@@ -284,13 +266,9 @@ objectsRoutes.get('/repos/:repo{.+}/checkout-info', async (c) => {
 
 objectsRoutes.put('/repos/:repo{.+}/blob', async (c) => {
   try {
-    const repo = await getRepoBySlug(c.env, c.req.param('repo'));
-    if (!repo) {
-      return apiError(c, 404, 'repo_not_found', `no repo ${c.req.param('repo')}`);
-    }
-    if (!(await requireRepoWrite(c.env, c, repo))) {
-      return apiError(c, 403, 'forbidden', 'write access required');
-    }
+    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
 
     const declared = c.req.query('sha256') ?? c.req.header('x-yag-sha256');
     if (!declared || !/^[0-9a-f]{64}$/.test(declared)) {

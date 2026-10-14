@@ -127,6 +127,8 @@ export const repoRowSchema = z.object({
   default_branch: z.string(),
   created_at: z.number(),
   visibility: z.enum(['private', 'public']),
+  /** Repo creator (migration 0006) — creators are admins. */
+  created_by: z.string().nullable().optional(),
 });
 export type RepoRecord = z.infer<typeof repoRowSchema>;
 
