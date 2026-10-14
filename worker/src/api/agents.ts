@@ -167,6 +167,38 @@ agentsRoutes.get('/agents/tasks/:id/transcript', async (c) => {
   }
 });
 
+const superfanSchema = z.object({
+  component: z.enum(['commit-path', 'import-pipeline', 'queues', 'refs', 'agents', 'ai']),
+  interval_min: z.number().int().positive().max(1440),
+});
+
+/** Superfans (issue #19): long-lived per-component monitors. */
+agentsRoutes.post('/agents/superfans', async (c) => {
+  try {
+    const user = c.get('user');
+    if (!user) return apiError(c, 401, 'unauthorized', 'session required');
+    const body = await readJsonBody(c);
+    const parsed = superfanSchema.safeParse(body);
+    if (!parsed.success) {
+      return apiError(c, 400, 'invalid_request', 'invalid superfan request');
+    }
+    const stub = c.env.SUPERFAN.get(
+      c.env.SUPERFAN.idFromName(parsed.data.component),
+    ) as unknown as {
+      fetch(request: Request): Promise<Response>;
+    };
+    const res = await stub.fetch(
+      new Request('https://superfan/start', {
+        method: 'POST',
+        body: JSON.stringify(parsed.data),
+      }),
+    );
+    return c.json(await res.json(), 201);
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
 agentsRoutes.post('/agents/tasks/:id/cancel', async (c) => {
   try {
     const row = await q1(

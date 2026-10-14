@@ -10,6 +10,7 @@ export { app };
 // Durable Object classes must be exported from the Worker entry.
 export { RefLockDO, RefLock } from './core/refdo';
 export { YagAgent } from './agents/runtime';
+export { SuperfanDO } from './agents/superfan';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {

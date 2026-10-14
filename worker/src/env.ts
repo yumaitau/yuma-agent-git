@@ -16,6 +16,12 @@ export interface Env {
   REF_LOCK: DurableObjectNamespace;
   /** Agent runtime namespace (issue #17) — one Durable Object per task. */
   AGENT: DurableObjectNamespace;
+  /** Superfan monitors (issue #19) — one Durable Object per component. */
+  SUPERFAN: DurableObjectNamespace;
+  /** Workers AI binding (issue #19) — present in the `prod` env, absent in tests. */
+  AI?: Ai;
+  /** Model id override (default: @cf/meta/llama-3.3-70b-instruct-fp8-fast). */
+  AGENT_MODEL?: string;
   /** GitHub OAuth app credentials (issue #12) — set via secrets/.dev.vars. */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;

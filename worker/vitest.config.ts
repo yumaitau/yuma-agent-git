@@ -25,6 +25,13 @@ export default defineConfig({
         configPath: './wrangler.jsonc',
       },
       miniflare: {
+        // Workers AI has no local simulator — declaring `ai` would force the
+        // plugin into a remote proxy session (needs CLOUDFLARE_API_TOKEN).
+        // Tests inject a scripted chat provider instead (see agents/llm.ts),
+        // so the binding is replaced with a local stub for the test runtime.
+        serviceBindings: {
+          AI: async () => new Response('{}'),
+        },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations({ migrationsDir: 'migrations' }),
           GITHUB_CLIENT_ID: 'test-client-id',

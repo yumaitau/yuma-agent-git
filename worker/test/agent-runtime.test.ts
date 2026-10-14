@@ -113,7 +113,9 @@ describe('agent runtime', () => {
     expect(row).toMatchObject({ status: 'queued', kind: 'freeform', prompt: 'hello' });
 
     // queue dispatch runs the echo loop → landed
-    const { batch, acked } = mockBatch([{ body: { task_id: taskId }, attempts: 1 }]);
+    const { batch, acked } = mockBatch([
+      { body: { task_id: taskId, opts: { mode: 'echo' } }, attempts: 1 },
+    ]);
     await agentJobsQueue(batch, testEnv);
     expect(acked).toEqual([0]);
 
@@ -132,7 +134,7 @@ describe('agent runtime', () => {
     const taskId = (row as { id: string }).id;
 
     const stub = stubFor(taskId);
-    const running = stub.runTask(taskId, { steps: 3, stepDelayMs: 250 });
+    const running = stub.runTask(taskId, { mode: 'echo', steps: 3, stepDelayMs: 250 });
 
     // wait for step 1 to land, then cancel
     for (let i = 0; i < 100; i++) {
@@ -170,7 +172,7 @@ describe('agent runtime', () => {
     await createTaskViaApi('acme/agents');
     const row = await q1(dbEnv, `SELECT * FROM ${T.agentTasks} ORDER BY created_at DESC`);
     const taskId = (row as { id: string }).id;
-    const opts: RunTaskOptions = { steps: 5, failAtStep: 2 };
+    const opts: RunTaskOptions = { mode: 'echo', steps: 5, failAtStep: 2 };
 
     // first delivery: step 1 lands, step 2 throws → retry
     const first = mockBatch([{ body: { task_id: taskId, opts }, attempts: 1 }]);
@@ -199,7 +201,7 @@ describe('agent runtime', () => {
     const task = parseAgentTaskRow(row);
     const stub = stubFor(task.id);
 
-    await stub.runTask(task.id, { steps: 125 }); // 1 note + 2 entries/step
+    await stub.runTask(task.id, { mode: 'echo', steps: 125 }); // 1 note + 2 entries/step
     const state = await stub.getStateSnapshot();
     expect(state.transcript).toHaveLength(200); // ring cap
     expect(state.total).toBe(251); // full stream count
@@ -264,7 +266,7 @@ describe('agent runtime', () => {
   it('task detail returns the row plus the live DO snapshot', async () => {
     const { taskId } = await createTaskViaApi('acme/agents');
     const auth = await loginAs(testEnv, 1, 'ada');
-    await stubFor(taskId).runTask(taskId);
+    await stubFor(taskId).runTask(taskId, { mode: 'echo' });
 
     const res = await makeApp(testEnv)(
       new Request(`https://x/api/v1/agents/tasks/${taskId}`, {

@@ -4,6 +4,7 @@ import { C, T } from '../db/schema';
 import { q1, run } from '../db/client';
 import { getChangeset } from '../core/changesets';
 import { getTree } from '../core/trees';
+import { newBudget } from './budget';
 
 /**
  * Agent runtime (issue #17, architecture §4) — agents that consume and produce
@@ -40,10 +41,18 @@ export interface AgentState {
   /** Entries ever recorded / already streamed to R2. */
   total?: number;
   flushed?: number;
+  /** Terminal summary (AI loop finish). */
+  summary?: string;
 }
 
 export interface RunTaskOptions {
-  /** Echo-loop step count (tests inject; #19 replaces the loop). */
+  /**
+   * Which loop runs: 'ai' (default — the Workers AI think-act-observe cycle,
+   * issue #19) or 'echo' (the deterministic #17 placeholder, used by runtime
+   * lifecycle tests and for AI-less bring-up).
+   */
+  mode?: 'ai' | 'echo';
+  /** Echo-loop step count (tests inject). */
   steps?: number;
   /** Delay between steps — gives cancellation a deterministic window. */
   stepDelayMs?: number;
@@ -141,6 +150,69 @@ export class YagAgent extends Agent<Env, AgentState> {
     await this.ctx.storage.setAlarm(Date.now() + deadlineMs);
     const deadline = Date.now() + deadlineMs;
 
+    if (
+      opts.mode !== 'echo' &&
+      opts.steps === undefined &&
+      opts.failAtStep === undefined
+    ) {
+      // Workers AI think-act-observe loop (issue #19)
+      const { runAgentLoop, onTaskFinished } = await import('./loop');
+      try {
+        const outcome = await runAgentLoop(this.env, {
+          task_id: taskId,
+          repo_id: task.repo_id,
+          prompt: task.prompt,
+          kind: (row as { kind: string }).kind,
+          github_issue: (row as { github_issue?: string | null }).github_issue ?? null,
+          principal: {
+            kind: 'token',
+            userId: (row as { created_by: string }).created_by ?? taskId,
+            tokenId: taskId,
+            scopes: ['repo:read', 'repo:write', 'agent:run'],
+            repoId: task.repo_id,
+          },
+          budget: newBudget({ deadlineMs }),
+          state: () => this.state,
+          setState: (next) => {
+            this.setState(next);
+          },
+          record: (entry) => this.pushTranscript(entry),
+        });
+        this.setState({
+          ...this.state,
+          head_cs: outcome.head_cs,
+          status: outcome.status === 'done' ? 'done' : 'failed',
+          error: outcome.reason,
+          summary: outcome.summary,
+        });
+        await this.transition(outcome.status === 'done' ? 'landed' : 'failed');
+        await this.flushTranscript();
+        await this.ctx.storage.deleteAlarm();
+        await onTaskFinished(
+          this.env,
+          {
+            kind: (row as { kind: string }).kind,
+            github_issue: (row as { github_issue?: string | null }).github_issue ?? null,
+            repo_id: task.repo_id,
+          },
+          outcome,
+        );
+        return this.state;
+      } catch (err) {
+        // infrastructure failure (eviction, gateway): persist + rethrow — the
+        // queue's retry re-enters from this state
+        this.setState({
+          ...this.state,
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await this.transition('failed');
+        await this.flushTranscript();
+        throw err;
+      }
+    }
+
+    // deterministic echo loop (issue #17 placeholder / lifecycle tests)
     const steps = opts.steps ?? 1;
     try {
       for (let step = 0; step < steps; step++) {

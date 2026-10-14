@@ -121,6 +121,8 @@ export const T = {
   installations: 'installations',
   webhookDeliveries: 'webhook_deliveries',
   exportJobs: 'export_jobs',
+  componentMetrics: 'component_metrics',
+  superfanFindings: 'superfan_findings',
 } as const;
 
 /** Column names, per table. */
@@ -186,6 +188,7 @@ export const C = {
   },
   agentTasks: {
     id: 'id',
+    githubIssue: 'github_issue',
     repoId: 'repo_id',
     kind: 'kind',
     prompt: 'prompt',
@@ -220,6 +223,18 @@ export const C = {
     status: 'status',
     createdAt: 'created_at',
     updatedAt: 'updated_at',
+  },
+  componentMetrics: {
+    component: 'component',
+    ts: 'ts',
+    json: 'json',
+  },
+  superfanFindings: {
+    id: 'id',
+    component: 'component',
+    ts: 'ts',
+    finding: 'finding',
+    taskId: 'task_id',
   },
   oauthStates: {
     stateHash: 'state_hash',

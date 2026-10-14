@@ -41,6 +41,17 @@
       },
     ],
   },
+  // Workers AI has no local simulator — declaring `ai` at the top level makes
+  // the vitest plugin proxy it to Cloudflare (tests would need an API token).
+  // Production deploys enable it with `wrangler deploy --env prod` (the env
+  // block below); the gateway fails gracefully without the binding.
+  "env": {
+    "prod": {
+      "ai": {
+        "binding": "AI",
+      },
+    },
+  },
   "durable_objects": {
     "bindings": [
       {
@@ -50,6 +61,10 @@
       {
         "name": "AGENT",
         "class_name": "YagAgent",
+      },
+      {
+        "name": "SUPERFAN",
+        "class_name": "SuperfanDO",
       },
     ],
   },
@@ -61,6 +76,10 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["YagAgent"],
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["SuperfanDO"],
     },
   ],
 }
