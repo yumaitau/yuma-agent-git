@@ -1,12 +1,16 @@
 import type { Env } from '../env';
-import { C, T } from '../db/schema';
-import { q1, run } from '../db/client';
+import {
+  SKIP_LIST,
+  computeSkipListEntry,
+  getDerived,
+  type SkipListEntry,
+} from './derived';
 import { getChangeset, type Changeset } from './changesets';
 import { canonicalJson, sha256Hex } from './hashing';
 
 /**
- * Ancestry via skip-list derived data (architecture §1.5) — O(log n) instead
- * of linear log reads.
+ * Ancestry queries over skip-list derived data (architecture §1.5) — O(log n)
+ * instead of linear log reads.
  *
  * **Semantics: first-parent reachability** (Scion footnote 1 — mainline
  * history is what blame and merge semantics care about). Merge commits are
@@ -14,211 +18,29 @@ import { canonicalJson, sha256Hex } from './hashing';
  * reachability (ref fast-forward checks, where a merge is a descendant of
  * *both* parents in git semantics) use `isAncestorDag` below.
  *
- * skip_list payload for changeset C (derived_data kind `skip_list`):
- * ```json
- * { "depth": 17, "levels": 5, "pointers": [["p0"], ["p1"], …] }
- * ```
- * `depth` = distance from the root along the spine (root = 0);
- * `pointers[k]` = the 2^k-th first-parent ancestor id, when present.
+ * The skip_list kind itself (payload, computation, storage) is owned by the
+ * generic derived-data framework (`core/derived.ts`, issue #9).
  */
 
-export interface SkipListEntry {
-  depth: number;
-  levels: number;
-  pointers: string[][];
-}
+export type { SkipListEntry };
 
-const KIND = 'skip_list';
-const MAX_LEVELS = 20;
-
-const skipListEntrySchemaLike = (payload: unknown): SkipListEntry | null => {
-  const parsed = payload as Partial<SkipListEntry>;
-  if (
-    parsed &&
-    typeof parsed.depth === 'number' &&
-    typeof parsed.levels === 'number' &&
-    Array.isArray(parsed.pointers)
-  ) {
-    return {
-      depth: parsed.depth,
-      levels: parsed.levels,
-      pointers: parsed.pointers.map((p) => (Array.isArray(p) ? p.map(String) : [])),
-    };
-  }
-  return null;
-};
-
-// ---------------------------------------------------------------------------
-// derived_data storage for this kind (refactored into the generic framework
-// in issue #9 — kept minimal here)
-// ---------------------------------------------------------------------------
-
-async function readEntry(
+/** Compute + store the skip-list entry for `cs` (self-healing for ancestors). */
+export function computeSkipList(
   env: Env,
   repoId: string,
-  csId: string,
-): Promise<SkipListEntry | null> {
-  const row = await q1(
-    env,
-    `SELECT ${C.derivedData.payload} FROM ${T.derivedData}
-      WHERE ${C.derivedData.repoId} = ? AND ${C.derivedData.kind} = ? AND ${C.derivedData.csId} = ?`,
-    [repoId, KIND, csId],
-  );
-  if (!row) return null;
-  const payload = (row as Record<string, unknown>)[C.derivedData.payload];
-  try {
-    return skipListEntrySchemaLike(JSON.parse(String(payload)));
-  } catch {
-    return null;
-  }
+  cs: Changeset,
+): Promise<SkipListEntry> {
+  return computeSkipListEntry(env, repoId, cs);
 }
 
-async function writeEntry(
-  env: Env,
-  repoId: string,
-  csId: string,
-  entry: SkipListEntry,
-): Promise<void> {
-  await run(
-    env,
-    `INSERT INTO ${T.derivedData}
-       (${C.derivedData.repoId}, ${C.derivedData.kind}, ${C.derivedData.csId},
-        ${C.derivedData.payload}, ${C.derivedData.computedAt})
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (${C.derivedData.repoId}, ${C.derivedData.kind}, ${C.derivedData.csId})
-     DO NOTHING`,
-    [repoId, KIND, csId, JSON.stringify(entry), Date.now()],
-  );
-}
-
-/**
- * Read a changeset's skip-list entry, computing (and storing) it on demand —
- * self-healing for chains created before the framework existed.
- */
+/** Entry for a changeset, computed and stored on demand. */
 export async function getSkipListEntry(
   env: Env,
   repoId: string,
   csId: string,
 ): Promise<SkipListEntry | null> {
-  const existing = await readEntry(env, repoId, csId);
-  if (existing) return existing;
-  const cs = await getChangeset(env, repoId, csId);
-  if (!cs) return null;
-  return computeSkipList(env, repoId, cs);
+  return getDerived<SkipListEntry>(env, repoId, SKIP_LIST, csId);
 }
-
-/**
- * Compute (recursively-but-iteratively) and store the entry for `cs`.
- *
- * Walks the first-parent spine until it finds a changeset with a stored entry
- * (or the root), then computes forward — memoized within the call. Cheap for
- * the eager commit hook: normally the parent's entry already exists, so this
- * is one parent read + one write.
- */
-export async function computeSkipList(
-  env: Env,
-  repoId: string,
-  cs: Changeset,
-): Promise<SkipListEntry> {
-  // Collect the tip→oldest chain of changesets missing entries.
-  const chain: Changeset[] = [];
-  let cursor: Changeset | null = cs;
-  let ancestorEntry: SkipListEntry | null = null;
-  while (cursor !== null) {
-    const stored = await readEntry(env, repoId, cursor.id);
-    if (stored !== null) {
-      ancestorEntry = stored;
-      break;
-    }
-    chain.push(cursor);
-    cursor =
-      cursor.first_parent === null
-        ? null
-        : await getChangeset(env, repoId, cursor.first_parent);
-  }
-  if (chain.length === 0) {
-    // cs itself already had an entry
-    return ancestorEntry as SkipListEntry;
-  }
-
-  // ancestorEntry (when present) is the entry of chain[last]'s first parent.
-  const byId = new Map<string, SkipListEntry>();
-  if (ancestorEntry !== null) {
-    const oldest = chain[chain.length - 1] as Changeset;
-    byId.set(oldest.first_parent as string, ancestorEntry);
-  }
-
-  let result: SkipListEntry | null = null;
-  for (let i = chain.length - 1; i >= 0; i--) {
-    const node = chain[i] as Changeset;
-    const parentEntry =
-      node.first_parent === null ? null : (byId.get(node.first_parent) ?? null);
-    const entry = await computeEntry(env, repoId, node, parentEntry, byId);
-    byId.set(node.id, entry);
-    await writeEntry(env, repoId, node.id, entry);
-    result = entry;
-  }
-  return result as SkipListEntry;
-}
-
-/**
- * Entry of an ancestor, memoized: in-call map → derived_data → self-healing
- * compute. Needed because `pointers[k] = entry(pointers[k-1]).pointers[k-1]`
- * reads the entries of ancestors at powers-of-two distances, not just the
- * direct parent — without this the incremental path produces truncated
- * pointer levels (a determinism bug found in review testing).
- */
-async function entryOf(
-  env: Env,
-  repoId: string,
-  byId: Map<string, SkipListEntry>,
-  id: string,
-  guard = { depth: 0 },
-): Promise<SkipListEntry | null> {
-  const local = byId.get(id);
-  if (local) return local;
-  const stored = await readEntry(env, repoId, id);
-  if (stored) {
-    byId.set(id, stored);
-    return stored;
-  }
-  if (guard.depth > 20) return null;
-  const cs = await getChangeset(env, repoId, id);
-  if (!cs) return null;
-  guard.depth++;
-  const computed = await computeSkipList(env, repoId, cs);
-  guard.depth--;
-  byId.set(id, computed);
-  return computed;
-}
-
-async function computeEntry(
-  env: Env,
-  repoId: string,
-  cs: Changeset,
-  parentEntry: SkipListEntry | null,
-  byId: Map<string, SkipListEntry>,
-): Promise<SkipListEntry> {
-  if (parentEntry === null || cs.first_parent === null) {
-    return { depth: 0, levels: 0, pointers: [] };
-  }
-  const pointers: string[][] = [[cs.first_parent]];
-  for (let k = 1; k < MAX_LEVELS; k++) {
-    const prevAncestor = (pointers[k - 1] as string[])[0];
-    if (prevAncestor === undefined) break;
-    const prevEntry = await entryOf(env, repoId, byId, prevAncestor);
-    const jump = prevEntry?.pointers[k - 1]?.[0];
-    if (jump === undefined) break;
-    pointers.push([jump]);
-  }
-  const depth = parentEntry.depth + 1;
-  const levels = Math.min(Math.floor(Math.log2(depth)) + 1, MAX_LEVELS);
-  return { depth, levels, pointers };
-}
-
-// ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
 
 /**
  * `a` is an ancestor of `b` along the first-parent spine (inclusive of `a ===
@@ -358,7 +180,7 @@ export async function ancestorDistance(
  * merge's second parent — a real bug found in adversarial review), so this
  * uses the skip list as a fast path and a bounded all-parent BFS as the
  * general case. Ref moves are rare (refs are discouraged), so the walk is
- * acceptable; issue #8's skip lists keep the common case O(log n).
+ * acceptable; the skip list keeps the common case O(log n).
  */
 export async function isAncestorDag(
   env: Env,

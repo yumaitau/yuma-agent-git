@@ -11,7 +11,7 @@ import {
   type ChangesetFields,
 } from './changesets';
 import { PayloadTooLargeError, RequestValidationError } from './errors';
-import { computeSkipList } from './ancestry';
+import { computeEager } from './derived';
 import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
@@ -205,17 +205,16 @@ export async function commitChanges(
 }
 
 /**
- * Eager derived data, computed inside the commit path: the `skip_list`
- * (issue #8) is cheap — one parent read + one write. The generic framework
- * (issue #9) wraps this hook and adds the remaining eager kinds.
+ * Eager derived data, computed inside the commit path via the generic
+ * framework (issue #9): `skip_list` (issue #8) + `changed_paths`, rows written
+ * in one D1 batch. Deferred kinds compute cache-aside or via the queue.
  */
 export async function onChangesetCreated(
   env: Env,
   repoId: string,
   cs: Changeset,
 ): Promise<void> {
-  await computeSkipList(env, repoId, cs);
-  // TODO(issue #9): computeEager(env, repoId, cs) for the other kinds
+  await computeEager(env, repoId, cs);
 }
 
 // ---------------------------------------------------------------------------
