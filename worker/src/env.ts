@@ -12,4 +12,6 @@ export interface Env {
   AGENT_QUEUE: Queue;
   /** Queue `git-import` — git import / incremental sync jobs. */
   IMPORT_QUEUE: Queue;
+  /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */
+  REF_LOCK: DurableObjectNamespace;
 }

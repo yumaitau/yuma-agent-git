@@ -34,4 +34,18 @@
       },
     ],
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REF_LOCK",
+        "class_name": "RefLockDO",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["RefLockDO"],
+    },
+  ],
 }
