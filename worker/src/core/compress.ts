@@ -75,3 +75,8 @@ export function compressBytes(data: Uint8Array, codec: Codec): Promise<Uint8Arra
 export function decompressBytes(data: Uint8Array, codec: Codec): Promise<Uint8Array> {
   return pump(data, new DecompressionCtor(codec));
 }
+
+/** A streaming decompressor for large raw reads (no full buffering). */
+export function decompressStream(codec: Codec): ByteTransform {
+  return new DecompressionCtor(codec);
+}

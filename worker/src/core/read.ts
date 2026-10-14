@@ -1,5 +1,6 @@
 import type { Env } from '../env';
 import { getChangeset, type Changeset } from './changesets';
+import { NotFoundError } from './errors';
 import { getRef } from '../db/repos';
 
 const CS_ID_RE = /^[0-9a-f]{64}$/;
@@ -43,4 +44,90 @@ export async function lookupRevId(
 ): Promise<string | null> {
   const cs = await lookupRev(env, repoId, rev);
   return cs ? cs.id : null;
+}
+
+/** `resolveRevision` — 404 `revision_not_found` when unresolvable. */
+export async function resolveRevision(
+  env: Env,
+  repoId: string,
+  rev: string,
+): Promise<Changeset> {
+  const cs = await lookupRev(env, repoId, rev);
+  if (!cs) {
+    throw new NotFoundError('revision_not_found', `no revision ${rev}`, { rev });
+  }
+  return cs;
+}
+
+// ---------------------------------------------------------------------------
+// Content types for `?format=raw`
+// ---------------------------------------------------------------------------
+
+const CONTENT_TYPES: Record<string, string> = {
+  txt: 'text/plain; charset=utf-8',
+  md: 'text/markdown; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  cjs: 'text/javascript; charset=utf-8',
+  jsx: 'text/javascript; charset=utf-8',
+  ts: 'text/typescript; charset=utf-8',
+  mts: 'text/typescript; charset=utf-8',
+  tsx: 'text/typescript; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  html: 'text/html; charset=utf-8',
+  xml: 'application/xml; charset=utf-8',
+  yaml: 'application/yaml; charset=utf-8',
+  yml: 'application/yaml; charset=utf-8',
+  toml: 'application/toml; charset=utf-8',
+  csv: 'text/csv; charset=utf-8',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  wasm: 'application/wasm',
+};
+
+export function contentTypeFor(path: string): string {
+  const dot = path.lastIndexOf('.');
+  if (dot < 0) return 'application/octet-stream';
+  return CONTENT_TYPES[path.slice(dot + 1).toLowerCase()] ?? 'application/octet-stream';
+}
+
+// ---------------------------------------------------------------------------
+// Path history (provisional)
+// ---------------------------------------------------------------------------
+
+/**
+ * Commits touching `path` (exact match or under the directory), newest first.
+ *
+ * PROVISIONAL (`X-YAG-Provisional: path-history`): walks first-parent history
+ * with a hard cap of 500 hops. Issue #10 serves this from the `path_history`
+ * derived-data kind and deletes this walk.
+ */
+export async function provisionalPathHistory(
+  env: Env,
+  repoId: string,
+  head: string,
+  path: string,
+  limit: number,
+): Promise<Changeset[]> {
+  const normalized = path.replace(/\/+$/, '');
+  const out: Changeset[] = [];
+  let cursor: string | null = head;
+  let hops = 0;
+  while (cursor !== null && out.length < limit && hops < 500) {
+    const cs: Changeset | null = await getChangeset(env, repoId, cursor);
+    if (cs === null) break;
+    const touched = cs.changed_files.some(
+      (f) => f.path === normalized || f.path.startsWith(`${normalized}/`),
+    );
+    if (touched) out.push(cs);
+    cursor = cs.first_parent;
+    hops++;
+  }
+  return out;
 }
