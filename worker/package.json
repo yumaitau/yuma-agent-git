@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit",
     "lint": "eslint src test dashboard",
     "build": "vite build && node ../scripts/check-bundle-size.mjs && node ../scripts/check-dashboard-startup.mjs",
-    "build:dashboard": "npm run build"
+    "build:dashboard": "npm run build",
+    "docs:api": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-api-docs.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "latest",

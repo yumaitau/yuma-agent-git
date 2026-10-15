@@ -39,6 +39,17 @@ jobs:
       - name: Dashboard tests
         run: npm run test:ui -w worker
 
+      - name: API reference matches router
+        run: |
+          npm run docs:api -w worker
+          git diff --exit-code docs/api.md
+
+      - name: Commit-graph fuzzer (5 seeds)
+        working-directory: worker
+        run: npx vitest run test/fuzz
+        env:
+          VITE_FUZZ_SEED: '1,2,3,4,5'
+
       - name: Deploy dry-run
         run: npx wrangler deploy --dry-run --env prod --outdir dist -c worker/wrangler.jsonc
 
