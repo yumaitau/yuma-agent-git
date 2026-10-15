@@ -396,6 +396,9 @@ const okSchema = z.object({ ok: z.literal(true) });
 // ---------------------------------------------------------------------------
 
 export const api = {
+  async authStatus(): Promise<{ github_configured: boolean }> {
+    return requestJson('/auth/status', {}, z.object({ github_configured: z.boolean() }));
+  },
   /** Session probe — true when the cookie yields a principal. */
   async checkSession(): Promise<boolean> {
     const res = await apiFetch('/api/v1/tokens');

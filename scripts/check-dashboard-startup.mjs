@@ -31,6 +31,7 @@ for (const route of ['/', '/login']) {
     dom.window.fetch = async (input) => {
       const path = new URL(input, dom.window.location.href).pathname;
       if (path === '/api/v1/tokens') return Response.json({}, { status: 401 });
+      if (path === '/auth/status') return Response.json({ github_configured: false });
       assert.equal(path, '/api/v1/repos', `Unexpected request: ${path}`);
       return Response.json({ repos: [], next_cursor: null });
     };
@@ -58,7 +59,17 @@ for (const route of ['/', '/login']) {
       dom.window.document.querySelector('main h1')?.textContent,
       route === '/login' ? 'Sign in' : 'Repositories',
     );
-    assert.ok(dom.window.document.querySelector('a[href="/auth/github"]'));
+    assert.ok(dom.window.document.querySelector('a[href="/login"]'));
+    if (route === '/login') {
+      while (
+        !dom.window.document.querySelector('[role="alert"]') &&
+        Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.match(dom.window.document.body.textContent, /Sign-in setup is incomplete/);
+      assert.equal(dom.window.document.querySelector('a[href="/auth/github"]'), null);
+    }
   } finally {
     dom.window.close();
   }

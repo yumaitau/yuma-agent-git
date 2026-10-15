@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, GITHUB_LOGIN_URL } from './api';
+import { api } from './api';
 import type { Repo } from './api';
 import { Field } from './ui';
 
@@ -172,9 +172,9 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
         {authed ? (
           <button onClick={() => void signOut()}>Sign out</button>
         ) : (
-          <a className="btn" href={GITHUB_LOGIN_URL}>
+          <Link className="btn" to="/login">
             Sign in
-          </a>
+          </Link>
         )}
       </header>
       <main className="main">{children}</main>

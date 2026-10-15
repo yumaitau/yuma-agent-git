@@ -41,6 +41,11 @@ function requireGithubEnv(env: Env): { clientId: string; clientSecret: string } 
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
+authRoutes.get('/auth/status', (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json({ github_configured: requireGithubEnv(c.env) !== null });
+});
+
 authRoutes.get('/auth/github', async (c) => {
   try {
     const creds = requireGithubEnv(c.env);

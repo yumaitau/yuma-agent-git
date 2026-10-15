@@ -73,6 +73,19 @@ describe('oauth login', () => {
     await cleanDb(testEnv);
   });
 
+  it('reports login availability without exposing credentials or caching the result', async () => {
+    const configured = await app('/auth/status');
+    expect(configured.status).toBe(200);
+    expect(configured.headers.get('cache-control')).toBe('no-store');
+    expect(await configured.json()).toEqual({ github_configured: true });
+    for (const missing of ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
+      const response = await makeApp({ ...dbEnv, [missing]: undefined })(
+        new Request('https://x/auth/status'),
+      );
+      expect(await response.json()).toEqual({ github_configured: false });
+    }
+  });
+
   it('GET /auth/github redirects with a single-use hashed state', async () => {
     const res = await app('/auth/github');
     expect(res.status).toBe(302);

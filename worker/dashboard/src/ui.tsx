@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError, authorName } from './api';
 import type { Author } from './api';
 
@@ -61,6 +62,15 @@ export function Empty({ children }: { children: ReactNode }): ReactElement {
  * the server named one (the monorepo permission story, front and center).
  */
 export function ErrorNotice({ error }: { error: ApiError }): ReactElement {
+  if (error.status === 404 && error.code === 'repo_not_found') {
+    return (
+      <div className="notice warn" role="alert">
+        <strong>Repository unavailable</strong>
+        <p>This repository may be private, missing, or unavailable to your account.</p>
+        <Link to="/login">Sign in with an account that has access</Link>
+      </div>
+    );
+  }
   const denied = error.deniedBy;
   return (
     <div className="notice error" role="alert">
