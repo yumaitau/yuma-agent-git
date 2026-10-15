@@ -53,6 +53,60 @@ program
   });
 
 program
+  .command('clone')
+  .argument('<repo>', 'repository slug (owner/name)')
+  .argument('<dir>', 'new working directory')
+  .requiredOption('--api <url>', 'server URL')
+  .option('--rev <rev>', 'revision to check out', 'ref:main')
+  .action(async (repo: string, dir: string, opts: { api: string; rev: string }) => {
+    const { mkdir, readdir } = await import('node:fs/promises');
+    await mkdir(dir, { recursive: true });
+    if ((await readdir(dir)).length) throw new Error('Clone destination must be empty');
+    await saveConfig(dir, { api: opts.api, repo });
+    const { api, cache } = await client(dir);
+    const result = await checkout({ api, cache, dir, rev: opts.rev, prefixes: [] });
+    console.log(
+      `Checked out ${result.files.length} files into ${dir}. Run yag status to get started.`,
+    );
+  });
+
+program
+  .command('pr')
+  .description('Open a pull request from the checked-out changeset')
+  .requiredOption('-t, --title <title>', 'pull request title')
+  .option('--body <body>', 'description', '')
+  .option('--draft', 'start as a draft', false)
+  .action(async (opts: { title: string; body: string; draft: boolean }) => {
+    const { loadState } = await import('./config.js');
+    const { api } = await client();
+    const state = await loadState(process.cwd());
+    const result = await api.createPull({ ...opts, head_cs: state.cs });
+    const config = await loadConfig(process.cwd());
+    console.log(
+      `${config.api.replace(/\/$/, '')}/r/${config.repo}/pulls/${result.pull.id}`,
+    );
+  });
+const ci = program.command('ci').description('Run checks and inspect Cloudflare CI');
+ci.command('run')
+  .option('--publish', 'build and publish a default-branch image (admin only)', false)
+  .action(async (opts: { publish: boolean }) => {
+    const { loadState } = await import('./config.js');
+    const { api } = await client();
+    const state = await loadState(process.cwd());
+    const result = await api.runCI(state.cs, opts.publish);
+    console.log(`${result.run.id} ${result.run.state}`);
+  });
+ci.command('status').action(async () => {
+  const { api } = await client();
+  const status = await api.ciStatus();
+  console.log(
+    status.enabled ? 'Cloudflare CI enabled' : 'Cloudflare runner deployment pending',
+  );
+  for (const job of status.runs)
+    console.log(`${job.id} ${job.head_cs.slice(0, 8)} ${job.state}`);
+});
+
+program
   .command('checkout')
   .argument('<rev>', 'revision: changeset id, ref:main, or a ref name')
   .option('--path <prefix...>', 'sparse prefixes (default: everything)')

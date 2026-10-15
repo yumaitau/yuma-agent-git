@@ -151,6 +151,29 @@ export class YagApi {
     return (await res.json()) as T;
   }
 
+  async createPull(input: {
+    title: string;
+    body: string;
+    head_cs: string;
+    draft: boolean;
+  }): Promise<{ pull: { id: number } }> {
+    return this.json('/pulls', { method: 'POST', body: JSON.stringify(input) });
+  }
+  async runCI(
+    head?: string,
+    publish = false,
+  ): Promise<{ run: { id: string; state: string } }> {
+    return this.json('/ci/runs', {
+      method: 'POST',
+      body: JSON.stringify({ head, publish }),
+    });
+  }
+  async ciStatus(): Promise<{
+    enabled: boolean;
+    runs: { id: string; head_cs: string; state: string }[];
+  }> {
+    return this.json('/ci');
+  }
   async checkoutInfo(cs: string): Promise<z.infer<typeof checkoutInfoSchema>> {
     return checkoutInfoSchema.parse(
       await this.json(`/checkout-info?cs=${encodeURIComponent(cs)}`),

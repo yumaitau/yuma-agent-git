@@ -1,3 +1,4 @@
+import { RepoNav } from './Collaboration';
 import { useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router-dom';
@@ -114,6 +115,7 @@ export function RepoOverviewView(): ReactElement {
 
   return (
     <div>
+      <RepoNav active="Code" />
       <div className="row between">
         <h1 style={{ margin: 0 }} className="mono">
           {slug}

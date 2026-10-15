@@ -85,20 +85,33 @@ changesetsRoutes.get('/repos/:repo{.+}/changesets', async (c) => {
     const loaded = await loadReadable(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
 
-    const headParam = c.req.query('head') ?? 'ref:main';
+    const headParam =
+      c.req.query('cursor') ?? c.req.query('head') ?? `ref:${loaded.repo.default_branch}`;
     const limit = intParam(c.req.query('limit'), 50, 200);
 
     const head = await lookupRev(c.env, loaded.repo.id, headParam);
     if (!head) {
       // Default head on an empty repo: empty history. Explicit rev: 404.
-      if (c.req.query('head') === undefined) {
+      if (c.req.query('head') === undefined && c.req.query('cursor') === undefined) {
         return c.json({ changesets: [] }, 200, { 'cache-control': NO_STORE });
       }
       return apiError(c, 404, 'revision_not_found', `no revision ${headParam}`);
     }
 
-    const changesets = await firstParentHistory(c.env, loaded.repo.id, head.id, limit);
-    return c.json({ changesets }, 200, { 'cache-control': NO_STORE });
+    const changesets = await firstParentHistory(
+      c.env,
+      loaded.repo.id,
+      head.id,
+      limit + 1,
+    );
+    return c.json(
+      {
+        changesets: changesets.slice(0, limit),
+        next_cursor: changesets.length > limit ? changesets[limit].id : null,
+      },
+      200,
+      { 'cache-control': NO_STORE },
+    );
   } catch (err) {
     return errorResponse(c, err);
   }

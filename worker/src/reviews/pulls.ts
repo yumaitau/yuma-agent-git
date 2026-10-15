@@ -1,0 +1,227 @@
+import type { Env } from '../env';
+import { q, q1, run } from '../db/client';
+import { can } from '../auth/rbac';
+import { getRepo } from '../db/repos';
+import { getRef } from '../db/repos';
+import { getChangeset } from '../core/changesets';
+import { isAncestorDag } from '../core/ancestry';
+import { ApiError } from '../core/errors';
+import { settings } from '../ci/config';
+
+import type { Pull, Review } from '../../shared/collaboration';
+export type { Pull, Review } from '../../shared/collaboration';
+export async function getPull(env: Env, repoId: string, id: number): Promise<Pull> {
+  const pull = await q1<Pull>(
+    env,
+    'SELECT * FROM pull_requests WHERE repo_id = ? AND id = ?',
+    [repoId, id],
+  );
+  if (!pull) throw new ApiError(404, 'pull_not_found', 'Pull request not found');
+  return pull;
+}
+export async function pullGate(
+  env: Env,
+  pull: Pull,
+): Promise<{ mergeable: boolean; reasons: string[] }> {
+  const reasons: string[] = [];
+  if (pull.state !== 'open') reasons.push('Open this pull request before merging.');
+  const ref = await getRef(env, pull.repo_id, pull.base_ref);
+  if (ref?.head !== pull.base_cs)
+    reasons.push('The target branch moved. Rebase and update the pull request.');
+  const config = await settings(env, pull.repo_id);
+  const required = config?.policy.required_approvals ?? 1;
+  const reviews = await q<Review>(
+    env,
+    `SELECT * FROM pull_reviews WHERE pull_id = ? AND head_cs = ?
+    AND revision = ? AND decision != 'comment' ORDER BY id DESC`,
+    [pull.id, pull.head_cs, pull.revision],
+  );
+  const latest = new Map<string, Review>();
+  const repo = await getRepo(env, pull.repo_id);
+  for (const review of reviews) {
+    if (latest.has(review.author_id) || review.author_id === pull.author_id || !repo)
+      continue;
+    if (await can(env, repo, { kind: 'user', userId: review.author_id }, 'write'))
+      latest.set(review.author_id, review);
+  }
+  if ([...latest.values()].some((r) => r.decision === 'request_changes'))
+    reasons.push('A reviewer requested changes.');
+  if ([...latest.values()].filter((r) => r.decision === 'approve').length < required)
+    reasons.push(
+      `${required} approval${required === 1 ? '' : 's'} required for this revision.`,
+    );
+  if (config?.policy.require_checks) {
+    const check = await q1<{ state: string }>(
+      env,
+      `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
+      ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      [pull.repo_id, pull.head_cs, config.version],
+    );
+    if (check?.state !== 'passed')
+      reasons.push('The latest CI run must pass for this revision and current pipeline.');
+  }
+  return { mergeable: reasons.length === 0, reasons };
+}
+
+/** Invoked inside the target ref's DO gate, shared with ordinary ref moves. */
+export async function mergePullLocked(
+  env: Env,
+  repoId: string,
+  id: number,
+  expectedHead: string,
+): Promise<Pull> {
+  const pull = await getPull(env, repoId, id);
+  if (pull.head_cs !== expectedHead)
+    throw new ApiError(
+      409,
+      'pull_stale',
+      'Pull request revision changed. Refresh before merging.',
+    );
+  const gate = await pullGate(env, pull);
+  if (!gate.mergeable) throw new ApiError(409, 'merge_blocked', gate.reasons.join(' '));
+  if (
+    !(await getChangeset(env, repoId, pull.head_cs)) ||
+    !(await isAncestorDag(env, repoId, pull.base_cs, pull.head_cs))
+  ) {
+    throw new ApiError(
+      409,
+      'rebase_required',
+      'Rebase the proposed changes onto the target revision before merging.',
+    );
+  }
+  // API mutations for this pull also use this ref DO, so the gate cannot race a new review/head.
+  const config = await settings(env, repoId);
+  const updated = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed')`,
+    ).bind(
+      pull.head_cs,
+      Date.now(),
+      repoId,
+      pull.base_ref,
+      pull.base_cs,
+      config?.policy.require_checks ? 1 : 0,
+      repoId,
+      pull.head_cs,
+      config?.version ?? 0,
+    ),
+    env.DB.prepare(
+      "UPDATE pull_requests SET state = 'merged', merged_at = ?, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM refs WHERE repo_id = ? AND name = ? AND head = ?)",
+    ).bind(Date.now(), Date.now(), id, repoId, pull.base_ref, pull.head_cs),
+  ]);
+  if (!updated[0].meta.changes)
+    throw new ApiError(
+      409,
+      'merge_blocked',
+      'Checks or the target branch changed. Refresh before merging.',
+    );
+  return getPull(env, repoId, id);
+}
+
+/** Private DO operation. Public routes resolve RBAC before forwarding. */
+export async function mutatePullLocked(
+  env: Env,
+  action: string,
+  input: unknown,
+): Promise<unknown> {
+  const args = input as {
+    repo_id: string;
+    id: number;
+    actor: string;
+    body: Record<string, unknown>;
+  };
+  if (
+    !args ||
+    typeof args.repo_id !== 'string' ||
+    !Number.isSafeInteger(args.id) ||
+    typeof args.actor !== 'string' ||
+    !args.body ||
+    typeof args.body !== 'object'
+  ) {
+    throw new ApiError(400, 'invalid_request', 'Invalid pull request operation');
+  }
+  const pull = await getPull(env, args.repo_id, args.id);
+  const body = args.body;
+  if (action === 'merge') {
+    if (typeof body.head_cs !== 'string')
+      throw new ApiError(400, 'invalid_request', 'Expected head_cs is required');
+    if (body.revision !== pull.revision)
+      throw new ApiError(
+        409,
+        'pull_stale',
+        'Pull request revision changed. Refresh before merging.',
+      );
+    return { pull: await mergePullLocked(env, args.repo_id, args.id, body.head_cs) };
+  }
+  if (pull.state === 'merged' || pull.state === 'closed')
+    throw new ApiError(409, 'pull_closed', 'This pull request is closed.');
+  if (action === 'review') {
+    if (body.head_cs !== pull.head_cs || body.revision !== pull.revision)
+      throw new ApiError(
+        409,
+        'pull_stale',
+        'Review the current revision before submitting.',
+      );
+    if (
+      !['comment', 'approve', 'request_changes'].includes(String(body.decision)) ||
+      typeof body.body !== 'string' ||
+      body.body.length > 20000
+    )
+      throw new ApiError(400, 'invalid_review', 'Invalid review');
+    if (body.decision !== 'comment' && args.actor === pull.author_id)
+      throw new ApiError(
+        403,
+        'self_review',
+        'Authors cannot approve or block their own pull requests.',
+      );
+    await run(
+      env,
+      'INSERT INTO pull_reviews (pull_id,author_id,head_cs,decision,body,created_at,revision) VALUES (?,?,?,?,?,?,?)',
+      [
+        pull.id,
+        args.actor,
+        pull.head_cs,
+        body.decision,
+        body.body,
+        Date.now(),
+        pull.revision,
+      ],
+    );
+    return { ok: true };
+  }
+  if (action === 'update') {
+    const head = typeof body.head_cs === 'string' ? body.head_cs : pull.head_cs;
+    if (!(await getChangeset(env, pull.repo_id, head)))
+      throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
+    const ref = await getRef(env, pull.repo_id, pull.base_ref);
+    const state = body.state ?? pull.state;
+    if (!['draft', 'open', 'closed'].includes(String(state)))
+      throw new ApiError(400, 'invalid_state', 'Choose draft, open, or closed');
+    const title = body.title ?? pull.title;
+    const description = body.body ?? pull.body;
+    if (
+      typeof title !== 'string' ||
+      title.trim().length < 1 ||
+      title.length > 200 ||
+      typeof description !== 'string' ||
+      description.length > 20000
+    )
+      throw new ApiError(400, 'invalid_request', 'Invalid title or description');
+    const base = body.head_cs ? (ref?.head ?? pull.base_cs) : pull.base_cs;
+    if (head === base)
+      throw new ApiError(
+        409,
+        'no_changes',
+        'Choose a proposed revision different from the target branch.',
+      );
+    const revision =
+      pull.revision + (head !== pull.head_cs || base !== pull.base_cs ? 1 : 0);
+    await run(
+      env,
+      'UPDATE pull_requests SET title=?, body=?, head_cs=?, base_cs=?, state=?, updated_at=?, revision=? WHERE id=?',
+      [title.trim(), description, head, base, state, Date.now(), revision, pull.id],
+    );
+    return { pull: await getPull(env, pull.repo_id, pull.id) };
+  }
+  throw new ApiError(404, 'not_found', 'Unknown pull request operation');
+}

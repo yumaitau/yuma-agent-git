@@ -33,6 +33,7 @@
   ],
   "queues": {
     "producers": [
+      { "binding": "CI_QUEUE", "queue": "ci-runs" },
       {
         "binding": "DERIVED_QUEUE",
         "queue": "derived-data",
@@ -47,6 +48,7 @@
       },
     ],
     "consumers": [
+      { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 0 },
       {
         "queue": "derived-data",
         "max_batch_size": 10,
@@ -58,8 +60,18 @@
   // the vitest plugin proxy it to Cloudflare (tests would need an API token).
   // Production deploys enable it with `wrangler deploy --env prod` (the env
   // block below); the gateway fails gracefully without the binding.
+  "vars": { "CI_ENABLED": "false", "CI_MONTHLY_BUDGET_USD": "5" },
   "env": {
     "prod": {
+      "vars": { "CI_ENABLED": "false", "CI_MONTHLY_BUDGET_USD": "5" },
+      "containers": [
+        {
+          "class_name": "CiRunnerDO",
+          "scheduling_policy": "durable_object",
+          "images": { "ci": { "dockerfile": "./runner/Dockerfile" } },
+          "observability": { "enabled": false },
+        },
+      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -70,6 +82,7 @@
       "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yag-objects" }],
       "durable_objects": {
         "bindings": [
+          { "name": "CI_RUNNER", "class_name": "CiRunnerDO" },
           { "name": "REF_LOCK", "class_name": "RefLockDO" },
           { "name": "AGENT", "class_name": "YagAgent" },
           { "name": "SUPERFAN", "class_name": "SuperfanDO" },
@@ -78,11 +91,18 @@
       },
       "queues": {
         "producers": [
+          { "binding": "CI_QUEUE", "queue": "ci-runs" },
           { "binding": "DERIVED_QUEUE", "queue": "derived-data" },
           { "binding": "AGENT_QUEUE", "queue": "agent-jobs" },
           { "binding": "IMPORT_QUEUE", "queue": "git-import" },
         ],
         "consumers": [
+          {
+            "queue": "ci-runs",
+            "max_batch_size": 1,
+            "max_concurrency": 1,
+            "max_retries": 0,
+          },
           { "queue": "derived-data", "max_batch_size": 10, "max_retries": 3 },
           { "queue": "agent-jobs", "max_batch_size": 5, "max_retries": 3 },
           { "queue": "git-import", "max_batch_size": 1, "max_retries": 3 },
@@ -95,6 +115,7 @@
   },
   "durable_objects": {
     "bindings": [
+      { "name": "CI_RUNNER", "class_name": "CiRunnerDO" },
       {
         "name": "REF_LOCK",
         "class_name": "RefLockDO",
@@ -130,5 +151,6 @@
       "tag": "v4",
       "new_sqlite_classes": ["RateLimitDO"],
     },
+    { "tag": "v5", "new_sqlite_classes": ["CiRunnerDO"] },
   ],
 }

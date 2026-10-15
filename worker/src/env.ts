@@ -12,6 +12,15 @@ export interface Env {
   AGENT_QUEUE: Queue;
   /** Queue `git-import` — git import / incremental sync jobs. */
   IMPORT_QUEUE: Queue;
+  /** Native CI is disabled until an operator deploys the container and enables it. */
+  CI_RUNNER?: DurableObjectNamespace;
+  CI_QUEUE?: Queue;
+  CI_ENABLED?: string;
+  CI_MONTHLY_BUDGET_USD?: string;
+  CI_REGISTRY_HOST?: string;
+  CI_REGISTRY_IMAGES?: string;
+  CI_REGISTRY_USERNAME?: string;
+  CI_REGISTRY_PASSWORD?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */

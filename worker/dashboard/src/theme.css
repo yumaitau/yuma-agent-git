@@ -643,3 +643,129 @@ pre.code {
   letter-spacing: 0.4px;
   padding-top: 2px;
 }
+
+/* Repository collaboration uses the existing product palette and explicit states. */
+.repo-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--border);
+  margin: 12px 0 24px;
+  overflow-x: auto;
+}
+.repo-tabs a {
+  color: var(--muted);
+  padding: 10px 0;
+  white-space: nowrap;
+}
+.repo-tabs a[aria-current='page'] {
+  color: var(--fg-strong);
+  border-bottom: 2px solid var(--accent);
+}
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+.history-list li {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.history-list li p {
+  margin: 8px 0 0;
+}
+.setup-flow {
+  max-width: 680px;
+  padding: 8px 0 28px;
+}
+.setup-flow h2 {
+  margin: 6px 0 8px;
+  font-size: 22px;
+}
+.setup-flow .field {
+  margin: 14px 0;
+}
+.setup-flow input:not([type='checkbox']),
+.setup-flow select {
+  padding: 10px;
+}
+.setup-flow .mono {
+  line-height: 1.7;
+}
+.step-label {
+  margin-top: 28px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cost-note,
+.setup-note {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  line-height: 1.7;
+  max-width: 75ch;
+  background: var(--bg-soft);
+}
+.merge-gate {
+  padding: 20px;
+  margin: 24px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.merge-gate h2 {
+  margin-top: 0;
+}
+.merge-gate details {
+  margin-top: 18px;
+}
+summary {
+  cursor: pointer;
+}
+.preserve-lines {
+  white-space: pre-wrap;
+  max-width: 75ch;
+}
+.ci-state {
+  font-size: 12px;
+  font-weight: 600;
+}
+.state-passed {
+  color: var(--ok);
+}
+.state-failed,
+.state-timed_out {
+  color: var(--danger);
+}
+.state-running,
+.state-queued {
+  color: var(--accent);
+}
+.table-scroll {
+  overflow: auto;
+}
+.build-log {
+  max-height: 540px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+@media (max-width: 640px) {
+  .repo-tabs {
+    gap: 18px;
+  }
+  .setup-flow .row {
+    align-items: stretch;
+  }
+  .setup-flow .field {
+    flex: 1 1 180px;
+  }
+  .merge-gate {
+    padding: 14px;
+  }
+}

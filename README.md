@@ -46,6 +46,12 @@ See [docs/architecture.md](docs/architecture.md) for the full design and [docs/a
 
 ## Status
 
+Repository history, pull-request reviews, protected merges and native Cloudflare
+CI are implemented. CI execution stays disabled until an operator configures the
+Cloudflare resources. Start with the [developer quickstart](docs/developer-onboarding.md),
+[GitHub comparison and cost research](docs/github-cloudflare-research.md), and
+[runner deployment guide](docs/deploy.md#cloudflare-ci-runners).
+
 Under construction — tracked via [GitHub issues](https://github.com/yumaitau/yuma-agent-git/issues) organized into milestones:
 
 - **M1: Foundations** — scaffold, D1 schema, R2 object store

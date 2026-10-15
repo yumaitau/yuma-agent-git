@@ -3,6 +3,10 @@ import type { Env } from '../env';
 import { getRef, setRef } from '../db/repos';
 import { isAncestorDag } from './ancestry';
 import { ApiError } from './errors';
+import { mutatePullLocked } from '../reviews/pulls';
+import { settings, parsePolicy } from '../ci/config';
+import { run } from '../db/client';
+import { getRepo } from '../db/repos';
 import { validateRefName } from './refs';
 
 const moveSchema = z.object({
@@ -51,6 +55,37 @@ export class RefLockDO {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    if (request.method === 'POST' && url.pathname === '/ci-config') {
+      const input = (await request.json()) as { repo_id: string; config: unknown };
+      return this.state.blockConcurrencyWhile(async () => {
+        try {
+          const config = parsePolicy(input.config);
+          await run(
+            this.env,
+            `INSERT INTO ci_settings (repo_id,version,config,updated_at) VALUES (?,1,?,?)
+            ON CONFLICT(repo_id) DO UPDATE SET version = version + 1, config = excluded.config, updated_at = excluded.updated_at`,
+            [input.repo_id, JSON.stringify(config), Date.now()],
+          );
+          return Response.json({ ok: true });
+        } catch (err) {
+          if (err instanceof ApiError) return fail(err.status, err.code, err.message);
+          return fail(500, 'internal_error', 'Configuration update failed');
+        }
+      });
+    }
+    if (request.method === 'POST' && url.pathname.startsWith('/pull/')) {
+      const input: unknown = await request.json();
+      return this.state.blockConcurrencyWhile(async () => {
+        try {
+          return Response.json(
+            await mutatePullLocked(this.env, url.pathname.slice(6), input),
+          );
+        } catch (err) {
+          if (err instanceof ApiError) return fail(err.status, err.code, err.message);
+          return fail(500, 'internal_error', 'Pull request operation failed');
+        }
+      });
+    }
     if (request.method !== 'POST' || url.pathname !== '/move') {
       return fail(404, 'not_found', 'unknown ref-lock operation');
     }
@@ -124,6 +159,20 @@ export class RefLockDO {
       }
       await setRef(this.env, repoId, name, to);
       return ok(null, to);
+    }
+
+    const config = await settings(this.env, repoId);
+    const repo = await getRepo(this.env, repoId);
+    if (
+      config?.policy.protect_default &&
+      name === repo?.default_branch &&
+      to !== current.head
+    ) {
+      return fail(
+        403,
+        'protected_branch',
+        'Open a pull request to update the protected default branch.',
+      );
     }
 
     if (current.head !== from && !force) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   api,
   asApiError,
@@ -232,6 +232,7 @@ function ConnectWizard({
 
 /** New-repo form (POST /api/v1/repos). */
 function NewRepoForm({ onCreated }: { onCreated: () => void }): ReactElement {
+  const navigate = useNavigate();
   const toast = useToast();
   const [slug, setSlug] = useState('');
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
@@ -251,12 +252,13 @@ function NewRepoForm({ onCreated }: { onCreated: () => void }): ReactElement {
       toast.show(`created ${repo.slug}`);
       setSlug('');
       onCreated();
+      navigate(`/r/${repo.slug}/ci`);
     } catch (err) {
       setError(asApiError(err));
     } finally {
       setBusy(false);
     }
-  }, [slug, visibility, branch, toast, onCreated]);
+  }, [slug, visibility, branch, toast, onCreated, navigate]);
 
   return (
     <div className="panel">

@@ -54,7 +54,7 @@ npm run deploy
 This runs, in order:
 
 1. `vite build` — dashboard SPA into `worker/dashboard/dist` (the assets binding)
-2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`
+2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`, `ci-runs`
 3. `wrangler d1 migrations apply yag-db --remote --env prod`
 4. `wrangler deploy --env prod` — deploy the Worker with its production D1, R2,
    Durable Object, Queue, and Workers AI bindings. AI stays out of the base
@@ -73,3 +73,87 @@ curl https://<your-worker>.workers.dev/api/v1/repos     # public + yours
 
 `wrangler deploy --dry-run` must pass in CI with zero plaintext secrets — the
 workflow greps for key material and fails on any hit.
+
+## Cloudflare CI runners
+
+The checked-in configuration keeps `CI_ENABLED=false`. It defines the `ci-runs`
+Queue, `CiRunnerDO` SQLite migration and a production container image. Atomic D1 admission allows at most
+two queued/running jobs; native container mode has no `max_instances` configuration. The new D1 migration is `0009_reviews_ci.sql`; apply migrations
+before deploying the Worker that reads these tables. The native Container API and
+Wrangler version in the lockfile are required; older Sandbox tutorials use a
+different API/configuration shape.
+
+1. Use a Workers Paid account with Containers enabled. Replace both D1 placeholder
+   IDs and provision the existing R2/Queues resources. `setup-queues.sh` now includes
+   `ci-runs`. Keep CI disabled for the initial deploy.
+2. Ensure the deployment machine has a Linux amd64 Docker builder. On Justin's
+   machine the approved build context is `homelab`; explicitly select it with
+   `DOCKER_CONTEXT=homelab npm run deploy`. Elsewhere choose that environment's
+   approved Docker context. Wrangler builds `worker/runner/Dockerfile` with its
+   directory as the build context, then uploads it to Cloudflare's managed registry.
+3. Deploy, verify repository browsing and PR creation, and configure one small
+   pilot pipeline. Set `env.prod.vars.CI_MONTHLY_BUDGET_USD` to the intended shared
+   admission budget (default `5`). Invalid/nonpositive values admit no new runs.
+4. Set `env.prod.vars.CI_ENABLED` to `"true"`, redeploy and run the pilot checks.
+   Keep the time limit small. Check actual Cloudflare usage before widening access.
+
+For optional image publishing, set the following secret **names**, supplying
+values through your approved secret manager/interactive secret workflow:
+
+```sh
+npx wrangler secret put CI_REGISTRY_HOST --env prod -c worker/wrangler.jsonc
+npx wrangler secret put CI_REGISTRY_USERNAME --env prod -c worker/wrangler.jsonc
+npx wrangler secret put CI_REGISTRY_PASSWORD --env prod -c worker/wrangler.jsonc
+```
+
+`CI_REGISTRY_HOST` is a hostname, e.g. `ghcr.io` (no scheme). Authorize the exact
+image path for each repo using the nonsecret `CI_REGISTRY_IMAGES` JSON-string var
+in `env.prod.vars`, e.g. `{"team/project":"ghcr.io/team/project"}`. Use a scoped
+registry credential with only the necessary image-write access. The repository
+admin's configured image must match this map and registry host. Different repos
+should have different destinations. Credentials never enter the source/build VM.
+ECR's short-lived password must be refreshed externally; no AWS credentials or
+automatic ECR token refresh are supplied by this version.
+
+The image is published only on an explicit admin request for the default head at
+admission; later branch movement does not retag the queued immutable revision.
+Publication uses `cs-<changeset>` tags and does not perform application deployment.
+The 256 MiB export cap is intentional. Registry pushes can finish just before a
+network error/cancellation is observed; inspect the exact tag before manually
+retrying an uncertain result.
+
+### Pilot verification and recovery
+
+- Run a passing pipeline and a failing command. Verify completed logs and status.
+- Submit the same revision twice while active: the second request must be rejected.
+- Cancel a long command and test the deadline; confirm container instances stop in
+  Cloudflare, not merely that the UI status changes.
+- Open a PR, approve it as another writer, update its head, and verify approval is
+  required again. Change pipeline configuration and verify old checks cannot merge.
+- Try direct protected default-branch movement and verify it is denied.
+- Publish a small Docker image to the authorized destination; verify its full
+  changeset tag in the registry. Verify another repo cannot target that destination.
+- Inspect actual compute, network, DO, D1, R2 and Queue usage. Configure account
+  billing alerts; the reservation ledger does not cap the total Cloudflare invoice.
+
+Turning `CI_ENABLED` off prevents new runs but does not kill an active VM. Cancel
+active runs explicitly; their deadline alarms remain a second cleanup mechanism.
+Queue delivery is at-most-once at the script level; jobs interrupted before claim
+are failed, and claimed jobs have a deadline alarm plus a cron recovery sweep. The minute cron expires
+undelivered queued jobs and removes completed logs older than seven days. Keep
+`ci_runs` rows to preserve reservation accounting and the audit history.
+
+Configure an R2 lifecycle rule for the `ci/images/` prefix to delete abandoned
+temporary exports after one day, and retain R2's incomplete multipart upload
+cleanup. Normal completion/cancellation removes the temporary image; lifecycle
+cleanup covers process/platform failures. Never apply that rule to repository
+object prefixes. These cleanup rules are operator configuration, not automatically
+provisioned by this change.
+
+The local validation suite mocks container execution for lifecycle tests. The
+runner Dockerfile can be built and its tools checked without privileged Docker.
+A real Cloudflare pilot is still required to validate Docker-in-Docker, native
+`exec` streams, deadline teardown and registry pushes together.
+
+See [research and cost model](github-cloudflare-research.md) and the
+[developer quickstart](developer-onboarding.md).
