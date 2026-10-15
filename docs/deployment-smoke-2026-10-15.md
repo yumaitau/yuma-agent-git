@@ -88,6 +88,18 @@ supplement the deployed tests; they do not establish the unverified properties b
 4. Docker's startup attempted to change read-only IP-forwarding settings in the
    Cloudflare VM. Runner startup now disables bridge/forwarding configuration and
    emits bounded startup diagnostics. Inner Docker commands use host networking.
+5. After the initial pilot, opening the dashboard exposed `React is not defined`.
+   The initial HTTP smoke only checked HTML delivery, not JavaScript execution.
+   The hoisted React plugin detected Vite 8 and configured Oxc while production
+   used Vite 7/esbuild, emitting calls to a missing React global. The production
+   config now explicitly selects automatic JSX. Every dashboard build executes
+   its actual bundle in jsdom on the repository and sign-in routes with anonymous
+   API fixtures. This reproduced the original failure and passes after the fix;
+   all 9 component tests, typechecks and lint also passed. This startup check is
+   not a substitute for browser interaction or OAuth verification.
+   Deployed version `913b968b-685e-4edc-8f84-4cbde3795ab0` serves
+   `index-ahqv1Aj4.js`; the same jsdom startup check passed when fetching the live
+   HTML and JavaScript after rollout propagation.
 
 ## Reproducing the smoke test
 

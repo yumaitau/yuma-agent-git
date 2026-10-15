@@ -12,7 +12,7 @@
     "test:ui": "vitest run --config dashboard/vitest.config.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit",
     "lint": "eslint src test dashboard",
-    "build": "vite build && node ../scripts/check-bundle-size.mjs",
+    "build": "vite build && node ../scripts/check-bundle-size.mjs && node ../scripts/check-dashboard-startup.mjs",
     "build:dashboard": "npm run build"
   },
   "dependencies": {

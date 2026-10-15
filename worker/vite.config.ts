@@ -18,6 +18,9 @@ export default defineConfig({
   root: './dashboard',
   base: '/',
   plugins: [reactPlugin],
+  // The hoisted React plugin detects Vite 8 and configures Oxc, while this
+  // build runs Vite 7/esbuild. Explicitly select the runtime for this compiler.
+  esbuild: { jsx: 'automatic' },
   build: {
     outDir: './dist',
     emptyOutDir: true,
