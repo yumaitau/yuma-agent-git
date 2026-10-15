@@ -1,6 +1,8 @@
 # Developer quickstart
 
-Use the web dashboard to create or import a repository. New repositories open the CI setup page. Import an existing GitHub repository from its connection, or make the initial commit before running checks. Yuma uses its own content-addressed changeset IDs: use the ID from `yag commit`, not a Git commit SHA.
+GitHub supplies sign-in only. Yuma owns repository storage, history, reviews and CI execution on Cloudflare; a GitHub repository or GitHub Actions workflow is not required.
+
+Choose **New repository** in the dashboard. The repository opens on its code page: choose **Create initial README** to create the first commit and default branch, then copy the native clone command. Use **Set up Yuma CI** when you are ready to configure checks. GitHub import is an optional migration tool. Yuma uses its own content-addressed changeset IDs: use the ID from `yag commit`, not a Git commit SHA.
 
 ## One-time team setup
 

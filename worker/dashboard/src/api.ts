@@ -440,6 +440,22 @@ export const api = {
     return body.repo;
   },
 
+  async getRepo(slug: string): Promise<{ repo: Repo; can_admin: boolean }> {
+    return requestJson(
+      `/api/v1/repos/${slug}`,
+      {},
+      z.object({ repo: repoSchema, can_admin: z.boolean() }),
+    );
+  },
+
+  async initializeRepo(slug: string): Promise<void> {
+    await requestJson(
+      `/api/v1/repos/${slug}/initialize`,
+      { method: 'POST', body: {} },
+      z.object({ changeset: changesetSchema }),
+    );
+  },
+
   // -- GitHub bridge ---------------------------------------------------------
   async connectRepo(
     slug: string,

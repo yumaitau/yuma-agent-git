@@ -7,11 +7,14 @@ export function LoginView(): ReactElement {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
   return (
-    <div className="panel" style={{ maxWidth: 460, margin: '64px auto', textAlign: 'center' }}>
+    <div
+      className="panel"
+      style={{ maxWidth: 460, margin: '64px auto', textAlign: 'center' }}
+    >
       <h1>Sign in</h1>
       <p className="muted">
-        yuma-agent-git uses GitHub OAuth for sessions. Public repos are readable without signing
-        in.
+        Sign in to create repositories, review changes and run CI on Yuma. GitHub verifies
+        your identity; your repositories and builds are hosted here.
       </p>
       {from && (
         <div className="notice info small">

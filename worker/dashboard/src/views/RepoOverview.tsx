@@ -97,7 +97,14 @@ function MoveRefForm({
 
 export function RepoOverviewView(): ReactElement {
   const slug = useSlug();
-  const head = 'ref:main';
+  const { data: metadata, error: repoError } = usePolling(
+    () => api.getRepo(slug),
+    30_000,
+  );
+  const branch = metadata?.repo.default_branch ?? 'main';
+  const head = `ref:${branch}`;
+  const [initializing, setInitializing] = useState(false);
+  const [initError, setInitError] = useState<ApiError | null>(null);
   const {
     data: refs,
     error: refsError,
@@ -108,10 +115,26 @@ export function RepoOverviewView(): ReactElement {
     data: changesets,
     error: csError,
     loading: csLoading,
+    refresh: refreshChangesets,
   } = usePolling<Changeset[]>(() => api.listChangesets(slug, { limit: 12 }), 15_000);
 
-  const exportHead = refs?.find((r) => r.name === 'main')?.head ?? head;
-  const curl = `curl -fsSL "${window.location.origin}${fastImportUrl(slug, 'ref:main', 'snapshot')}" -o ${slug.replace(/\//g, '-')}.fast-import\n# then, in an empty git repo:\ngit init git-export && cd git-export\ngit fast-import < ../${slug.replace(/\//g, '-')}.fast-import`;
+  const exportHead = refs?.find((r) => r.name === branch)?.head ?? head;
+  const quote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
+  const clone = `yag clone ${quote(slug)} ./project --api ${quote(window.location.origin)} --rev ${quote(head)}\ncd project\nyag status`;
+  const curl = `curl -fsSL "${window.location.origin}${fastImportUrl(slug, head, 'snapshot')}" -o ${slug.replace(/\//g, '-')}.fast-import\n# then, in an empty git repo:\ngit init git-export && cd git-export\ngit fast-import < ../${slug.replace(/\//g, '-')}.fast-import`;
+  const initialize = async (): Promise<void> => {
+    setInitializing(true);
+    setInitError(null);
+    try {
+      await api.initializeRepo(slug);
+      refreshRefs();
+      refreshChangesets();
+    } catch (err) {
+      setInitError(asApiError(err));
+    } finally {
+      setInitializing(false);
+    }
+  };
 
   return (
     <div>
@@ -132,6 +155,40 @@ export function RepoOverviewView(): ReactElement {
           </Link>
         </div>
       </div>
+
+      {repoError && <ErrorNotice error={repoError} />}
+      {initError && <ErrorNotice error={initError} />}
+      {metadata && refs && refs.length === 0 && metadata.can_admin && (
+        <div className="panel">
+          <h2>Start your repository</h2>
+          <p>
+            Create a README and the <code>{branch}</code> branch, then clone your code to
+            start working.
+          </p>
+          <button
+            className="primary"
+            disabled={initializing}
+            onClick={() => void initialize()}
+          >
+            {initializing ? 'Creating README…' : 'Create initial README'}
+          </button>
+        </div>
+      )}
+      {metadata && refs?.some((ref) => ref.name === branch) && (
+        <div className="panel">
+          <h2>Work on this repository</h2>
+          <p>
+            Install the <code>yag</code> CLI and load a token from{' '}
+            <Link to="/settings">Settings</Link> into <code>YAG_TOKEN</code>.
+          </p>
+          <pre className="code">{clone}</pre>
+          <CopyButton text={clone} label="Copy clone command" />
+          <p>Commit your changes, open a pull request, and run checks with Yuma CI.</p>
+          <Link className="btn primary" to={`/r/${slug}/ci`}>
+            Set up Yuma CI
+          </Link>
+        </div>
+      )}
 
       <h2>Refs</h2>
       {refsError && <ErrorNotice error={refsError} />}
@@ -163,7 +220,7 @@ export function RepoOverviewView(): ReactElement {
           </table>
         </div>
       ) : (
-        <Empty>No refs yet — commit or import to create one.</Empty>
+        <Empty>No branches yet.</Empty>
       )}
 
       <h2>Latest changesets</h2>
@@ -201,23 +258,23 @@ export function RepoOverviewView(): ReactElement {
         <Empty>No changesets yet.</Empty>
       )}
 
-      <h2>Import / export</h2>
-      <div className="panel">
+      <details className="panel">
+        <summary>Migration and export tools</summary>
         <div className="row">
-          <a className="btn primary" href={tarballUrl(slug, 'ref:main')} download>
+          <a className="btn" href={tarballUrl(slug, head)} download>
             Download tarball
           </a>
           <Link className="btn" to="/?connect=1">
             Import from GitHub…
           </Link>
-          <ExportGithubForm />
+          {metadata?.repo.github_repo_id != null && <ExportGithubForm />}
         </div>
         <h3>Fast-import stream</h3>
         <div className="row">
           <CopyButton text={curl} label="Copy curl snippet" />
         </div>
         <pre className="code">{curl}</pre>
-      </div>
+      </details>
 
       {refs && refs.length > 0 && <MoveRefForm refs={refs} onMoved={refreshRefs} />}
     </div>

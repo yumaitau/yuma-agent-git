@@ -133,7 +133,8 @@ function ConnectWizard({
 
   return (
     <div className="panel">
-      <h2>Connect GitHub repo</h2>
+      <h2>Import from GitHub</h2>
+      <p className="muted">Optional migration into an existing Yuma repository.</p>
       <ol className="small muted" style={{ margin: '0 0 12px', paddingLeft: 20 }}>
         <li>
           <a href={GITHUB_INSTALL_URL}>Install the GitHub App</a> on your account/org,
@@ -252,7 +253,7 @@ function NewRepoForm({ onCreated }: { onCreated: () => void }): ReactElement {
       toast.show(`created ${repo.slug}`);
       setSlug('');
       onCreated();
-      navigate(`/r/${repo.slug}/ci`);
+      navigate(`/r/${repo.slug}`);
     } catch (err) {
       setError(asApiError(err));
     } finally {
@@ -262,10 +263,11 @@ function NewRepoForm({ onCreated }: { onCreated: () => void }): ReactElement {
 
   return (
     <div className="panel">
-      <h2>New repo</h2>
+      <h2>Create repository</h2>
+      <p className="muted">Your code, history, reviews and CI are hosted on Yuma.</p>
       {error && <ErrorNotice error={error} />}
       <div className="row" style={{ alignItems: 'flex-end' }}>
-        <Field label="Slug (owner/name)">
+        <Field label="Repository (owner/name)">
           <input
             type="text"
             placeholder="acme/tools"
@@ -283,14 +285,23 @@ function NewRepoForm({ onCreated }: { onCreated: () => void }): ReactElement {
           </select>
         </Field>
         <Field label="Default branch">
-          <input type="text" value={branch} onChange={(e) => setBranch(e.target.value)} />
+          <input
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="main or release/name"
+          />
         </Field>
         <button
           className="primary"
-          disabled={busy || !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(slug.trim())}
+          disabled={
+            busy ||
+            !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(slug.trim()) ||
+            !/^(main|release\/[a-z0-9._-]+)$/.test(branch.trim())
+          }
           onClick={() => void create()}
         >
-          Create
+          {busy ? 'Creating…' : 'Create repository'}
         </button>
       </div>
     </div>
@@ -332,16 +343,15 @@ export function HomeView(): ReactElement {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <button onClick={() => setShowNew((v) => !v)}>New repo</button>
-          <button className="primary" onClick={() => setShowConnect((v) => !v)}>
-            Connect GitHub repo
+          <button className="primary" onClick={() => setShowNew((v) => !v)}>
+            New repository
           </button>
         </div>
       </div>
+      <p className="muted">Host your code, review changes and run CI on Yuma.</p>
 
       {error && <ErrorNotice error={error} />}
       {showNew && <NewRepoForm onCreated={refresh} />}
-      {showConnect && <ConnectWizard repos={repos ?? []} onDone={refresh} />}
 
       {loading && !repos ? (
         <Loading label="Loading repositories…" />
@@ -349,7 +359,7 @@ export function HomeView(): ReactElement {
         <Empty>
           {repos && repos.length > 0
             ? 'No repos match the filter.'
-            : 'No repositories yet — create one or connect a GitHub repo.'}
+            : 'Create your first repository to start working on Yuma.'}
         </Empty>
       ) : (
         visible.map((repo) => (
@@ -367,6 +377,13 @@ export function HomeView(): ReactElement {
           </Link>
         ))
       )}
+      <details
+        open={showConnect}
+        onToggle={(event) => setShowConnect(event.currentTarget.open)}
+      >
+        <summary>Import an existing repository (optional)</summary>
+        {showConnect && <ConnectWizard repos={repos ?? []} onDone={refresh} />}
+      </details>
     </div>
   );
 }
