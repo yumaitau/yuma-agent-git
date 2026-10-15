@@ -32,6 +32,23 @@ yuma-agent-git brings that model to a platform anyone can run on Cloudflare's ed
 | git bridge                                     | Import: clone → changesets via Queues. Export: fast-import stream |
 | Agents                                         | Agents SDK / Durable Objects + Workers AI, writing through RPCs   |
 
+```mermaid
+flowchart LR
+  user[Browser dashboard] -->|session cookie| worker
+  cli[yag CLI / agents / CI] -->|bearer token| worker
+  gh[GitHub] -->|OAuth, App webhooks| worker
+  subgraph worker[Worker + Hono]
+    api[RPC API /api/v1]
+    spa[Dashboard assets]
+  end
+  api --> d1[(D1: changesets, refs, RBAC)]
+  api --> r2[(R2: blobs + trees)]
+  api --> refdo[RefLock Durable Objects]
+  api --> queues[[Queues: import, derived data, agents, CI]]
+  queues --> agents[Agent Durable Objects + Workers AI]
+  queues --> runner[CI runner containers]
+```
+
 See [docs/architecture.md](docs/architecture.md) for the full design and [docs/api.md](docs/api.md) for the RPC surface.
 
 ## Stack
@@ -59,13 +76,32 @@ Start with the [developer quickstart](docs/developer-onboarding.md),
 [GitHub comparison and cost research](docs/github-cloudflare-research.md), and
 [runner deployment guide](docs/deploy.md#cloudflare-ci-runners).
 
-Under construction — tracked via [GitHub issues](https://github.com/yumaitau/yuma-agent-git/issues) organized into milestones:
+Quickstart for your own instance (details in [docs/deploy.md](docs/deploy.md)):
 
-- **M1: Foundations** — scaffold, D1 schema, R2 object store
-- **M2: Core VCS** — commit/read/diff/ancestry/blame RPCs, refs, derived data, sparse checkout
-- **M3: Auth + GitHub bridge** — OAuth, GitHub App, RBAC, git import/export
-- **M4: Agents** — agent runtime, task API, Workers AI loop
-- **M5: Dashboard + hardening** — web UI, observability, e2e tests, deploy
+```sh
+npm ci
+npx wrangler d1 create yag-db -c worker/wrangler.jsonc   # put the id in worker/wrangler.jsonc
+npx wrangler r2 bucket create yag-objects -c worker/wrangler.jsonc
+npx wrangler secret put GITHUB_CLIENT_ID --env prod -c worker/wrangler.jsonc
+npx wrangler secret put GITHUB_CLIENT_SECRET --env prod -c worker/wrangler.jsonc
+npx wrangler secret put CACHE_SIGNING_KEY --env prod -c worker/wrangler.jsonc
+npm run deploy -w worker                                 # queues, migrations, deploy
+npm run build -w yag                                     # the CLI
+```
+
+Milestones, tracked in [GitHub issues](https://github.com/yumaitau/yuma-agent-git/issues):
+
+| Milestone                 | Scope                                                                             | State |
+| ------------------------- | --------------------------------------------------------------------------------- | ----- |
+| M1: Foundations           | scaffold, D1 schema, R2 object store                                              | done  |
+| M2: Core VCS              | commit/read/diff/ancestry/blame RPCs, refs, derived data, sparse checkout         | done  |
+| M3: Auth + GitHub bridge  | OAuth, GitHub App, RBAC, git import/export                                        | done  |
+| M4: Agents                | agent runtime, task API, Workers AI loop                                          | done  |
+| M5: Dashboard + hardening | web UI, rate limits, cache tier, observability, e2e suites, fuzzer, API reference | done  |
+
+Not yet established: browser-verified GitHub sign-in on the pilot, live GitHub App
+imports, large-repository performance and full Git wire compatibility. See the
+[changelog](CHANGELOG.md) for what changed.
 
 ## License
 

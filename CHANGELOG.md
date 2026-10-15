@@ -25,6 +25,8 @@ All notable changes to this project are documented here. The format follows
 - Agent `land` moves the repository's default branch instead of `main`, and stops on
   final refusals such as a protected branch instead of retrying until its budget runs
   out. MCP calls default to the default branch's head.
+- Tar reading was quadratic in entry size, and snapshot import buffered files over the
+  25 MiB limit before skipping them; both now stream in linear time and constant memory.
 - Queue provisioning accepts Cloudflare's "already taken" response, so
   `npm run deploy` can be re-run.
 

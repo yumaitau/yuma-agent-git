@@ -6,9 +6,9 @@ installation. GitHub is the identity provider; repository storage and builds run
 on Yuma's Cloudflare resources.
 
 The [Yuma pilot](https://yuma-agent-git-prod.yuma-it.workers.dev) is deployed with
-CI enabled. Its [live smoke report](deployment-smoke-2026-10-15.md) records verified
-behavior and remaining setup, including GitHub sign-in and permanent registry
-credentials. Commands below describe provisioning a new environment; do not
+CI enabled and GitHub sign-in configured. Its
+[live smoke report](deployment-smoke-2026-10-15.md) records verified behavior and
+remaining setup, including permanent registry credentials. Commands below describe provisioning a new environment; do not
 recreate the existing Yuma resources. For Yuma, run Cloudflare commands through
 `cf-vault` to select the account and inject credentials.
 
@@ -55,7 +55,7 @@ For sign-in alone, register a GitHub OAuth app with the deployed homepage URL an
 callback `https://<your-worker>.workers.dev/auth/github/callback`, then configure
 `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. Login requests only `read:user
 user:email`; it does not request repository access. No GitHub repository needs to
-exist. The Yuma pilot still needs these login credentials installed.
+exist. Every API route and dashboard page requires this sign-in (or an API token).
 
 If GitHub import/export is also needed, create an App at
 https://github.com/settings/apps with:
@@ -91,8 +91,14 @@ dashboard, as preferred.
 
 ```sh
 curl https://<your-worker>.workers.dev/healthz          # {"ok":true}
-curl https://<your-worker>.workers.dev/api/v1/repos     # public + yours
+curl https://<your-worker>.workers.dev/auth/status      # {"github_configured":true}
+curl https://<your-worker>.workers.dev/api/v1/repos     # 401: sign-in required
+curl -H "Authorization: Bearer $YAG_TOKEN" \
+  https://<your-worker>.workers.dev/api/v1/repos        # public repos + yours
 ```
+
+For the full signed-in path (commits, CLI, pull requests, CI runs) run the live
+smoke harness described in the [smoke report](deployment-smoke-2026-10-15.md#reproducing-the-smoke-test).
 
 `wrangler deploy --dry-run` must pass in CI with zero plaintext secrets — the
 workflow greps for key material and fails on any hit.
