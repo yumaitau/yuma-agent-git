@@ -200,6 +200,7 @@ export class CiRunnerDO extends DurableObject<Env> {
   }
 
   private async start(id: string, deadline: number): Promise<void> {
+    this.append('\nStarting a fresh runner…\n');
     // Check and start under the same gate as cancellation and the deadline alarm.
     await this.ctx.blockConcurrencyWhile(async () => {
       await this.assertRunning(id, deadline);
@@ -212,15 +213,17 @@ export class CiRunnerDO extends DurableObject<Env> {
       });
       await container.setInactivityTimeout(10_000);
     });
-    await this.command(
-      [
-        '/bin/bash',
-        '-c',
-        'for i in {1..100}; do docker --host unix:///var/run/docker.sock info >/dev/null 2>&1 && exit 0; sleep .2; done; exit 1',
-      ],
-      {},
-      true,
-    );
+    try {
+      await this.command(['/usr/local/bin/yag-runner-boot']);
+    } catch (error) {
+      // Only the trusted boot script has run; no source or credentials are present.
+      console.error(
+        'CI container startup failed',
+        error instanceof Error ? error.message : 'unknown error',
+      );
+      this.append('Runner startup failed before repository commands could run.\n');
+      throw error;
+    }
   }
   private append(text: string): void {
     const size = encoder.encode(text).byteLength;

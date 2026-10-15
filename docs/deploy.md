@@ -2,6 +2,13 @@
 
 One-command deploy once the Cloudflare resources and GitHub App exist.
 
+The [Yuma pilot](https://yuma-agent-git-prod.yuma-it.workers.dev) is deployed with
+CI enabled. Its [live smoke report](deployment-smoke-2026-10-15.md) records verified
+behavior and remaining setup, including GitHub sign-in and permanent registry
+credentials. Commands below describe provisioning a new environment; do not
+recreate the existing Yuma resources. For Yuma, run Cloudflare commands through
+`cf-vault` to select the account and inject credentials.
+
 ## 1. Cloudflare resources
 
 ```sh
@@ -16,8 +23,9 @@ npx wrangler r2 bucket create yag-objects -c worker/wrangler.jsonc
 ./scripts/setup-queues.sh
 ```
 
-`database_id` in `worker/wrangler.jsonc` is environment-specific — replace the
-placeholder in both the base and `env.prod` database bindings. Do **not** commit secrets: CI greps `wrangler.jsonc` for
+`database_id` in `worker/wrangler.jsonc` currently identifies the Yuma pilot database.
+For another environment, replace it in both the base and `env.prod` database bindings.
+Do **not** commit secrets: CI greps `wrangler.jsonc` for
 `gh[ps]_` / `-----BEGIN` material and fails.
 
 ## 2. Secrets (never in VCS)
@@ -76,19 +84,20 @@ workflow greps for key material and fails on any hit.
 
 ## Cloudflare CI runners
 
-The checked-in configuration keeps `CI_ENABLED=false`. It defines the `ci-runs`
+The base configuration keeps `CI_ENABLED=false`; Yuma's `env.prod` sets it to
+`true` with a $5 monthly compute admission budget. It defines the `ci-runs`
 Queue, `CiRunnerDO` SQLite migration and a production container image. Atomic D1 admission allows at most
 two queued/running jobs; native container mode has no `max_instances` configuration. The new D1 migration is `0009_reviews_ci.sql`; apply migrations
 before deploying the Worker that reads these tables. The native Container API and
 Wrangler version in the lockfile are required; older Sandbox tutorials use a
 different API/configuration shape.
 
-1. Use a Workers Paid account with Containers enabled. Replace both D1 placeholder
-   IDs and provision the existing R2/Queues resources. `setup-queues.sh` now includes
+1. Use a Workers Paid account with Containers enabled. For a new environment,
+   replace both D1 IDs and provision R2/Queues resources. `setup-queues.sh` includes
    `ci-runs`. Keep CI disabled for the initial deploy.
 2. Ensure the deployment machine has a Linux amd64 Docker builder. On Justin's
    machine the approved build context is `homelab`; explicitly select it with
-   `DOCKER_CONTEXT=homelab npm run deploy`. Elsewhere choose that environment's
+   `DOCKER_CONTEXT=homelab cf-vault npm run deploy`. Elsewhere choose that environment's
    approved Docker context. Wrangler builds `worker/runner/Dockerfile` with its
    directory as the build context, then uploads it to Cloudflare's managed registry.
 3. Deploy, verify repository browsing and PR creation, and configure one small
@@ -96,6 +105,12 @@ different API/configuration shape.
    admission budget (default `5`). Invalid/nonpositive values admit no new runs.
 4. Set `env.prod.vars.CI_ENABLED` to `"true"`, redeploy and run the pilot checks.
    Keep the time limit small. Check actual Cloudflare usage before widening access.
+
+The container entrypoint keeps the VM alive while the trusted boot script starts
+Docker through native exec, making startup failures visible in job logs. Docker
+uses `--iptables=false --ip6tables=false --bridge=none --ip-forward=false
+--ip-masq=false --storage-driver=vfs`; Cloudflare's read-only network settings
+reject Docker's default forwarding setup. Inner builds use `--network=host`.
 
 For optional image publishing, set the following secret **names**, supplying
 values through your approved secret manager/interactive secret workflow:
@@ -152,8 +167,10 @@ provisioned by this change.
 
 The local validation suite mocks container execution for lifecycle tests. The
 runner Dockerfile can be built and its tools checked without privileged Docker.
-A real Cloudflare pilot is still required to validate Docker-in-Docker, native
-`exec` streams, deadline teardown and registry pushes together.
+The Yuma pilot additionally verified Docker-in-Docker, native `exec` output,
+deadline teardown, cancellation and a real registry push. See the
+[dated evidence and reproduction commands](deployment-smoke-2026-10-15.md).
+Repeat these checks for a new environment or material runner changes.
 
 See [research and cost model](github-cloudflare-research.md) and the
 [developer quickstart](developer-onboarding.md).

@@ -5,4 +5,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends docker.io git c
 COPY boot.sh /usr/local/bin/yag-runner-boot
 RUN chmod +x /usr/local/bin/yag-runner-boot && mkdir -p /workspace
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/yag-runner-boot"]
+ENTRYPOINT ["/bin/sleep", "infinity"]

@@ -241,7 +241,7 @@ describe('agent runtime', () => {
       new Request('https://x/api/v1/tokens', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: auth.cookie },
-        body: JSON.stringify({ label: 'reader', scopes: ['repo:read'] }),
+        body: JSON.stringify({ label: 'writer', scopes: ['repo:write'] }),
       }),
     );
     const raw = ((await created.json()) as { token: string }).token;

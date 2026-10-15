@@ -11,7 +11,8 @@ import {
   revokeSessionToken,
   upsertUser,
 } from '../src/auth/session';
-import { listApiTokens, resolveTokenPrincipal } from '../src/auth/tokens';
+import { createApiToken, listApiTokens, resolveTokenPrincipal } from '../src/auth/tokens';
+import { createRepo } from '../src/db/repos';
 
 const testEnv = env as unknown as TestEnv;
 const dbEnv = testEnv as unknown as Env;
@@ -291,5 +292,77 @@ describe('api tokens', () => {
     expect(await resolveTokenPrincipal(dbEnv, 'not-a-token')).toBeNull();
     await run(dbEnv, `UPDATE ${T.apiTokens} SET ${C.apiTokens.expiresAt} = 1`);
     expect(await resolveTokenPrincipal(dbEnv, raw)).toBeNull();
+  });
+
+  it('a valid bearer cannot mint broader tokens or use session-only administration', async () => {
+    const cookie = await session();
+    const user = await readSession(dbEnv, cookie);
+    const token = await createApiToken(dbEnv, user!.id, {
+      label: 'limited',
+      scopes: ['repo:read'],
+    });
+    const headers = {
+      authorization: `Bearer ${token.raw}`,
+      'content-type': 'application/json',
+    };
+    expect((await app('/api/v1/tokens', { headers })).status).toBe(401);
+    expect(
+      (
+        await app('/api/v1/tokens', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ label: 'escalate' }),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (await app(`/api/v1/tokens/${token.id}`, { method: 'DELETE', headers })).status,
+    ).toBe(401);
+    expect(
+      (
+        await app('/api/v1/repos', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ slug: 'smoke/escalate' }),
+        })
+      ).status,
+    ).toBe(401);
+    expect((await listApiTokens(dbEnv, user!.id)).length).toBe(1);
+    expect((await app('/api/v1/tokens', { headers: { cookie } })).status).toBe(200);
+  });
+
+  it('enforces read-only and repository-bound tokens on ordinary repository routes', async () => {
+    const cookie = await session();
+    const user = await readSession(dbEnv, cookie);
+    const repo = await createRepo(dbEnv, { slug: 'scope/allowed', createdBy: user!.id });
+    await createRepo(dbEnv, { slug: 'scope/other', createdBy: user!.id });
+    const token = await createApiToken(dbEnv, user!.id, {
+      label: 'limited',
+      scopes: ['repo:read'],
+      repoId: repo.id,
+    });
+    const headers = {
+      authorization: `Bearer ${token.raw}`,
+      'content-type': 'application/json',
+    };
+    expect(
+      (await app('/api/v1/repos/scope/allowed/changesets', { headers })).status,
+    ).toBe(200);
+    expect(
+      (
+        await app('/api/v1/repos/scope/allowed/changesets', {
+          method: 'POST',
+          headers,
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403);
+    expect((await app('/api/v1/repos/scope/other/changesets', { headers })).status).toBe(
+      404,
+    );
+    const listed = await app('/api/v1/repos', { headers });
+    expect(
+      ((await listed.json()) as { repos: { id: string }[] }).repos.map((r) => r.id),
+    ).toEqual([repo.id]);
   });
 });

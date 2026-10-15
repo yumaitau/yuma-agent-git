@@ -115,10 +115,8 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next): Promise<vo
       const resolved = await resolveTokenPrincipal(c.env, authorization.slice(7));
       if (resolved) {
         principal = resolved;
-        const row = await q1(c.env, `SELECT * FROM ${T.users} WHERE ${C.users.id} = ?`, [
-          resolved.userId,
-        ]);
-        user = row ? parseUserRow(row) : null;
+        // `user` denotes a browser session. A bearer must never gain access to
+        // session-only endpoints (especially minting a broader API token).
         // best-effort usage tracking (spec: async via waitUntil)
         try {
           c.executionCtx.waitUntil(touchToken(c.env, resolved));

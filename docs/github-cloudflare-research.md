@@ -92,7 +92,7 @@ Other costs to model:
 
 Roll out one small private Node repository first, then a small Docker image. Measure elapsed time, CPU, memory, egress and storage against the estimate. Verify failure, cancellation, deadline, duplicate delivery and registry isolation in the real Cloudflare account before enabling broader developer access. Keep GitHub's existing checks in place until the new execution path passes that pilot. No GitHub Actions workflows have been automatically disabled or redirected.
 
-The configuration is intentionally deployment-disabled. Resource IDs remain environment placeholders, and registry credentials/destination mapping must be supplied by an operator. Local tests and image-build validation cannot prove Cloudflare's deployed microVM lifecycle, network or billing behavior.
+The Yuma production configuration now has CI enabled and real resource IDs; the base configuration keeps execution disabled. The [15 October pilot](deployment-smoke-2026-10-15.md) verified builds, failures, deadlines, cancellation and a registry push on Cloudflare. Temporary publishing credentials were removed afterward; permanent credentials/destination mapping must be supplied by an operator. These checks do not establish production recovery, hostile-workload security or actual billed cost. GitHub App sign-in and imports still need configuration and live verification.
 
 ## Primary sources
 

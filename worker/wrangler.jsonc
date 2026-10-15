@@ -2,6 +2,8 @@
   // yuma-agent-git — Cloudflare Worker (Hono).
   // No plaintext secrets in this file (CI greps for key material).
   "name": "yuma-agent-git",
+  "workers_dev": true,
+  "preview_urls": false,
   "main": "src/index.ts",
   "assets": {
     "directory": "./dashboard/dist",
@@ -21,8 +23,8 @@
     {
       "binding": "DB",
       "database_name": "yag-db",
-      // Environment-specific: replace with the id from `wrangler d1 create yag-db`.
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      // Yuma IT production database; local development uses Wrangler's local store.
+      "database_id": "3fb9a764-2131-46b5-827f-8d7626d26016",
     },
   ],
   "r2_buckets": [
@@ -63,7 +65,7 @@
   "vars": { "CI_ENABLED": "false", "CI_MONTHLY_BUDGET_USD": "5" },
   "env": {
     "prod": {
-      "vars": { "CI_ENABLED": "false", "CI_MONTHLY_BUDGET_USD": "5" },
+      "vars": { "CI_ENABLED": "true", "CI_MONTHLY_BUDGET_USD": "5" },
       "containers": [
         {
           "class_name": "CiRunnerDO",
@@ -76,7 +78,7 @@
         {
           "binding": "DB",
           "database_name": "yag-db",
-          "database_id": "00000000-0000-0000-0000-000000000001",
+          "database_id": "3fb9a764-2131-46b5-827f-8d7626d26016",
         },
       ],
       "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yag-objects" }],
@@ -137,7 +139,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["RefLockDO"],
+      "new_sqlite_classes": ["RefLockDO"],
     },
     {
       "tag": "v2",

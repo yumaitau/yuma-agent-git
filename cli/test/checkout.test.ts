@@ -320,6 +320,37 @@ describe('yag CLI', () => {
         content_b64: Buffer.from('hello a v2\n').toString('base64'),
       },
     ]);
+    expect((await loadState(dir)).cs).toBe(outcome.id);
+    expect(await status(dir)).toEqual({ modified: [], deleted: [], untracked: [] });
+    await writeFile(join(dir, 'src/a.ts'), 'hello a v3\n');
+    const next = await commit({
+      dir,
+      api,
+      message: 'next edit',
+      author: { name: 'Ada', email: 'ada@example.com' },
+    });
+    const requests = server.fetchLog.filter((entry) => entry.path === '/changesets');
+    expect(requests.at(-1)?.body).toMatchObject({ first_parent: outcome.id });
+    expect((await loadState(dir)).cs).toBe(next.id);
+  });
+
+  it('keeps edits made during commit upload visible as modified', async () => {
+    await checkout({ dir, rev: 'ref:main', prefixes: [], api, cache });
+    await writeFile(join(dir, 'src/a.ts'), 'uploaded version\n');
+    await utimes(join(dir, 'src/a.ts'), new Date(), new Date(Date.now() + 10000));
+    const create = api.createChangeset.bind(api);
+    api.createChangeset = async (body) => {
+      const result = await create(body);
+      await writeFile(join(dir, 'src/a.ts'), 'edit made while uploading\n');
+      return result;
+    };
+    await commit({
+      dir,
+      api,
+      message: 'upload',
+      author: { name: 'Ada', email: 'ada@example.com' },
+    });
+    expect((await status(dir)).modified).toEqual(['src/a.ts']);
   });
 
   it('stale ref CAS is reported so the command can exit 3', async () => {
@@ -337,7 +368,8 @@ describe('yag CLI', () => {
       ref: 'main',
     });
     expect(outcome.refMoved).toBe(false);
-    expect(outcome.stale).toEqual({ expected: 'f'.repeat(64), actual: 'f'.repeat(64) });
+    expect(outcome.stale).toEqual({ expected: 'c'.repeat(64), actual: 'f'.repeat(64) });
+    expect((await loadState(dir)).cs).toBe(outcome.id);
   });
 
   it('diff asks for text=1; log walks history', async () => {

@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ApiError, type YagApi } from './api.js';
-import { loadState, type YagState } from './config.js';
+import { loadState, saveState, type YagState } from './config.js';
 import { sha256Hex } from './checkout.js';
 
 const MAX_INLINE_BYTES = 4 * 1024 * 1024;
@@ -79,7 +79,8 @@ export interface CommitOutcome {
  * Commit the working copy as one changeset against the checked-out revision.
  * Files ≤ 4 MiB travel inline; larger ones are pre-uploaded (hash-verified on
  * the server). `--ref` moves the ref with a compare-and-swap: a stale head
- * means someone else landed first (rebase via `yag checkout` and retry).
+ * means someone else landed first. The saved local commit must be preserved
+ * while its changes are replayed onto the latest branch head.
  */
 export async function commit(opts: {
   dir: string;
@@ -92,18 +93,25 @@ export async function commit(opts: {
   const st = await status(opts.dir, state);
 
   const changes: unknown[] = [];
-  for (const path of st.deleted) changes.push({ path, op: 'del' });
+  const entries = new Map(state.entries.map((entry) => [entry.path, entry]));
+  for (const path of st.deleted) {
+    changes.push({ path, op: 'del' });
+    entries.delete(path);
+  }
   const touched: Array<readonly [string, 'add' | 'mod']> = [
     ...st.untracked.map((p) => [p, 'add'] as const),
     ...st.modified.map((p) => [p, 'mod'] as const),
   ];
   for (const [path, op] of touched) {
     const bytes = await readFile(join(opts.dir, path));
+    const hash = sha256Hex(bytes);
+    // Save the uploaded snapshot, not a later disk read. Force a hash on the
+    // next status so edits made during upload cannot be mistaken for clean files.
+    entries.set(path, { path, blob_hash: hash, mtime: 0 });
     if (bytes.byteLength <= MAX_INLINE_BYTES) {
       changes.push({ path, op, content_b64: bytes.toString('base64') });
     } else {
       // pre-upload the blob (server verifies the content address on arrival)
-      const hash = sha256Hex(bytes);
       await opts.api.uploadBlob(hash, bytes);
       changes.push({ path, op, blob_sha256: hash });
     }
@@ -116,12 +124,22 @@ export async function commit(opts: {
     changes,
   });
 
+  if (!result.changeset.root_tree)
+    throw new Error(
+      `Created ${result.changeset.id}, but the server returned no source tree`,
+    );
+  await saveState(opts.dir, {
+    ...state,
+    cs: result.changeset.id,
+    root_tree: result.changeset.root_tree,
+    entries: [...entries.values()].sort((a, b) => a.path.localeCompare(b.path)),
+  });
+
   if (!opts.ref) return { id: result.changeset.id, refMoved: false };
 
-  const current = await opts.api.getRef(opts.ref);
   try {
     await opts.api.moveRef(opts.ref, {
-      from: current?.head ?? null,
+      from: state.cs,
       to: result.changeset.id,
     });
     return { id: result.changeset.id, ref: opts.ref, refMoved: true };

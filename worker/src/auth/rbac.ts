@@ -129,6 +129,17 @@ export async function decide(
   perm: Perm,
   path?: string,
 ): Promise<Decision> {
+  // Token limits constrain every role and path grant, including repo creators.
+  if (principal?.kind === 'token') {
+    if (principal.repoId !== null && principal.repoId !== repo.id)
+      return { allowed: false };
+    const writes = principal.scopes.includes('repo:write');
+    if (perm === 'write' || perm === 'admin') {
+      if (!writes) return { allowed: false };
+    } else if (!writes && !principal.scopes.includes('repo:read')) {
+      return { allowed: false };
+    }
+  }
   const rules = path === undefined ? [] : await listPathRules(env, repo.id);
 
   // 1. anonymous: public read only, never past a deny rule

@@ -152,7 +152,9 @@ program
       console.error(
         `stale ref ${outcome.ref}: expected ${outcome.stale.expected ?? '(none)'}, actual ${outcome.stale.actual ?? '(none)'}`,
       );
-      console.error('rebase via `yag checkout` and retry');
+      console.error(
+        'Your commit is saved locally. Preserve it and replay your changes onto the latest branch head before retrying.',
+      );
       process.exitCode = 3;
       return;
     }

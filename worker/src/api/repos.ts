@@ -60,6 +60,12 @@ function pageLimit(raw: string | undefined): number {
 reposRoutes.get('/api/v1/repos', async (c) => {
   try {
     const principal = c.get('principal');
+    if (
+      principal?.kind === 'token' &&
+      !principal.scopes.some((scope) => scope === 'repo:read' || scope === 'repo:write')
+    )
+      return apiError(c, 403, 'insufficient_scope', 'Token requires repository access');
+    const tokenRepo = principal?.kind === 'token' ? principal.repoId : null;
     const userId = principal?.userId ?? '';
     const limit = pageLimit(c.req.query('limit'));
     const cursorRaw = c.req.query('cursor');
@@ -90,10 +96,20 @@ reposRoutes.get('/api/v1/repos', async (c) => {
          UNION
          SELECT * FROM ${T.repos} WHERE created_by = ?
        )
-       WHERE (? = 0) OR created_at < ? OR (created_at = ? AND id < ?)
+       WHERE (? IS NULL OR id = ?) AND ((? = 0) OR created_at < ? OR (created_at = ? AND id < ?))
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
-      [userId, userId, hasCursor, cursorCreated, cursorCreated, cursorId, limit + 1],
+      [
+        userId,
+        userId,
+        tokenRepo,
+        tokenRepo,
+        hasCursor,
+        cursorCreated,
+        cursorCreated,
+        cursorId,
+        limit + 1,
+      ],
     );
     const page = rows.slice(0, limit).map((row) => parseRepoRow(row));
     const last = page[page.length - 1];

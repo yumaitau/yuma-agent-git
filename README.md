@@ -47,8 +47,12 @@ See [docs/architecture.md](docs/architecture.md) for the full design and [docs/a
 ## Status
 
 Repository history, pull-request reviews, protected merges and native Cloudflare
-CI are implemented. CI execution stays disabled until an operator configures the
-Cloudflare resources. Start with the [developer quickstart](docs/developer-onboarding.md),
+CI are implemented. The [Yuma pilot](https://yuma-agent-git-prod.yuma-it.workers.dev)
+has CI enabled and has passed live repository, build, cancellation, deadline and
+image-publishing checks. GitHub sign-in still needs App configuration; permanent
+registry publishing credentials are not installed. This is not yet a production
+Git replacement. See the [deployment smoke report](docs/deployment-smoke-2026-10-15.md).
+Start with the [developer quickstart](docs/developer-onboarding.md),
 [GitHub comparison and cost research](docs/github-cloudflare-research.md), and
 [runner deployment guide](docs/deploy.md#cloudflare-ci-runners).
 
