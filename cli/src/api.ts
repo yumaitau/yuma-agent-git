@@ -141,6 +141,10 @@ export class YagApi {
       } catch {
         /* non-JSON error body */
       }
+      if (res.status === 401 && !this.opts.token) {
+        message +=
+          ' (create an API token in the dashboard Settings and pass --token or set YAG_TOKEN)';
+      }
       throw new ApiError(res.status, code, message, body);
     }
     return res;

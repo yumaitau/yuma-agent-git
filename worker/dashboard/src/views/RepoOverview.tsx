@@ -121,7 +121,7 @@ export function RepoOverviewView(): ReactElement {
   const exportHead = refs?.find((r) => r.name === branch)?.head ?? head;
   const quote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
   const clone = `yag clone ${quote(slug)} ./project --api ${quote(window.location.origin)} --rev ${quote(head)}\ncd project\nyag status`;
-  const curl = `curl -fsSL "${window.location.origin}${fastImportUrl(slug, head, 'snapshot')}" -o ${slug.replace(/\//g, '-')}.fast-import\n# then, in an empty git repo:\ngit init git-export && cd git-export\ngit fast-import < ../${slug.replace(/\//g, '-')}.fast-import`;
+  const curl = `# create a repo:read token in Settings, then:\ncurl -fsSL -H "Authorization: Bearer $YAG_TOKEN" "${window.location.origin}${fastImportUrl(slug, head, 'snapshot')}" -o ${slug.replace(/\//g, '-')}.fast-import\n# then, in an empty git repo:\ngit init git-export && cd git-export\ngit fast-import < ../${slug.replace(/\//g, '-')}.fast-import`;
   const initialize = async (): Promise<void> => {
     setInitializing(true);
     setInitError(null);

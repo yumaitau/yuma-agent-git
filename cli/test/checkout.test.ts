@@ -382,4 +382,17 @@ describe('yag CLI', () => {
     const history = await api.history({ cs: 'c'.repeat(64), limit: 5 });
     expect(history.changesets).toHaveLength(1);
   });
+
+  it('explains how to authenticate when the server refuses an anonymous call', async () => {
+    const anonymous = new YagApi({
+      api: 'https://yag.test',
+      repo: 'acme/tools',
+      fetchFn: (async () =>
+        Response.json(
+          { error: { code: 'unauthorized', message: 'authentication required' } },
+          { status: 401 },
+        )) as unknown as typeof fetch,
+    });
+    await expect(anonymous.getRef('main')).rejects.toThrow(/set YAG_TOKEN/);
+  });
 });
