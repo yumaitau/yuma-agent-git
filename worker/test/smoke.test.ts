@@ -48,11 +48,11 @@ describe('worker entry', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it('returns the error envelope for unrouted API paths', async () => {
+  it('refuses anonymous API calls, even to unrouted paths', async () => {
     const res = await SELF.fetch('http://x/api/v1/nope/nothing');
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({
-      error: { code: 'not_found', message: 'no such route' },
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'unauthorized', message: 'authentication required' },
     });
   });
 });

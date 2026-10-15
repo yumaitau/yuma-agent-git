@@ -244,7 +244,7 @@ describe('agent tools', () => {
     const { repoId, baseCs } = await seedToolRepo();
     void repoId;
 
-    // unauthorized without an agent:run token
+    // anonymous callers are refused before any agent:run scope check
     const noAuth = await makeApp(testEnv)(
       new Request('https://x/api/v1/repos/acme/tools/agents/mcp', {
         method: 'POST',
@@ -252,7 +252,7 @@ describe('agent tools', () => {
         body: JSON.stringify({ method: 'initialize' }),
       }),
     );
-    expect(noAuth.status).toBe(403);
+    expect(noAuth.status).toBe(401);
 
     // mint a scoped token
     const auth = await loginAs(testEnv, 1, 'ada');

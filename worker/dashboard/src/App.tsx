@@ -25,7 +25,8 @@ function NotFound(): ReactElement {
 
 /**
  * Route table. Repo slugs are `owner/name`, so repo routes carry the two
- * segments separately (`/r/:owner/:name/...`).
+ * segments separately (`/r/:owner/:name/...`). Everything except /login
+ * requires a signed-in session.
  */
 function AppRoutes(): ReactElement {
   const navigate = useNavigate();
@@ -38,42 +39,33 @@ function AppRoutes(): ReactElement {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<HomeView />} />
         <Route path="/login" element={<LoginView />} />
         <Route
-          path="/settings"
+          path="*"
           element={
             <RequireAuth>
-              <SettingsView />
+              <Routes>
+                <Route path="/" element={<HomeView />} />
+                <Route path="/settings" element={<SettingsView />} />
+                <Route path="/r/:owner/:name/history" element={<HistoryView />} />
+                <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
+                <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
+                <Route path="/r/:owner/:name/ci" element={<CiView />} />
+                <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
+                <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
+                <Route path="/r/:owner/:name/diff" element={<DiffExplorerView />} />
+                <Route path="/r/:owner/:name/tree/:cs" element={<TreeView />} />
+                <Route path="/r/:owner/:name/tree/:cs/*" element={<TreeView />} />
+                <Route path="/r/:owner/:name/agents" element={<AgentsView />} />
+                <Route
+                  path="/r/:owner/:name/agents/:taskId"
+                  element={<TaskDetailView />}
+                />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
             </RequireAuth>
           }
         />
-        <Route path="/r/:owner/:name/history" element={<HistoryView />} />
-        <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
-        <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
-        <Route path="/r/:owner/:name/ci" element={<CiView />} />
-        <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
-        <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
-        <Route path="/r/:owner/:name/diff" element={<DiffExplorerView />} />
-        <Route path="/r/:owner/:name/tree/:cs" element={<TreeView />} />
-        <Route path="/r/:owner/:name/tree/:cs/*" element={<TreeView />} />
-        <Route
-          path="/r/:owner/:name/agents"
-          element={
-            <RequireAuth>
-              <AgentsView />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/r/:owner/:name/agents/:taskId"
-          element={
-            <RequireAuth>
-              <TaskDetailView />
-            </RequireAuth>
-          }
-        />
-        <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>
   );

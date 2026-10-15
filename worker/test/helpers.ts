@@ -209,3 +209,22 @@ export function makeApp(env: Env): FetchLike {
   const ctx = fakeCtx();
   return (request: Request) => app.fetch(request, env, ctx);
 }
+
+/**
+ * `makeApp` as a signed-in viewer with no repo membership — the caller for
+ * public-repo reads now that the API refuses anonymous requests. Requests
+ * that already carry a cookie or bearer token keep their own credentials.
+ */
+export function makeViewerApp(env: TestEnv): FetchLike {
+  const fetch = makeApp(env);
+  let viewer: Promise<string> | null = null;
+  return async (request: Request) => {
+    if (request.headers.has('cookie') || request.headers.has('authorization')) {
+      return fetch(request);
+    }
+    viewer ??= loginAs(env, 990_001, 'viewer').then((v) => v.cookie);
+    const signed = new Request(request);
+    signed.headers.set('cookie', await viewer);
+    return fetch(signed);
+  };
+}

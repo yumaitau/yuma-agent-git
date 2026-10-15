@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentQueues, loginAs, makeApp, seedSchema } from './helpers';
+import { cleanDb, instrumentQueues, loginAs, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { C, T } from '../src/db/schema';
 import { q1, run } from '../src/db/client';
@@ -22,7 +22,7 @@ const enc = new TextEncoder();
 const author = { name: 'Ada', email: 'ada@example.com' };
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`https://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`https://x/api/v1/repos${path}`));
 }
 
 async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
@@ -144,14 +144,14 @@ describe('tarball export', () => {
     expect(entries.find((e) => e.name === 'run.sh')?.mode).toContain('755');
   });
 
-  it('refuses oversized exports and serves immutable headers for public cs revs', async () => {
+  it('refuses oversized exports and keeps signed-in tarballs out of shared caches', async () => {
     expect(exceedsExportLimits(5, 100)).toBe(false);
     expect(exceedsExportLimits(100_000, 0)).toBe(true);
     expect(exceedsExportLimits(5, 513 * 1024 * 1024)).toBe(true);
 
     const { cs } = await seedFiles('acme/limits');
     const res = await get(`/acme/limits/export/tarball?cs=${cs}`);
-    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     await res.body?.cancel();
   });
 });
@@ -317,7 +317,7 @@ describe('export → GitHub contents sync', () => {
 
     const auth = await loginAs(testEnv, 1, 'syncer');
     await grantWrite(repoId, auth.userId);
-    const started = await makeApp(testEnv)(
+    const started = await makeViewerApp(testEnv)(
       new Request('https://x/api/v1/repos/acme/sync/export/github', {
         method: 'POST',
         headers: { 'content-type': 'application/json', cookie: auth.cookie },

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, loginAs, makeApp, seedSchema, sha256 } from './helpers';
+import { cleanDb, loginAs, makeViewerApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -29,7 +29,7 @@ function bytesToB64(bytes: Uint8Array): string {
 }
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
 }
 
 /**
@@ -224,7 +224,7 @@ describe('read RPCs', () => {
     const all = await get('/acme/history/history?cs=ref:main');
     expect(all.status).toBe(200);
     // short TTL even on public repos (history depends on mutable heads)
-    expect(all.headers.get('cache-control')).toBe('public, max-age=10');
+    expect(all.headers.get('cache-control')).toBe('private, max-age=10');
     const allBody = (await all.json()) as { changesets: { id: string }[] };
     expect(allBody.changesets.map((c) => c.id)).toEqual([cs3.id, cs2.id, cs1.id]);
 
@@ -249,26 +249,26 @@ describe('read RPCs', () => {
     );
   });
 
-  it('immutable only for content-addressed reads of PUBLIC repos', async () => {
+  it('signed-in reads of public repos stay out of shared caches', async () => {
     const { cs1 } = await seedHistory('acme/cache', 'public');
 
     const file = await get(`/acme/cache/file?cs=${cs1.id}&path=src/app.ts`);
-    expect(file.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(file.headers.get('cache-control')).toBe('private, no-store');
     expect(file.headers.get('etag')).toMatch(new RegExp(`^"${cs1.id}-[0-9a-f]{16}"$`));
 
     const tree = await get(`/acme/cache/tree?cs=${cs1.id}&path=src`);
-    expect(tree.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(tree.headers.get('cache-control')).toBe('private, no-store');
     expect(tree.headers.get('etag')).toMatch(new RegExp(`^"${cs1.id}-[0-9a-f]{16}"$`));
 
     // ref-addressed revs are MUTABLE URLs — must never be frozen in caches
     const byRef = await get('/acme/cache/file?cs=ref:main&path=src/app.ts');
-    expect(byRef.headers.get('cache-control')).toBe('public, max-age=10');
+    expect(byRef.headers.get('cache-control')).toBe('private, no-store');
     expect(byRef.headers.get('cache-control')).not.toContain('immutable');
 
     const changed = await get(`/acme/cache/changed-paths?cs=${cs1.id}`);
     expect(changed.status).toBe(200);
     expect(changed.headers.get('cache-control')).toBe(
-      'public, max-age=31536000, immutable',
+      'private, max-age=31536000, immutable',
     );
     const changedBody = (await changed.json()) as {
       cs: string;
@@ -299,7 +299,7 @@ describe('read RPCs', () => {
       `changed-paths?cs=${cs1.id}`,
       'history?cs=ref:main',
     ]) {
-      const res = await makeApp(testEnv)(
+      const res = await makeViewerApp(testEnv)(
         new Request(`https://x/api/v1/repos/acme/priv/${path}`, {
           headers: auth.headers,
         }),

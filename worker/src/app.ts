@@ -23,6 +23,21 @@ export const app = new Hono<AppEnv>();
 app.use('*', observeMiddleware);
 // Resolves `user` + `principal` on every request (never 401s by itself).
 app.use('*', authMiddleware);
+// Sign-in is required to see anything: the whole /api surface rejects
+// anonymous callers, public repos included. OAuth, webhooks (signature
+// verified) and /healthz stay reachable. Every API response is therefore
+// per-user, so `public` cache policies are narrowed to `private`: browsers
+// may still keep immutable reads, shared caches never do.
+app.use('/api/*', async (c, next) => {
+  if (!c.get('principal')) {
+    return apiError(c, 401, 'unauthorized', 'authentication required');
+  }
+  await next();
+  const cacheControl = c.res.headers.get('cache-control');
+  if (cacheControl?.includes('public')) {
+    c.res.headers.set('cache-control', cacheControl.replace('public', 'private'));
+  }
+});
 // Rate limiting (429 + Retry-After) reads the principal auth just resolved.
 app.use('*', rateLimitMiddleware);
 // …then the cache tier (public immutable only; nothing auth'd is cached).

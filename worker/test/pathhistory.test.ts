@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema } from './helpers';
+import { cleanDb, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -16,7 +16,7 @@ const author = { name: 'Ada', email: 'ada@example.com' };
 const b64 = (t: string): string => btoa(t);
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
 }
 
 function mockBatch(bodies: Array<{ body: DerivedMessage; attempts: number }>): {

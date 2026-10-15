@@ -402,17 +402,17 @@ describe('route sweep — the authz contract future routes must extend', () => {
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/changesets/${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: '/api/v1/repos/acme/sweep/changesets',
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: '/api/v1/repos/acme/sweep/refs',
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'PUT',
@@ -423,58 +423,58 @@ describe('route sweep — the authz contract future routes must extend', () => {
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/file?cs=${cs}&path=a.txt`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/tree?cs=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/history?cs=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/changed-paths?cs=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/diff?from=${cs}&to=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/blame?cs=${cs}&path=a.txt`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/merge-base?a=${cs}&b=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/is-ancestor?a=${cs}&b=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/object/tree/${'0'.repeat(64)}`,
-        expect: { anon: 404, stranger: 404, creator: 404 }, // guarded; object missing
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; object missing
       },
       {
         method: 'POST',
         path: '/api/v1/repos/acme/sweep/fetch-objects',
         body: { trees: [] },
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'GET',
         path: `/api/v1/repos/acme/sweep/checkout-info?cs=${cs}`,
-        expect: { anon: 404, stranger: 404, creator: 200 },
+        expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
         method: 'PUT',

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentDb, makeApp, seedSchema } from './helpers';
+import { cleanDb, instrumentDb, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { C, T } from '../src/db/schema';
 import { q, run } from '../src/db/client';
@@ -25,7 +25,7 @@ const author = { name: 'Ada', email: 'ada@example.com' };
 const b64 = (t: string): string => btoa(t);
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
 }
 
 /** Linear chain of `count` changesets (root + count-1 children) via the core API. */
@@ -253,13 +253,13 @@ describe('ancestry routes', () => {
     expect(mb.status).toBe(200);
     expect(mb.headers.get('x-yag-provisional')).toBeNull();
     // both revs content-addressed + public → immutable
-    expect(mb.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(mb.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
     expect(await mb.json()).toEqual({ merge_base: ids[0], provisional: false });
 
     const is = await get(`/acme/routes/is-ancestor?a=${ids[0]}&b=ref:main`);
     expect(is.status).toBe(200);
     // ref-addressed rev → mutable URL → short TTL
-    expect(is.headers.get('cache-control')).toBe('public, max-age=10');
+    expect(is.headers.get('cache-control')).toBe('private, max-age=10');
     expect(await is.json()).toEqual({ is_ancestor: true });
 
     const distance = await get(`/acme/routes/ancestor-distance?a=${ids[0]}&b=${ids[2]}`);

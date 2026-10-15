@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, loginAs, makeApp, seedSchema } from './helpers';
+import { cleanDb, loginAs, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, getRef, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -36,7 +36,7 @@ async function makeChain(repoId: string, count: number): Promise<Changeset[]> {
 }
 
 function app() {
-  return makeApp(testEnv);
+  return makeViewerApp(testEnv);
 }
 
 async function putRef(slug: string, name: string, body: unknown): Promise<Response> {

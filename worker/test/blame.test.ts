@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, makeApp, seedSchema } from './helpers';
+import { cleanDb, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -23,7 +23,7 @@ function b64(text: string): string {
 }
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
 }
 
 const TEN_LINES = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10']

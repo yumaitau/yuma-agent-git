@@ -5,7 +5,7 @@ import {
   cleanDb,
   instrumentObjects,
   loginAs,
-  makeApp,
+  makeViewerApp,
   seedSchema,
   sha256,
 } from './helpers';
@@ -30,7 +30,7 @@ function b64(text: string): string {
 }
 
 async function postCommit(slug: string, body: unknown): Promise<Response> {
-  const app = makeApp(testEnv);
+  const app = makeViewerApp(testEnv);
   return app(
     new Request(`http://x/api/v1/repos/${slug}/changesets`, {
       method: 'POST',
@@ -416,7 +416,7 @@ describe('changeset routes', () => {
     expect(created.deduped).toBe(false);
     expect(created.changeset.message).toBe('hello');
 
-    const get = await makeApp(testEnv)(
+    const get = await makeViewerApp(testEnv)(
       new Request(`http://x/api/v1/repos/acme/routes/changesets/${created.changeset.id}`),
     );
     expect(get.status).toBe(200);
@@ -424,7 +424,7 @@ describe('changeset routes', () => {
       created.changeset.id,
     );
 
-    const missing = await makeApp(testEnv)(
+    const missing = await makeViewerApp(testEnv)(
       new Request(`http://x/api/v1/repos/acme/routes/changesets/${'0'.repeat(64)}`),
     );
     expect(missing.status).toBe(404);
@@ -478,14 +478,14 @@ describe('changeset routes', () => {
       secondBody.changeset.id,
     );
 
-    const res = await makeApp(testEnv)(
+    const res = await makeViewerApp(testEnv)(
       new Request('http://x/api/v1/repos/acme/history/changesets?head=ref:main&limit=10'),
     );
     expect(res.status).toBe(200);
     const { changesets } = (await res.json()) as { changesets: { message: string }[] };
     expect(changesets.map((c) => c.message)).toEqual(['two', 'one']);
 
-    const limited = await makeApp(testEnv)(
+    const limited = await makeViewerApp(testEnv)(
       new Request(
         `http://x/api/v1/repos/acme/history/changesets?head=${rootBody.changeset.id}&limit=1`,
       ),
@@ -494,7 +494,7 @@ describe('changeset routes', () => {
       1,
     );
 
-    const bad = await makeApp(testEnv)(
+    const bad = await makeViewerApp(testEnv)(
       new Request('http://x/api/v1/repos/acme/history/changesets?head=nosuchrev'),
     );
     expect(bad.status).toBe(404);
@@ -564,7 +564,7 @@ describe('changeset routes', () => {
       'inline_too_large',
     );
 
-    const malformed = await makeApp(testEnv)(
+    const malformed = await makeViewerApp(testEnv)(
       new Request('http://x/api/v1/repos/acme/bad/changesets', {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...auth.headers },

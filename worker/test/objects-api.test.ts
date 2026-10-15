@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, loginAs, makeApp, seedSchema, sha256 } from './helpers';
+import { cleanDb, loginAs, makeViewerApp, seedSchema, sha256 } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, getRepoBySlug, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -20,7 +20,7 @@ function b64(text: string): string {
 }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`, init));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`, init));
 }
 
 async function seedRepo(
@@ -69,7 +69,7 @@ describe('objects API (sparse checkout protocol)', () => {
       }),
     });
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
     const body = (await res.json()) as {
       blobs: { hash: string; size: number; encoding: string; data_b64: string }[];
       missing: string[];
@@ -144,7 +144,7 @@ describe('objects API (sparse checkout protocol)', () => {
     const { rootTree } = await seedRepo('acme/trees');
     const res = await api(`/acme/trees/object/tree/${rootTree}`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     const body = (await res.json()) as { entries: { name: string; kind: string }[] };
     expect(body.entries.map((e) => e.name).sort()).toEqual(['src', 'x']);
 

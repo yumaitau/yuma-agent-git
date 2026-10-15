@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, loginAs, makeApp, seedSchema } from './helpers';
+import { cleanDb, loginAs, makeApp, makeViewerApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo } from '../src/db/repos';
 import { getRef } from '../src/db/repos';
@@ -70,7 +70,7 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
       repo: { default_branch: 'release/start' },
     });
     expect((await app(new Request('https://x/api/v1/repos/ada/native'))).status).toBe(
-      404,
+      401,
     );
   });
 
@@ -115,7 +115,7 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
     ).toBe(404);
   });
 
-  it('lists public repos to strangers and adds the caller’s own', async () => {
+  it('lists public repos to signed-in strangers and adds the caller’s own', async () => {
     const ada = await loginAs(testEnv, 1, 'ada');
     const bob = await loginAs(testEnv, 2, 'bob');
     await createRepo(dbEnv, {
@@ -134,11 +134,9 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
       createdBy: bob.userId,
     });
 
-    const slugs = async (cookie?: string): Promise<string[]> => {
+    const slugs = async (cookie: string): Promise<string[]> => {
       const res = await makeApp(testEnv)(
-        new Request('https://x/api/v1/repos', {
-          headers: cookie ? { cookie } : {},
-        }),
+        new Request('https://x/api/v1/repos', { headers: { cookie } }),
       );
       expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toBe('private, no-store');
@@ -146,7 +144,8 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
       return body.repos.map((repo) => repo.slug).sort();
     };
 
-    expect(await slugs()).toEqual(['acme/pub']);
+    const anonymous = await makeApp(testEnv)(new Request('https://x/api/v1/repos'));
+    expect(anonymous.status).toBe(401);
     expect(await slugs(ada.cookie)).toEqual(['acme/priv', 'acme/pub']);
     expect(await slugs(bob.cookie)).toEqual(['acme/pub', 'bob/notes']);
   });
@@ -162,7 +161,7 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
       const url = new URL('https://x/api/v1/repos');
       url.searchParams.set('limit', '1');
       if (cursor) url.searchParams.set('cursor', cursor);
-      const res = await makeApp(testEnv)(new Request(url));
+      const res = await makeViewerApp(testEnv)(new Request(url));
       expect(res.status).toBe(200);
       const body = (await res.json()) as RepoPage;
       expect(body.repos).toHaveLength(i < 3 ? 1 : 0);
@@ -173,7 +172,9 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
     expect(slugs).toEqual(['acme/c', 'acme/b', 'acme/a']);
     expect(cursor).toBeNull();
 
-    const bad = await makeApp(testEnv)(new Request('https://x/api/v1/repos?cursor=nope'));
+    const bad = await makeViewerApp(testEnv)(
+      new Request('https://x/api/v1/repos?cursor=nope'),
+    );
     expect(bad.status).toBe(400);
   });
 
@@ -262,7 +263,7 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
     expect(hits).toEqual([]);
 
     const repos = await makeApp(withAssets)(new Request('https://x/api/v1/repos'));
-    expect(repos.status).toBe(200);
+    expect(repos.status).toBe(401);
     expect(repos.headers.get('content-type')).toContain('application/json');
     expect(hits).toEqual([]);
   });

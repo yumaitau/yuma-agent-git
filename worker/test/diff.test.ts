@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentObjects, loginAs, makeApp, seedSchema } from './helpers';
+import {
+  cleanDb,
+  instrumentObjects,
+  loginAs,
+  makeViewerApp,
+  seedSchema,
+} from './helpers';
 import type { TestEnv } from './helpers';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
@@ -18,7 +24,7 @@ function b64(text: string): string {
 }
 
 async function get(path: string): Promise<Response> {
-  return makeApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
+  return makeViewerApp(testEnv)(new Request(`http://x/api/v1/repos${path}`));
 }
 
 /**
@@ -320,8 +326,8 @@ describe('diff route', () => {
 
     const res = await get(`/acme/http/diff?from=${from.id}&to=${to.id}&text=1`);
     expect(res.status).toBe(200);
-    // both revs content-addressed + public repo → immutable
-    expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    // the cache tier keeps signed-in reads out of shared caches
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     const body = (await res.json()) as {
       merge_base: string;
       files: { path: string }[];
@@ -331,9 +337,9 @@ describe('diff route', () => {
     expect(body.files.map((f) => f.path).sort()).toEqual(['A.txt', 'B.txt']);
     expect((body.texts ?? []).map((t) => t.path).sort()).toEqual(['A.txt', 'B.txt']);
 
-    // ref-addressed revs → mutable URL → short TTL, never immutable
+    // ref-addressed revs are never frozen either
     const byRef = await get(`/acme/http/diff?from=ref:main&to=${to.id}`);
-    expect(byRef.headers.get('cache-control')).toBe('public, max-age=10');
+    expect(byRef.headers.get('cache-control')).toBe('private, no-store');
   });
 
   it('merge base is skip-list real; private diffs stay uncacheable', async () => {
@@ -365,7 +371,7 @@ describe('diff route', () => {
       })
     ).changeset;
 
-    const res = await makeApp(testEnv)(
+    const res = await makeViewerApp(testEnv)(
       new Request(`https://x/api/v1/repos/acme/prov/diff?from=${a.id}&to=${b.id}`, {
         headers: auth.headers,
       }),

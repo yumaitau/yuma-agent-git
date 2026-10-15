@@ -55,21 +55,18 @@ for (const route of ['/', '/login']) {
       'Dashboard runtime errors',
     );
     assert.ok(dom.window.document.querySelector('.topnav'), 'Missing navigation');
-    assert.equal(
-      dom.window.document.querySelector('main h1')?.textContent,
-      route === '/login' ? 'Sign in' : 'Repositories',
-    );
+    // Anonymous visitors land on sign-in from every route.
+    assert.equal(dom.window.document.querySelector('main h1')?.textContent, 'Sign in');
+    assert.equal(dom.window.location.pathname, '/login');
     assert.ok(dom.window.document.querySelector('a[href="/login"]'));
-    if (route === '/login') {
-      while (
-        !dom.window.document.querySelector('[role="alert"]') &&
-        Date.now() < deadline
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      assert.match(dom.window.document.body.textContent, /Sign-in setup is incomplete/);
-      assert.equal(dom.window.document.querySelector('a[href="/auth/github"]'), null);
+    while (
+      !dom.window.document.querySelector('[role="alert"]') &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    assert.match(dom.window.document.body.textContent, /Sign-in setup is incomplete/);
+    assert.equal(dom.window.document.querySelector('a[href="/auth/github"]'), null);
   } finally {
     dom.window.close();
   }

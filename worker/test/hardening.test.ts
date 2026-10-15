@@ -149,7 +149,7 @@ describe('rate limiting (sharded sliding window)', () => {
 });
 
 describe('cache tier', () => {
-  it('caches public immutable responses; auth’d/private never cached', async () => {
+  it('signed-in and private reads never reach the shared cache', async () => {
     await seedSchema(testEnv);
     await cleanDb(testEnv);
     const auth = await loginAs(testEnv, 1, 'ada');
@@ -166,19 +166,16 @@ describe('cache tier', () => {
     });
     await setRef(dbEnv, repo.id, 'main', committed.changeset.id);
 
-    // public + content-addressed → cacheable
+    // public + content-addressed, but every reader is signed in now, so the
+    // shared cache must never hold it
     const url = `https://x/api/v1/repos/acme/cache/file?cs=${committed.changeset.id}&path=a.txt`;
-    const first = await makeApp(testEnv)(new Request(url));
-    expect(first.headers.get('cache-control')).toContain('public');
+    const first = await makeApp(testEnv)(new Request(url, { headers: auth.headers }));
+    expect(first.status).toBe(200);
+    expect(first.headers.get('cache-control')).toBe('private, no-store');
     await first.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 10)); // waitUntil flush
-    const hit = await caches.default.match(new Request(url));
-    expect(hit).toBeTruthy();
-
-    // Cached bytes must not outlive authorization when visibility changes.
-    await run(dbEnv, `UPDATE ${T.repos} SET visibility = 'private' WHERE id = ?`, [repo.id]);
-    const revoked = await makeApp(testEnv)(new Request(url));
-    expect(revoked.status).toBe(404);
+    expect(await caches.default.match(new Request(url))).toBeFalsy();
+    expect((await makeApp(testEnv)(new Request(url))).status).toBe(401);
 
     // private repo → no-store even with an immutable URL shape
     const priv = await createRepo(dbEnv, { slug: 'acme/priv' });
@@ -189,8 +186,10 @@ describe('cache tier', () => {
       changes: [{ path: 'p.txt', op: 'add', content_b64: btoa('secret') }],
     });
     const privUrl = `https://x/api/v1/repos/acme/priv/file?cs=${privCommit.changeset.id}&path=p.txt`;
-    const privRes = await makeApp(testEnv)(new Request(privUrl));
-    expect(privRes.headers.get('cache-control')).toBe('private, no-store');
+    const privRes = await makeApp(testEnv)(
+      new Request(privUrl, { headers: auth.headers }),
+    );
+    expect(privRes.status).toBe(404);
     await privRes.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(await caches.default.match(new Request(privUrl))).toBeFalsy();
@@ -297,7 +296,7 @@ describe('cache tier', () => {
     expect(cached.headers.get('cache-control')).toBe('private, no-store');
     await cached.arrayBuffer();
     const anonymous = await makeApp(testEnv)(new Request(url));
-    expect(anonymous.status).toBe(404);
+    expect(anonymous.status).toBe(401);
     // without the token, the same URL is strictly no-store
     const bare = await makeApp(testEnv)(
       new Request(
@@ -382,7 +381,10 @@ describe('observability + metrics', () => {
     setSlowThreshold(0);
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      const res = await makeApp(testEnv)(new Request('https://x/api/v1/repos'));
+      const auth = await loginAs(testEnv, 1, 'ada');
+      const res = await makeApp(testEnv)(
+        new Request('https://x/api/v1/repos', { headers: auth.headers }),
+      );
       expect(res.status).toBe(200);
       const requestId = res.headers.get('x-request-id');
       expect(requestId).toMatch(/[0-9a-f-]{36}/);
