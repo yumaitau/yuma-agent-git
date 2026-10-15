@@ -11,8 +11,10 @@ import { apiError, errorResponse, readJsonBody } from '../api/errors';
  *   - cache only `public` responses from content-addressed routes
  *     (object/blob/tree, file raw, tree, tarball, fast-import, diff)
  *   - OR requests carrying a valid signed `?cache_token=` (HMAC of
- *     URL+expiry, minted by POST /api/v1/cache-token for authenticated
- *     callers who want CDN caching of private reads)
+ *     URL+expiry+user, minted by POST /api/v1/cache-token for authenticated
+ *     callers who want CDN caching of private reads). The user is bound in so
+ *     a shared URL can never replay one user's cached body to another whose
+ *     path rules filter the same route differently
  *   - everything else — especially anything auth'd — gets
  *     `Cache-Control: private, no-store` enforced here regardless of what a
  *     route said
@@ -33,10 +35,11 @@ export function isCacheablePath(path: string): boolean {
   return CACHEABLE_PATTERNS.some((pattern) => pattern.test(path));
 }
 
-/** HMAC of `url|expiry` — `cache_token` proves a private read may be cached. */
+/** HMAC of `url|expiry|subject` — proves this user's private read may be cached. */
 export async function mintCacheToken(
   signingKey: string,
   url: string,
+  subject: string,
   now: number = Date.now(),
 ): Promise<{ token: string; expires_at: number }> {
   if (signingKey === '') throw new Error('cache signing key not configured');
@@ -51,7 +54,7 @@ export async function mintCacheToken(
   const sig = await crypto.subtle.sign(
     'HMAC',
     key,
-    new TextEncoder().encode(`${url}|${expiresAt}`),
+    new TextEncoder().encode(`${url}|${expiresAt}|${subject}`),
   );
   const token = `${expiresAt}.${[...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
   return { token, expires_at: expiresAt };
@@ -61,6 +64,7 @@ export async function verifyCacheToken(
   signingKey: string,
   url: string,
   token: string,
+  subject: string,
   now: number = Date.now(),
 ): Promise<boolean> {
   if (signingKey === '') return false; // fail closed: no key, no trust
@@ -81,7 +85,7 @@ export async function verifyCacheToken(
     'HMAC',
     key,
     provided as BufferSource,
-    new TextEncoder().encode(`${url}|${expiry}`),
+    new TextEncoder().encode(`${url}|${expiry}|${subject}`),
   );
 }
 
@@ -106,9 +110,16 @@ export async function cacheTierMiddleware(
   const response = c.res;
   const cacheControl = response.headers.get('cache-control') ?? '';
   const token = url.searchParams.get('cache_token');
+  const subject = c.get('principal')?.userId;
   const tokenOk =
     token !== null &&
-    (await verifyCacheToken(c.env.CACHE_SIGNING_KEY ?? '', cacheUrl.toString(), token));
+    subject !== undefined &&
+    (await verifyCacheToken(
+      c.env.CACHE_SIGNING_KEY ?? '',
+      cacheUrl.toString(),
+      token,
+      subject,
+    ));
 
   if (
     response.status !== 200 ||
@@ -169,7 +180,11 @@ cacheTokenRoutes.post('/api/v1/cache-token', async (c) => {
       return apiError(c, 400, 'invalid_request', 'url is required');
     }
     const target = new URL(parsed.data.url, 'https://placeholder.invalid');
-    const minted = await mintCacheToken(c.env.CACHE_SIGNING_KEY ?? '', target.toString());
+    const minted = await mintCacheToken(
+      c.env.CACHE_SIGNING_KEY ?? '',
+      target.toString(),
+      c.get('user')!.id,
+    );
     return c.json(minted, 200, { 'cache-control': 'private, no-store' });
   } catch (err) {
     return errorResponse(c, err);

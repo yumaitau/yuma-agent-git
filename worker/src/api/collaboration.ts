@@ -1,8 +1,8 @@
-import { Hono, type Context } from 'hono';
-import { can, listPathRules } from '../auth/rbac';
+import { Hono } from 'hono';
+import { can } from '../auth/rbac';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
-import { loadAdminRepo, loadReadableRepo, loadWritableRepo } from '../auth/guards';
+import { loadWholeRepo } from '../auth/guards';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { q, q1, run } from '../db/client';
 import { getRef } from '../db/repos';
@@ -386,52 +386,4 @@ async function autoCheck(
           : 'Could not schedule checks. Run them from the CI page.',
     };
   }
-}
-
-/** Logs and scripts can expose any source path; partial readers cannot use these surfaces. */
-async function loadWholeRepo(
-  c: Context<AppEnv>,
-  permission: 'read' | 'write' | 'admin',
-  slug: string,
-) {
-  const loaded = await (
-    permission === 'admin'
-      ? loadAdminRepo
-      : permission === 'write'
-        ? loadWritableRepo
-        : loadReadableRepo
-  )(c, slug);
-  if (!loaded.ok) return loaded;
-  const principal = c.get('principal');
-  if (principal?.kind === 'token') {
-    if (principal.repoId && principal.repoId !== loaded.repo.id)
-      return {
-        ok: false as const,
-        response: apiError(c, 404, 'repo_not_found', 'Repository not found'),
-      };
-    const scope = permission === 'read' ? 'repo:read' : 'repo:write';
-    if (!principal.scopes.includes(scope))
-      return {
-        ok: false as const,
-        response: apiError(c, 403, 'insufficient_scope', `Token requires ${scope}`),
-      };
-  }
-  for (const rule of await listPathRules(c.env, loaded.repo.id)) {
-    for (const perm of permission === 'read'
-      ? (['read'] as const)
-      : (['read', 'write'] as const)) {
-      if (!(await can(c.env, loaded.repo, c.get('principal'), perm, rule.path_prefix))) {
-        return {
-          ok: false as const,
-          response: apiError(
-            c,
-            403,
-            'whole_repository_required',
-            'Pull requests and CI require access to the whole repository, including paths covered by permission rules.',
-          ),
-        };
-      }
-    }
-  }
-  return loaded;
 }

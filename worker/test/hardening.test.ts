@@ -200,6 +200,7 @@ describe('cache tier', () => {
     const { token } = await mintCacheToken(
       key,
       'https://x/api/v1/repos/acme/file?cs=a',
+      'user-a',
       1_700_000_000_000,
     );
     expect(
@@ -207,6 +208,7 @@ describe('cache tier', () => {
         key,
         'https://x/api/v1/repos/acme/file?cs=a',
         token,
+        'user-a',
         1_700_000_000_000,
       ),
     ).toBe(true);
@@ -216,6 +218,7 @@ describe('cache tier', () => {
         key,
         'https://x/api/v1/repos/acme/file?cs=B',
         token,
+        'user-a',
         1_700_000_000_000,
       ),
     ).toBe(false);
@@ -230,6 +233,7 @@ describe('cache tier', () => {
         key,
         'https://x/api/v1/repos/acme/file?cs=a',
         tampered,
+        'user-a',
         1_700_000_000_000,
       ),
     ).toBe(false);
@@ -238,9 +242,19 @@ describe('cache tier', () => {
         key,
         'https://x/api/v1/repos/acme/file?cs=a',
         token,
+        'user-a',
         1_700_000_000_000 + 2 * 60 * 60 * 1000,
       ),
     ).toBe(false); // expired
+    expect(
+      await verifyCacheToken(
+        key,
+        'https://x/api/v1/repos/acme/file?cs=a',
+        token,
+        'user-b',
+        1_700_000_000_000,
+      ),
+    ).toBe(false); // bound to the user who minted it
     expect(isCacheablePath('/api/v1/repos/x/file')).toBe(true);
     expect(isCacheablePath('/api/v1/repos/x/changesets')).toBe(false);
   });
@@ -282,7 +296,9 @@ describe('cache tier', () => {
     const { verifyCacheToken: verify } = await import('../src/middleware/cachetier');
     const stripped = new URL(url);
     stripped.searchParams.delete('cache_token');
-    expect(await verify('test-cache-signing-key', stripped.toString(), token)).toBe(true);
+    expect(
+      await verify('test-cache-signing-key', stripped.toString(), token, auth.userId),
+    ).toBe(true);
     const res = await makeApp(testEnv)(new Request(url, { headers: auth.headers }));
     expect(res.status).toBe(200);
     // The signed entry round-trips only for an authorized caller; neither
@@ -297,6 +313,17 @@ describe('cache tier', () => {
     await cached.arrayBuffer();
     const anonymous = await makeApp(testEnv)(new Request(url));
     expect(anonymous.status).toBe(401);
+    // another reader replaying the signed URL never gets this user's entry
+    const other = await loginAs(testEnv, 2, 'bob');
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role}) VALUES (?, ?, 'read')`,
+      [repo.id, other.userId],
+    );
+    const replay = await makeApp(testEnv)(new Request(url, { headers: other.headers }));
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get('x-yag-cache')).toBe('bypass');
+    await replay.arrayBuffer();
     // without the token, the same URL is strictly no-store
     const bare = await makeApp(testEnv)(
       new Request(

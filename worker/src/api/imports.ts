@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { getImportJob, startImport } from '../bridge/import';
-import { loadReadableRepo, loadWritableRepo } from '../auth/guards';
+import { loadReadableRepo, loadWholeRepo } from '../auth/guards';
 
 /**
  * Import job routes (issue #15), mounted under /api/v1:
@@ -20,7 +20,9 @@ const importSchema = z.object({
 
 importRoutes.post('/repos/:repo{.+}/import', async (c) => {
   try {
-    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    // an import rewrites the default branch wholesale — like a ref move, it
+    // needs write on every path, not just repo-level write
+    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const body = await readJsonBody(c);
     const parsed = importSchema.safeParse(body);

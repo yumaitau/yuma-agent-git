@@ -118,6 +118,27 @@ export interface Decision {
   deniedBy?: { id: number; path_prefix: string; effect: string; principal: string };
 }
 
+/** Everything a decision reads from D1, loaded once per (repo, principal). */
+interface DecisionContext {
+  repo: RepoWithCreator;
+  principal: Principal | null;
+  rules: PathRuleRecord[];
+  role: Role | null;
+}
+
+async function loadContext(
+  env: Env,
+  repo: RepoWithCreator,
+  principal: Principal | null,
+  withRules: boolean,
+): Promise<DecisionContext> {
+  const [rules, role] = await Promise.all([
+    withRules ? listPathRules(env, repo.id) : Promise.resolve([]),
+    roleOf(env, repo.id, principal),
+  ]);
+  return { repo, principal, rules, role };
+}
+
 /**
  * The authorization decision with provenance. `path` engages path rules;
  * omitting it checks repo-level access only.
@@ -129,6 +150,47 @@ export async function decide(
   perm: Perm,
   path?: string,
 ): Promise<Decision> {
+  return evaluate(
+    await loadContext(env, repo, principal, path !== undefined),
+    perm,
+    path,
+  );
+}
+
+/** Batched `decide`: rules and membership load once, then any number of paths. */
+export interface PathDecider {
+  readonly rules: readonly PathRuleRecord[];
+  decide(perm: Perm, path?: string): Decision;
+}
+
+export async function pathDecider(
+  env: Env,
+  repo: RepoWithCreator,
+  principal: Principal | null,
+): Promise<PathDecider> {
+  const ctx = await loadContext(env, repo, principal, true);
+  return { rules: ctx.rules, decide: (perm, path) => evaluate(ctx, perm, path) };
+}
+
+/**
+ * The first path rule that restricts `perm` for this principal anywhere in
+ * the repo (checked at every rule prefix), or null when access is whole.
+ */
+export function restrictingDecision(
+  d: PathDecider,
+  perms: readonly Perm[],
+): Decision | null {
+  for (const rule of d.rules) {
+    for (const perm of perms) {
+      const decision = d.decide(perm, rule.path_prefix);
+      if (!decision.allowed) return decision;
+    }
+  }
+  return null;
+}
+
+function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
+  const { repo, principal, rules } = ctx;
   // Token limits constrain every role and path grant, including repo creators.
   if (principal?.kind === 'token') {
     if (principal.repoId !== null && principal.repoId !== repo.id)
@@ -140,15 +202,15 @@ export async function decide(
       return { allowed: false };
     }
   }
-  const rules = path === undefined ? [] : await listPathRules(env, repo.id);
 
   // 1. anonymous: public read only, never past a deny rule
   if (principal === null) {
     if (perm !== 'read') return { allowed: false };
     if (repo.visibility !== 'public') return { allowed: false };
-    const blocking = rules.find(
-      (r) => r.effect === 'deny' && coversPath(r.path_prefix, path as string),
-    );
+    const blocking =
+      path === undefined
+        ? undefined
+        : rules.find((r) => r.effect === 'deny' && coversPath(r.path_prefix, path));
     return blocking
       ? { allowed: false, deniedBy: describe(blocking) }
       : { allowed: true };
@@ -166,10 +228,9 @@ export async function decide(
         if (spec !== 0) return spec;
         return a.effect === 'deny' ? -1 : 1;
       });
-    const role = await roleOf(env, repo.id, principal);
     for (const rule of matching) {
       if (!(rule.perms as string[]).includes(perm)) continue; // rules decide only their listed perms
-      if (!ruleMatchesPrincipal(rule.principal, principal, role)) continue;
+      if (!ruleMatchesPrincipal(rule.principal, principal, ctx.role)) continue;
       return rule.effect === 'grant'
         ? { allowed: true }
         : { allowed: false, deniedBy: describe(rule) };
@@ -177,7 +238,7 @@ export async function decide(
   }
 
   // 3. membership roles
-  const memberRole = await roleOf(env, repo.id, principal);
+  const memberRole = ctx.role;
   if (memberRole === 'admin') return { allowed: true };
   if (memberRole === 'write') return { allowed: perm !== 'admin' };
   if (memberRole === 'read') return { allowed: perm === 'read' || perm === 'history' };

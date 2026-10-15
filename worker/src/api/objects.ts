@@ -8,7 +8,7 @@ import { getTree, getTreeRecursive } from '../core/trees';
 import { sha256Hex } from '../core/hashing';
 import { RequestValidationError } from '../core/errors';
 import { resolveRevision } from '../core/read';
-import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
+import { loadWholeRepo, loadWritableRepo } from '../auth/guards';
 import { r2 } from '../observability/phase';
 
 /**
@@ -22,6 +22,10 @@ import { r2 } from '../observability/phase';
  *   POST /api/v1/repos/:repo/fetch-objects
  *   GET  /api/v1/repos/:repo/checkout-info?cs=…
  *   PUT  /api/v1/repos/:repo/blob?sha256=…&encoding=…
+ *
+ * A hash cannot be mapped back to the paths it appears under, so every read
+ * here needs whole-repository read: a caller any path rule restricts gets
+ * 403 `whole_repository_required` and uses the path-checked read RPCs.
  */
 export const objectsRoutes = new Hono<{ Bindings: Env }>();
 
@@ -49,7 +53,7 @@ function cacheHeaders(visibility: string): Record<string, string> {
 
 objectsRoutes.get('/repos/:repo{.+}/object/tree/:hash', async (c) => {
   try {
-    const loaded = await loadReadable(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const hash = c.req.param('hash');
     const tree = await getTree(c.env, loaded.repo.id, hash);
@@ -71,7 +75,7 @@ objectsRoutes.get('/repos/:repo{.+}/object/tree/:hash', async (c) => {
 
 objectsRoutes.get('/repos/:repo{.+}/object/blob/:hash', async (c) => {
   try {
-    const loaded = await loadReadable(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
     const hash = c.req.param('hash');
@@ -124,7 +128,7 @@ objectsRoutes.get('/repos/:repo{.+}/object/blob/:hash', async (c) => {
 
 objectsRoutes.post('/repos/:repo{.+}/fetch-objects', async (c) => {
   try {
-    const loaded = await loadReadable(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
 
@@ -220,7 +224,7 @@ objectsRoutes.post('/repos/:repo{.+}/fetch-objects', async (c) => {
 
 objectsRoutes.get('/repos/:repo{.+}/checkout-info', async (c) => {
   try {
-    const loaded = await loadReadable(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const rev = c.req.query('cs');
     if (!rev) return apiError(c, 400, 'invalid_request', 'cs is required');

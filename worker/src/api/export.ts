@@ -7,13 +7,16 @@ import { fastImportStream, treeFiles } from '../bridge/fastimport';
 import { tarEntry, tarEnd } from '../bridge/tar';
 import { startExportToGithub } from '../bridge/exportPush';
 import { resolveRevision } from '../core/read';
-import { loadReadableRepo, loadWritableRepo } from '../auth/guards';
+import { loadWholeRepo } from '../auth/guards';
 
 /**
  * Export routes (issue #16) — the off-ramp:
  *   GET  /api/v1/repos/:repo/export/tarball?cs=…
  *   GET  /api/v1/repos/:repo/export/fast-import?head=…&mode=snapshot|full|ranged&from=…
  *   POST /api/v1/repos/:repo/export/github  {target_branch, head?}
+ *
+ * Every export carries every path, so all three need whole-repository access
+ * (path-restricted callers get 403 `whole_repository_required`).
  */
 export const exportRoutes = new Hono<{ Bindings: Env }>();
 
@@ -27,7 +30,7 @@ export function exceedsExportLimits(objectCount: number, bytes: number): boolean
 
 exportRoutes.get('/repos/:repo{.+}/export/tarball', async (c) => {
   try {
-    const loaded = await loadReadableRepo(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
     const rev = c.req.query('cs');
@@ -103,7 +106,7 @@ exportRoutes.get('/repos/:repo{.+}/export/tarball', async (c) => {
 
 exportRoutes.get('/repos/:repo{.+}/export/fast-import', async (c) => {
   try {
-    const loaded = await loadReadableRepo(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
     const headRev = c.req.query('head');
@@ -142,7 +145,7 @@ exportRoutes.get('/repos/:repo{.+}/export/fast-import', async (c) => {
 
 exportRoutes.post('/repos/:repo{.+}/export/github', async (c) => {
   try {
-    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const body = await readJsonBody(c);
     const started = await startExportToGithub(c.env, loaded.repo.id, body ?? {});

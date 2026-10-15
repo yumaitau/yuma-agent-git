@@ -22,6 +22,8 @@ import {
   guardPathHistory,
   guardPathRead,
   loadReadableRepo as loadReadable,
+  pathReadFilter,
+  visibleChangeset,
 } from '../auth/guards';
 import { r2 } from '../observability/phase';
 
@@ -31,6 +33,9 @@ import { r2 } from '../observability/phase';
  *   GET /api/v1/repos/:repo/tree?cs=…&path=…[&recursive=1]
  *   GET /api/v1/repos/:repo/history?cs=…&path=…&limit=…
  *   GET /api/v1/repos/:repo/changed-paths?cs=…
+ *
+ * Listings (tree entries, changed files, changesets) drop paths the caller
+ * may not `read` under path rules and count them in `omitted_paths_count`.
  */
 export const readRoutes = new Hono<{ Bindings: Env }>();
 
@@ -259,11 +264,20 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
     }
 
     const headers = cacheHeaders(repo, rev, await etagFor(cs.id, `tree:${path}`));
+    const canRead = await pathReadFilter(c, repo);
+    const omitted = (count: number) => (count > 0 ? { omitted_paths_count: count } : {});
 
     if (!recursive) {
       const tree = await getTree(c.env, repo.id, treeHash);
       if (!tree) throw new ObjectNotFoundError('tree', treeHash);
-      return c.json({ path, entries: tree.entries }, 200, headers);
+      const visible = tree.entries.filter((e) =>
+        canRead(path === '' ? e.name : `${path}/${e.name}`),
+      );
+      return c.json(
+        { path, entries: visible, ...omitted(tree.entries.length - visible.length) },
+        200,
+        headers,
+      );
     }
 
     const entries: {
@@ -273,6 +287,7 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
       size?: number;
     }[] = [];
     const stack: { hash: string; base: string }[] = [{ hash: treeHash, base: path }];
+    let walked = 0;
     while (stack.length > 0) {
       const frame = stack.pop();
       if (!frame) break;
@@ -280,8 +295,12 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
       if (!tree) throw new ObjectNotFoundError('tree', frame.hash);
       for (const e of tree.entries) {
         const childPath = frame.base === '' ? e.name : `${frame.base}/${e.name}`;
-        entries.push({ path: childPath, kind: e.kind, hash: e.hash, size: e.size });
-        if (entries.length > MAX_RECURSIVE_ENTRIES) {
+        // Still descend into hidden directories: a longer grant can reopen a
+        // subtree below a denied prefix.
+        if (canRead(childPath)) {
+          entries.push({ path: childPath, kind: e.kind, hash: e.hash, size: e.size });
+        }
+        if (++walked > MAX_RECURSIVE_ENTRIES) {
           throw new ConflictError(
             'tree_too_large',
             `recursive tree exceeds ${MAX_RECURSIVE_ENTRIES} entries`,
@@ -291,7 +310,7 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
         if (e.kind === 'tree') stack.push({ hash: e.hash, base: childPath });
       }
     }
-    return c.json({ path, entries }, 200, headers);
+    return c.json({ path, entries, ...omitted(walked - entries.length) }, 200, headers);
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -326,9 +345,14 @@ readRoutes.get('/repos/:repo{.+}/history', async (c) => {
       'cache-control': repo.visibility === 'public' ? SHORT : NO_STORE,
     };
 
+    const canRead = await pathReadFilter(c, repo);
     if (rawPath === undefined) {
       const changesets = await firstParentHistory(c.env, repo.id, cs.id, limit);
-      return c.json({ changesets }, 200, headers);
+      return c.json(
+        { changesets: changesets.map((c2) => visibleChangeset(c2, canRead)) },
+        200,
+        headers,
+      );
     }
 
     // Path history via the `path_history` derived kind (issue #10 — the
@@ -349,7 +373,9 @@ readRoutes.get('/repos/:repo{.+}/history', async (c) => {
     const result = await pathHistoryAt(c.env, repo.id, cs.id, path, limit);
     const changesets = (
       await Promise.all(result.commits.map((id) => getChangeset(c.env, repo.id, id)))
-    ).filter((c2) => c2 !== null);
+    )
+      .filter((c2) => c2 !== null)
+      .map((c2) => visibleChangeset(c2, canRead));
     return c.json(
       { path, changesets, next: result.next, complete: result.complete },
       200,
@@ -373,9 +399,20 @@ readRoutes.get('/repos/:repo{.+}/changed-paths', async (c) => {
     const rev = c.req.query('cs');
     if (!rev) return apiError(c, 400, 'invalid_request', 'cs is required');
     const cs = await resolveRevision(c.env, repo.id, rev);
-    return c.json({ cs: cs.id, changed_files: cs.changed_files }, 200, {
-      ...cacheHeaders(repo, rev, await etagFor(cs.id, 'changed-paths')),
-    });
+    const visible = visibleChangeset(cs, await pathReadFilter(c, repo));
+    return c.json(
+      {
+        cs: cs.id,
+        changed_files: visible.changed_files,
+        ...(visible.omitted_paths_count
+          ? { omitted_paths_count: visible.omitted_paths_count }
+          : {}),
+      },
+      200,
+      {
+        ...cacheHeaders(repo, rev, await etagFor(cs.id, 'changed-paths')),
+      },
+    );
   } catch (err) {
     return errorResponse(c, err);
   }

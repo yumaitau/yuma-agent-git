@@ -4,7 +4,7 @@ import { apiError, errorResponse } from './errors';
 import { diffRevisions } from '../core/diff';
 import { lookupRev } from '../core/read';
 import { sha256Hex } from '../core/hashing';
-import { loadReadableRepo as loadReadable } from '../auth/guards';
+import { loadReadableRepo as loadReadable, pathReadFilter } from '../auth/guards';
 
 /**
  * Diff RPC (architecture §2.2):
@@ -13,6 +13,9 @@ import { loadReadableRepo as loadReadable } from '../auth/guards';
  * Cache policy matches the read routes (issue #21 + review): immutable only
  * when BOTH revs are content-addressed (64-hex cs ids) on a public repo —
  * ref-addressed revs are mutable URLs and must never be frozen in caches.
+ *
+ * Path rules: files (and their texts) the caller may not `read` are dropped
+ * and counted in `omitted_paths_count`.
  */
 export const diffRoutes = new Hono<{ Bindings: Env }>();
 
@@ -55,9 +58,16 @@ diffRoutes.get('/repos/:repo{.+}/diff', async (c) => {
       maxFiles,
     });
 
-    const payload: Record<string, unknown> = { ...result };
+    const canRead = await pathReadFilter(c, repo);
+    const files = result.files.filter((f) => canRead(f.path));
+    const payload: Record<string, unknown> = { ...result, files };
+    if (files.length < result.files.length) {
+      payload.omitted_paths_count = result.files.length - files.length;
+    }
     if (result.texts) {
-      const size = JSON.stringify(result.texts).length;
+      const texts = result.texts.filter((t) => canRead(t.path));
+      payload.texts = texts;
+      const size = JSON.stringify(texts).length;
       if (size > MAX_TEXTS_BYTES) {
         // Response-size guard: drop texts, tell the client to go per-file.
         delete payload.texts;

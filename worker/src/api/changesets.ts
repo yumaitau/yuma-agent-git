@@ -4,13 +4,22 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 import { commitChanges, commitRequestSchema } from '../core/commit';
 import { firstParentHistory, getChangeset } from '../core/changesets';
 import { lookupRev } from '../core/read';
-import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
+import {
+  guardPathsWrite,
+  loadReadableRepo as loadReadable,
+  loadWritableRepo,
+  pathReadFilter,
+  visibleChangeset,
+} from '../auth/guards';
 
 /**
  * Changeset routes (architecture §2):
  *   POST /api/v1/repos/:repo/changesets
  *   GET  /api/v1/repos/:repo/changesets/:id
  *   GET  /api/v1/repos/:repo/changesets?head=…&limit=…
+ *
+ * Path rules: a commit needs `write` on every path it touches; reads drop
+ * `changed_files` entries the caller may not `read` (`omitted_paths_count`).
  */
 export const changesetsRoutes = new Hono<{ Bindings: Env }>();
 
@@ -56,6 +65,13 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
       });
     }
 
+    const denied = await guardPathsWrite(
+      c,
+      repo,
+      parsed.data.changes.map((change) => change.path),
+    );
+    if (denied) return denied;
+
     const result = await commitChanges(c.env, repo.id, parsed.data);
     return c.json(
       { changeset: result.changeset, deduped: result.deduped },
@@ -74,7 +90,10 @@ changesetsRoutes.get('/repos/:repo{.+}/changesets/:id', async (c) => {
     if (!cs) {
       return apiError(c, 404, 'changeset_not_found', `no changeset ${c.req.param('id')}`);
     }
-    return c.json({ changeset: cs }, 200, { 'cache-control': NO_STORE });
+    const canRead = await pathReadFilter(c, loaded.repo);
+    return c.json({ changeset: visibleChangeset(cs, canRead) }, 200, {
+      'cache-control': NO_STORE,
+    });
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -104,9 +123,10 @@ changesetsRoutes.get('/repos/:repo{.+}/changesets', async (c) => {
       head.id,
       limit + 1,
     );
+    const canRead = await pathReadFilter(c, loaded.repo);
     return c.json(
       {
-        changesets: changesets.slice(0, limit),
+        changesets: changesets.slice(0, limit).map((cs) => visibleChangeset(cs, canRead)),
         next_cursor: changesets.length > limit ? changesets[limit].id : null,
       },
       200,

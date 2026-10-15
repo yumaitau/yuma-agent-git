@@ -4,7 +4,7 @@ import type { Env } from '../env';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { getChangeset } from '../core/changesets';
 import { listRefs, getRef, moveRefViaDO, validateRefName } from '../core/refs';
-import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
+import { loadReadableRepo as loadReadable, loadWholeRepo } from '../auth/guards';
 
 /**
  * Ref routes (architecture §1.4) — refs are discouraged global state; moves
@@ -63,7 +63,9 @@ refsRoutes.get('/repos/:repo{.+}/refs/:name{.+}', async (c) => {
 
 refsRoutes.put('/repos/:repo{.+}/refs/:name{.+}', async (c) => {
   try {
-    const loaded = await loadWritableRepo(c, c.req.param('repo'));
+    // Pointing a ref at a changeset publishes every path in it (like a pull
+    // request merge), so path-restricted writers cannot move refs directly.
+    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
     const name = validateRefName(c.req.param('name'));
