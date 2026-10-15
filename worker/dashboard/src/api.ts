@@ -646,12 +646,15 @@ export const api = {
     );
   },
 
-  async createSuperfan(input: {
-    component: 'commit-path' | 'import-pipeline' | 'queues' | 'refs' | 'agents' | 'ai';
-    interval_min: number;
-  }): Promise<{ ok: boolean; component: string }> {
+  async createSuperfan(
+    slug: string,
+    input: {
+      component: 'commit-path' | 'import-pipeline' | 'queues' | 'refs' | 'agents' | 'ai';
+      interval_min: number;
+    },
+  ): Promise<{ ok: boolean; component: string }> {
     return requestJson(
-      '/api/v1/agents/superfans',
+      `/api/v1/repos/${slug}/agents/superfans`,
       { method: 'POST', body: input },
       z.object({ ok: z.boolean(), component: z.string() }),
     );

@@ -39,10 +39,68 @@ Commit your work with a clear message, land it, and finish with a summary refere
 }
 
 /** Prompt for post-merge checks (created by `land`). */
-export function postMergePrompt(changedFiles: string[]): string {
-  return `Verify these changes after merge (post-merge, pre-deploy checks):
+export function postMergePrompt(changedFiles: string[], landedCs?: string): string {
+  return `Verify these changes after merge (post-merge, pre-deploy checks)${landedCs ? ` — landed changeset ${landedCs}` : ''}:
 
-${changedFiles.map((f) => `- ${f}`).join('\n')}
+${changedFiles.map((f) => `- ${f}`).join('\n') || '(no changed files listed — use diff)'}
 
-Use diff and read_file to confirm the change is correct and complete. If you find problems, report_failure with specific findings; otherwise finish with a short verification summary.`;
+Use diff (it defaults to the pre-land head → the landed changeset) and read_file to confirm the change is correct and complete. If you find problems, report_failure with specific findings; otherwise finish with a short verification summary.`;
+}
+
+/**
+ * Lineage marker on fix tasks spawned by a failed post-merge check. A check
+ * whose landing task carried it never spawns another fix (cap: one level).
+ */
+export const POST_MERGE_FIX_MARKER = '[post-merge-fix]';
+const FIX_DEPTH_LINE = 'fix_depth: 1';
+const MAX_LISTED_FILES = 200;
+
+/** Stored `agent_tasks.prompt` of a post_merge_check row (written by `land`). */
+export function formatPostMergeTask(
+  landedCs: string,
+  changedFiles: string[],
+  fromFix: boolean,
+): string {
+  const listed = changedFiles.slice(0, MAX_LISTED_FILES).map((f) => `- ${f}`);
+  if (changedFiles.length > MAX_LISTED_FILES) {
+    listed.push(`- … (${changedFiles.length - MAX_LISTED_FILES} more)`);
+  }
+  return [
+    `verify these changes: ${landedCs}`,
+    ...(fromFix ? [FIX_DEPTH_LINE] : []),
+    ...listed,
+  ].join('\n');
+}
+
+/** Inverse of `formatPostMergeTask` (also accepts the legacy one-line form). */
+export function parsePostMergeTask(prompt: string): {
+  landed_cs: string | null;
+  files: string[];
+  fromFix: boolean;
+} {
+  const lines = prompt.split('\n');
+  const head = /^verify these changes:?\s*(\S+)?/i.exec(lines[0] ?? '');
+  return {
+    landed_cs: head?.[1] ?? null,
+    files: lines.filter((l) => l.startsWith('- ')).map((l) => l.slice(2)),
+    fromFix: lines.includes(FIX_DEPTH_LINE),
+  };
+}
+
+/** Prompt for the freeform fix task a failed post-merge check opens. */
+export function postMergeFixPrompt(check: {
+  id: string;
+  landed_cs: string | null;
+  files: string[];
+  findings: string;
+}): string {
+  return `${POST_MERGE_FIX_MARKER} Post-merge check ${check.id} failed${check.landed_cs ? ` on landed changeset ${check.landed_cs}` : ''}.
+
+Findings:
+${check.findings}
+
+Changed files:
+${check.files.map((f) => `- ${f}`).join('\n') || '(none listed)'}
+
+Fix the problems the check found, commit, land, and finish with a summary.`;
 }

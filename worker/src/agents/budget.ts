@@ -27,6 +27,9 @@ export const DEFAULT_BUDGET = {
   maxFanOut: 5,
 } as const;
 
+/** Post-merge checks verify, they don't build: a smaller tool budget (#19). */
+export const POST_MERGE_MAX_TOOL_CALLS = 20;
+
 export function newBudget(
   opts: {
     maxToolCalls?: number;

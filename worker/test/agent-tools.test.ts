@@ -152,14 +152,23 @@ describe('agent tools', () => {
     expect(committed.cs).toBeTypeOf('string');
     expect(ctx.head_cs).toBe(committed.cs); // working revision advanced
 
-    // land: main moves to head_cs and post-merge checks fire
+    // land: main moves to head_cs and post-merge checks fire — the check
+    // diffs pre-land head → landed cs, lists the changed files, and runs as
+    // the landing user (not as the landing task's id)
     const landed = await executeTool(dbEnv, ctx, 'land', {});
     expect(landed).toMatchObject({ landed: true, main_head: ctx.head_cs });
-    const checkRow = await q1(
+    const checkRow = await q1<{ prompt: string }>(
       dbEnv,
       `SELECT * FROM ${T.agentTasks} WHERE ${C.agentTasks.kind} = 'post_merge_check'`,
     );
-    expect(checkRow).toMatchObject({ status: 'queued', base_cs: ctx.head_cs });
+    expect(checkRow).toMatchObject({
+      status: 'queued',
+      base_cs: baseCs,
+      created_by: userId,
+    });
+    expect(checkRow?.prompt).toContain(`verify these changes: ${ctx.head_cs}`);
+    expect(checkRow?.prompt).toContain('- agent.txt');
+    expect(checkRow?.prompt).not.toContain('src/a.txt'); // only what landed
 
     // stale: someone else lands first → structured reason, no exception
     const ctx2 = ctxFor(repoId, baseCs);
@@ -268,6 +277,11 @@ describe('agent tools', () => {
       prompt: 'subtask',
     });
     expect(created).toMatchObject({ status: 'queued' });
+    // the sub-task runs as the real user, not as its parent task's id
+    const child = await q1(dbEnv, `SELECT * FROM ${T.agentTasks} WHERE id = ?`, [
+      created.task_id,
+    ]);
+    expect(child).toMatchObject({ created_by: userId, base_cs: baseCs });
 
     const deep = ctxFor(repoId, baseCs, {
       budget: newBudget({ depth: 2 }),
@@ -283,6 +297,204 @@ describe('agent tools', () => {
       prompt: 'one too many',
     });
     expect(overflow).toMatchObject({ error: 'fan_out_exceeded' });
+  });
+
+  it('diff applies path rules per file and needs repo read', async () => {
+    const { repoId, baseCs } = await seedToolRepo();
+    const changed = await commitChanges(dbEnv, repoId, {
+      first_parent: baseCs,
+      message: 'touch both',
+      author,
+      changes: [
+        { path: 'src/a.txt', op: 'mod', content_b64: b64('alpha changed\n') },
+        { path: 'secrets/key.pem', op: 'mod', content_b64: b64('NEW PRIVATE\n') },
+      ],
+    });
+    const ctx = ctxFor(repoId, baseCs, { head_cs: changed.changeset.id });
+    const open = await executeTool(dbEnv, ctx, 'diff', {});
+    expect((open.files as { path: string }[]).map((f) => f.path)).toEqual([
+      'secrets/key.pem',
+      'src/a.txt',
+    ]);
+
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.pathRules} (${C.pathRules.repoId}, ${C.pathRules.pathPrefix}, ${C.pathRules.effect}, ${C.pathRules.principal}, ${C.pathRules.perms}) VALUES (?, 'secrets/', 'deny', '*', ?)`,
+      [repoId, JSON.stringify(['read'])],
+    );
+    const filtered = await executeTool(dbEnv, ctx, 'diff', {});
+    expect((filtered.files as { path: string }[]).map((f) => f.path)).toEqual([
+      'src/a.txt',
+    ]);
+    const texts = filtered.texts as { path: string; unified: string }[];
+    expect(texts.map((t) => t.path)).toEqual(['src/a.txt']);
+    expect(JSON.stringify(filtered)).not.toContain('PRIVATE');
+
+    // a principal without repo read gets nothing at all
+    const priv = await createRepo(dbEnv, {
+      slug: 'acme/private-diff',
+      createdBy: userId,
+    });
+    const stranger = ctxFor(priv.id, baseCs, {
+      principal: { kind: 'user', userId: 'someone-else' } as Principal,
+    });
+    expect(await executeTool(dbEnv, stranger, 'diff', {})).toMatchObject({
+      error: 'forbidden',
+      perm: 'read',
+    });
+  });
+
+  it('commit needs write on every touched path; land needs whole-repo write', async () => {
+    const { repoId, baseCs } = await seedToolRepo();
+    await run(
+      dbEnv,
+      `INSERT INTO ${T.pathRules} (${C.pathRules.repoId}, ${C.pathRules.pathPrefix}, ${C.pathRules.effect}, ${C.pathRules.principal}, ${C.pathRules.perms}) VALUES (?, 'secrets/', 'deny', '*', ?)`,
+      [repoId, JSON.stringify(['write'])],
+    );
+    const ctx = ctxFor(repoId, baseCs);
+
+    const denied = await executeTool(dbEnv, ctx, 'commit', {
+      message: 'touch secrets',
+      changes: [
+        { path: 'src/ok.txt', op: 'add', content_b64: b64('fine') },
+        { path: 'secrets/key.pem', op: 'mod', content_b64: b64('leak') },
+      ],
+    });
+    expect(denied).toMatchObject({
+      error: 'forbidden',
+      perm: 'write',
+      path: 'secrets/key.pem',
+      denied_by: { path_prefix: 'secrets/', effect: 'deny' },
+    });
+    expect(ctx.head_cs).toBe(baseCs); // nothing committed
+    expect(ctx.budget.commits).toBe(0); // and no commit budget spent
+
+    const allowed = await executeTool(dbEnv, ctx, 'commit', {
+      message: 'src only',
+      changes: [{ path: 'src/ok.txt', op: 'add', content_b64: b64('fine') }],
+    });
+    expect(allowed.cs).toBeTypeOf('string');
+
+    // a ref move can replace any path, so a path-restricted writer can't land
+    expect(await executeTool(dbEnv, ctx, 'land', {})).toMatchObject({
+      landed: false,
+      reason: 'whole_repository_required',
+      final: true,
+      denied_by: { path_prefix: 'secrets/' },
+    });
+    expect(await readRefHead(dbEnv, repoId, 'main')).toBe(baseCs);
+    const checks = await q1(
+      dbEnv,
+      `SELECT COUNT(*) AS n FROM ${T.agentTasks} WHERE ${C.agentTasks.kind} = 'post_merge_check'`,
+    );
+    expect(checks).toMatchObject({ n: 0 });
+  });
+
+  it('cs args accept ref:<name> (and bare ref names) like the HTTP read routes', async () => {
+    const { repoId, baseCs } = await seedToolRepo();
+    const next = await commitChanges(dbEnv, repoId, {
+      first_parent: baseCs,
+      message: 'feature',
+      author,
+      changes: [{ path: 'src/a.txt', op: 'mod', content_b64: b64('alpha on feature\n') }],
+    });
+    await setRef(dbEnv, repoId, 'feature', next.changeset.id);
+    const ctx = ctxFor(repoId, baseCs);
+
+    const viaRef = await executeTool(dbEnv, ctx, 'read_file', {
+      path: 'src/a.txt',
+      cs: 'ref:feature',
+    });
+    expect(viaRef.content).toBe('alpha on feature\n');
+    const bare = await executeTool(dbEnv, ctx, 'read_file', {
+      path: 'src/a.txt',
+      cs: 'feature',
+    });
+    expect(bare.content).toBe('alpha on feature\n');
+    const raw = await executeTool(dbEnv, ctx, 'read_file', {
+      path: 'src/a.txt',
+      cs: baseCs,
+    });
+    expect(raw.content).toBe('alpha one\nalpha two\n');
+
+    const listing = await executeTool(dbEnv, ctx, 'list_dir', {
+      path: 'src',
+      cs: 'ref:main',
+    });
+    expect((listing.entries as { name: string }[]).map((e) => e.name).sort()).toEqual([
+      'a.txt',
+      'b.txt',
+    ]);
+
+    const grep = await executeTool(dbEnv, ctx, 'grep', {
+      pattern: 'on feature',
+      cs: 'ref:feature',
+    });
+    expect((grep.matches as { path: string }[]).map((m) => m.path)).toEqual([
+      'src/a.txt',
+    ]);
+
+    const diff = await executeTool(dbEnv, ctx, 'diff', {
+      from: 'ref:main',
+      to: 'ref:feature',
+    });
+    expect((diff.files as { path: string }[]).map((f) => f.path)).toEqual(['src/a.txt']);
+
+    expect(
+      await executeTool(dbEnv, ctx, 'read_file', { path: 'src/a.txt', cs: 'ref:nope' }),
+    ).toMatchObject({ error: 'revision_not_found' });
+  });
+
+  it('MCP tools/call: read-only tools need read, mutating tools need write', async () => {
+    await seedToolRepo();
+    const auth = await loginAs(testEnv, 1, 'ada');
+    const minted = await makeApp(testEnv)(
+      new Request('https://x/api/v1/tokens', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: auth.cookie },
+        body: JSON.stringify({ label: 'reader', scopes: ['agent:run', 'repo:read'] }),
+      }),
+    );
+    const raw = ((await minted.json()) as { token: string }).token;
+    const rpc = async (name: string, args: unknown): Promise<Record<string, unknown>> => {
+      const res = await makeApp(testEnv)(
+        new Request('https://x/api/v1/repos/acme/tools/agents/mcp', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${raw}` },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: { name, arguments: args },
+          }),
+        }),
+      );
+      return (await res.json()) as Record<string, unknown>;
+    };
+
+    for (const [name, args] of [
+      ['read_file', { path: 'src/a.txt' }],
+      ['list_dir', {}],
+      ['file_history', { path: 'src/a.txt' }],
+      ['blame', { path: 'src/a.txt' }],
+      ['diff', {}],
+      ['grep', { pattern: 'alpha' }],
+    ] as const) {
+      const body = await rpc(name, args);
+      expect(body.error, `${name} with a read token`).toBeUndefined();
+      expect(body.result).toBeTruthy();
+    }
+    for (const [name, args] of [
+      ['commit', { message: 'x', changes: [] }],
+      ['land', {}],
+      ['create_task', { prompt: 'x' }],
+    ] as const) {
+      const body = await rpc(name, args);
+      expect(body.error, `${name} with a read token`).toMatchObject({
+        code: -32601,
+        message: 'forbidden',
+      });
+    }
   });
 
   it('MCP endpoint: tools/list schemas valid, tools/call matches direct execute, scope-gated', async () => {

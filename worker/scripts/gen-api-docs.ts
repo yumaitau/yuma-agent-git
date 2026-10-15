@@ -60,7 +60,6 @@ const PURPOSES: Record<string, string> = {
   'POST /webhooks/github': 'GitHub App webhook receiver',
   'GET /api/v1': 'API root: `{ok, service, api: "v1"}`',
   'GET /api/v1/admin/metrics': 'Operational metrics (`?component=&window=`)',
-  'POST /api/v1/agents/superfans': 'Start a long-lived per-component monitor',
   'GET /api/v1/agents/tasks/:id': 'Agent task row plus live agent state',
   'POST /api/v1/agents/tasks/:id/cancel': 'Cancel an agent task',
   'GET /api/v1/agents/tasks/:id/transcript': 'Transcript entries (`?since=` ms)',
@@ -75,6 +74,11 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:owner/:name/initialize':
     'Seed `README.md` on an empty repo default branch',
   'POST /api/v1/repos/:repo/agents/mcp': 'MCP JSON-RPC 2.0 endpoint',
+  'GET /api/v1/repos/:repo/agents/superfans':
+    "List the repo's superfans and their findings",
+  'POST /api/v1/repos/:repo/agents/superfans':
+    'Start a per-component monitor on this repo',
+  'DELETE /api/v1/repos/:repo/agents/superfans/:component': 'Stop a superfan',
   'GET /api/v1/repos/:repo/agents/tasks': 'List agent tasks (`?status=&limit=`)',
   'POST /api/v1/repos/:repo/agents/tasks': 'Queue an agent task',
   'GET /api/v1/repos/:repo/ancestor-distance':
@@ -168,7 +172,9 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   else if (/loadWritableRepo(ById)?\d*\(/.test(src)) parts.push('write');
   else if (/loadReadableRepo(ById)?\d*\(/.test(src)) parts.push('read');
   else if (/\bcan\d*\([^;]*?"write"\)/.test(src)) parts.push('write');
-  else if (/\bcan\d*\([^;]*?"admin"\)/.test(src)) parts.push('admin on any repo');
+  else if (/\bcan\d*\([^;]*?toolPerm\d*\(/.test(src)) {
+    parts.push('read; write for `commit`/`land`/`create_task`');
+  } else if (/\bcan\d*\([^;]*?"admin"\)/.test(src)) parts.push('admin on any repo');
 
   if (/guardPathRead\d*\(/.test(src)) parts.push('path:read');
   if (/guardPathHistory\d*\(/.test(src)) parts.push('path:history');

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import type { Env } from '../env';
 import type { Principal } from '../auth/principal';
-import { can } from '../auth/rbac';
+import { can, pathDecider, restrictingDecision, type PathDecider } from '../auth/rbac';
 import { getRepo } from '../db/repos';
 import { commitChanges } from '../core/commit';
-import { getChangeset } from '../core/changesets';
+import { getChangeset, type Changeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
 import { getTree, resolvePath } from '../core/trees';
 import { readRefHead, moveRefViaDO } from '../core/refs';
@@ -13,10 +13,12 @@ import { diffRevisions } from '../core/diff';
 import { blameFile } from '../core/derived/blame';
 import { pathHistoryAt } from '../core/derived/pathHistory';
 import { getDerived } from '../core/derived';
+import { lookupRev } from '../core/read';
 import { ulid } from '../core/ids';
 import { C, T } from '../db/schema';
-import { run } from '../db/client';
+import { q1, run } from '../db/client';
 import { charge, type TaskBudget } from './budget';
+import { POST_MERGE_FIX_MARKER, formatPostMergeTask } from './prompt';
 
 /**
  * Agent tools (issue #18) — the agent's hands and eyes are **exactly the RPC
@@ -65,6 +67,29 @@ async function guardPath(
   if (!repo) return { error: 'repo_not_found' };
   const allowed = await can(env, repo, ctx.principal, perm, path);
   return allowed ? null : { error: 'forbidden', perm, path };
+}
+
+/** Rules + membership loaded once for a batch of per-path decisions. */
+async function deciderFor(env: Env, ctx: ToolCtx): Promise<PathDecider | null> {
+  const repo = await getRepo(env, ctx.repo_id);
+  return repo ? pathDecider(env, repo, ctx.principal) : null;
+}
+
+/**
+ * Resolve a tool `cs` argument the way the HTTP read routes do: a raw
+ * changeset id, `ref:<name>`, or a bare ref name. Omitted → the working head.
+ */
+async function resolveCs(
+  env: Env,
+  ctx: ToolCtx,
+  rev: string | undefined,
+): Promise<Changeset | null> {
+  return lookupRev(env, ctx.repo_id, rev ?? ctx.head_cs);
+}
+
+/** The id the spawned task runs as: the real user behind this task. */
+function spawnUser(ctx: ToolCtx): string {
+  return ctx.principal?.userId ?? ctx.task_id;
 }
 
 const readFileSync = z.object({
@@ -131,7 +156,7 @@ export const tools: Tool[] = [
       const parsed = readFileSync.parse(input);
       const denied = await guardPath(env, ctx, 'read', parsed.path);
       if (denied) return denied;
-      const cs = await getChangeset(env, ctx.repo_id, parsed.cs ?? ctx.head_cs);
+      const cs = await resolveCs(env, ctx, parsed.cs);
       if (!cs?.root_tree) return { error: 'revision_not_found' };
       const entry = await resolvePath(
         env,
@@ -166,7 +191,7 @@ export const tools: Tool[] = [
       const path = parsed.path ?? '';
       const denied = await guardPath(env, ctx, 'read', path === '' ? undefined : path);
       if (denied) return denied;
-      const cs = await getChangeset(env, ctx.repo_id, parsed.cs ?? ctx.head_cs);
+      const cs = await resolveCs(env, ctx, parsed.cs);
       if (!cs?.root_tree) return { error: 'revision_not_found' };
       let treeHash = cs.root_tree;
       if (path !== '') {
@@ -225,12 +250,9 @@ export const tools: Tool[] = [
       const parsed = blameSchema.parse(input);
       const denied = await guardPath(env, ctx, 'history', parsed.path);
       if (denied) return denied;
-      const outcome = await blameFile(
-        env,
-        ctx.repo_id,
-        parsed.cs ?? ctx.head_cs,
-        parsed.path,
-      );
+      const cs = await resolveCs(env, ctx, parsed.cs);
+      if (!cs) return { error: 'revision_not_found' };
+      const outcome = await blameFile(env, ctx.repo_id, cs.id, parsed.path);
       if (outcome.status !== 'ok') return { status: 'computing' };
       const cursor = parsed.cursor ?? 0;
       const page = outcome.ranges.slice(cursor, cursor + MAX_BLADE_RANGES);
@@ -252,14 +274,24 @@ export const tools: Tool[] = [
     input_schema: diffToolSchema,
     async execute(env, ctx, input) {
       const parsed = diffToolSchema.parse(input);
-      const result = await diffRevisions(
-        env,
-        ctx.repo_id,
-        parsed.from ?? ctx.base_cs,
-        parsed.to ?? ctx.head_cs,
-        { includeText: parsed.text ?? true },
-      );
-      return result as unknown as ToolResult;
+      const denied = await guardPath(env, ctx, 'read');
+      if (denied) return denied;
+      const from = await lookupRev(env, ctx.repo_id, parsed.from ?? ctx.base_cs);
+      const to = await lookupRev(env, ctx.repo_id, parsed.to ?? ctx.head_cs);
+      if (!from || !to) return { error: 'revision_not_found' };
+      const result = await diffRevisions(env, ctx.repo_id, from.id, to.id, {
+        includeText: parsed.text ?? true,
+      });
+      // path rules apply per file, exactly like read_file / the HTTP diff:
+      // denied paths are dropped from both the file list and the text hunks
+      const decider = await deciderFor(env, ctx);
+      const readable = (path: string): boolean =>
+        decider?.decide('read', path).allowed ?? false;
+      return {
+        ...result,
+        files: result.files.filter((f) => readable(f.path)),
+        ...(result.texts ? { texts: result.texts.filter((t) => readable(t.path)) } : {}),
+      } as unknown as ToolResult;
     },
   },
   {
@@ -294,14 +326,15 @@ export const tools: Tool[] = [
         .filter((p) => prefix === '' || p.startsWith(prefix))
         .slice(0, MAX_GREP_FILES);
 
+      const cs = await resolveCs(env, ctx, parsed.cs);
+      if (!cs) return { error: 'revision_not_found' };
       const matches: { path: string; line: number; text: string }[] = [];
       let bytes = 0;
       for (const path of candidates) {
         if (matches.length >= MAX_MATCHES || bytes > MAX_GREP_BYTES) break;
         const denied = await guardPath(env, ctx, 'read', path);
         if (denied) continue; // path rules can hide files from grep too
-        const cs = await getChangeset(env, ctx.repo_id, parsed.cs ?? ctx.head_cs);
-        const entry = cs?.root_tree
+        const entry = cs.root_tree
           ? await resolvePath(env, ctx.repo_id, cs.root_tree, path.split('/'))
           : null;
         if (!entry || entry.kind !== 'blob') continue;
@@ -328,6 +361,20 @@ export const tools: Tool[] = [
     input_schema: commitToolSchema,
     async execute(env, ctx, input) {
       const parsed = commitToolSchema.parse(input);
+      // repo write, then `write` on every touched path (same as POST changesets)
+      const decider = await deciderFor(env, ctx);
+      if (!decider?.decide('write').allowed) return { error: 'forbidden', perm: 'write' };
+      for (const change of parsed.changes) {
+        const decision = decider.decide('write', change.path);
+        if (!decision.allowed) {
+          return {
+            error: 'forbidden',
+            perm: 'write',
+            path: change.path,
+            ...(decision.deniedBy ? { denied_by: decision.deniedBy } : {}),
+          };
+        }
+      }
       const budgetError = charge(ctx.budget, 'commit');
       if (budgetError) return budgetError;
       const result = await commitChanges(env, ctx.repo_id, {
@@ -365,6 +412,20 @@ export const tools: Tool[] = [
       const repo = await getRepo(env, ctx.repo_id);
       const allowed = repo ? await can(env, repo, ctx.principal, 'write') : false;
       if (!repo || !allowed) return { error: 'forbidden', perm: 'write' };
+      // a ref move can replace any path: whole-repo write, like PUT refs
+      const restricted = restrictingDecision(
+        await pathDecider(env, repo, ctx.principal),
+        ['read', 'write'],
+      );
+      if (restricted) {
+        return {
+          landed: false,
+          reason: 'whole_repository_required',
+          final: true,
+          head_cs: ctx.head_cs,
+          ...(restricted.deniedBy ? { denied_by: restricted.deniedBy } : {}),
+        };
+      }
       const branch = repo.default_branch;
       const current = await readRefHead(env, ctx.repo_id, branch);
       try {
@@ -383,7 +444,19 @@ export const tools: Tool[] = [
         const head = await readRefHead(env, ctx.repo_id, branch);
         return { landed: false, reason: 'stale', main_head: head, head_cs: ctx.head_cs };
       }
-      // post-merge, pre-deploy checks — the no-merge-queue model (§2.3)
+      // post-merge, pre-deploy checks — the no-merge-queue model (§2.3):
+      // base = the pre-land head, head = what just landed, prompt = the files
+      const preLand = current ?? ctx.head_cs;
+      const landedDiff = await diffRevisions(env, ctx.repo_id, preLand, ctx.head_cs, {
+        mode: 'direct',
+      });
+      // a fix task's own check never spawns another fix (lineage cap: 1)
+      const self = await q1<{ prompt: string }>(
+        env,
+        `SELECT ${C.agentTasks.prompt} FROM ${T.agentTasks} WHERE ${C.agentTasks.id} = ?`,
+        [ctx.task_id],
+      );
+      const fromFix = self?.prompt.startsWith(POST_MERGE_FIX_MARKER) ?? false;
       const checkId = ulid();
       const now = Date.now();
       await run(
@@ -396,10 +469,14 @@ export const tools: Tool[] = [
         [
           checkId,
           ctx.repo_id,
-          `verify these changes: ${ctx.head_cs}`,
-          ctx.head_cs,
+          formatPostMergeTask(
+            ctx.head_cs,
+            [...new Set(landedDiff.files.map((f) => f.path))],
+            fromFix,
+          ),
+          preLand,
           checkId,
-          ctx.task_id,
+          spawnUser(ctx),
           now,
           now,
         ],
@@ -438,7 +515,7 @@ export const tools: Tool[] = [
           parsed.prompt,
           ctx.head_cs,
           id,
-          ctx.task_id,
+          spawnUser(ctx),
           now,
           now,
         ],

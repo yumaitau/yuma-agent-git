@@ -22,6 +22,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Directory path rules are enforced everywhere: object, tarball and fast-import
+  reads need whole-repository read; diffs, listings and history drop denied paths;
+  commits check write per path; ref moves and imports need whole-repository write.
+  Signed cache tokens are bound to the user who minted them.
+- Agent tasks: cancel and timeout stick, budget exhaustion fails the task, resumed
+  runs keep their budget, spawned tasks run as the requesting user, post-merge checks
+  review the landed diff and queue one fix task on failure, and agent tools honour
+  path rules. Superfans are registered per repository by admins and can be listed
+  and stopped.
+- GitHub export finishes changes over 100 files; full-history import no longer drops
+  files from commits over 300 files or over 1 MiB.
 - Agent `land` moves the repository's default branch instead of `main`, and stops on
   final refusals such as a protected branch instead of retrying until its budget runs
   out. MCP calls default to the default branch's head.

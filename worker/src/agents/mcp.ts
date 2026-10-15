@@ -12,7 +12,8 @@ import { newBudget, remaining } from './budget';
  * MCP-style surface (issue #18): a JSON-RPC 2.0 subset exposing the SAME tool
  * registry to external agents — the "standardized RPC across forges" from the
  * architecture's ecosystem note. Bearer tokens need `agent:run`; RBAC is
- * enforced identically to the built-in runtime.
+ * enforced identically to the built-in runtime. `tools/call` needs repo
+ * `read` for read-only tools and `write` for the mutating ones (`toolPerm`).
  *
  *   POST /api/v1/repos/:repo/agents/mcp   {method, params, id}
  *     initialize | tools/list | tools/call
@@ -32,6 +33,14 @@ const callParamsSchema = z.object({
   base_cs: z.string().optional(),
   head_cs: z.string().optional(),
 });
+
+/** Tools that change the repo or spawn work; everything else is read-only. */
+const WRITE_TOOLS = new Set(['commit', 'land', 'create_task']);
+
+/** Repo-level permission a `tools/call` of `name` requires. */
+export function toolPerm(name: string): 'read' | 'write' {
+  return WRITE_TOOLS.has(name) ? 'write' : 'read';
+}
 
 function jsonRpc(id: string | number | null | undefined, result: unknown): Response {
   return new Response(JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result }), {
@@ -87,11 +96,10 @@ mcpRoutes.post('/repos/:repo{.+}/agents/mcp', async (c) => {
     // tools/call
     const repo = await getRepoBySlug(c.env, c.req.param('repo'));
     if (!repo) return jsonRpcError(id, -32602, 'unknown repo');
-    const allowed = await can(c.env, repo, principal, 'write');
-    if (!allowed) return jsonRpcError(id, -32601, 'forbidden');
-
     const call = callParamsSchema.safeParse(params);
     if (!call.success) return jsonRpcError(id, -32602, 'invalid params');
+    const allowed = await can(c.env, repo, principal, toolPerm(call.data.name));
+    if (!allowed) return jsonRpcError(id, -32601, 'forbidden');
 
     const headCs =
       call.data.head_cs ?? (await readHead(c.env, repo.id, repo.default_branch));

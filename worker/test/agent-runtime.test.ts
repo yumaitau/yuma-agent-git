@@ -151,15 +151,60 @@ describe('agent runtime', () => {
     expect(after).toMatchObject({ status: 'cancelled' });
   });
 
+  it('cancel before the DO ever ran sticks; terminal statuses are never overwritten', async () => {
+    const { taskId } = await createTaskViaApi('acme/agents');
+    const auth = await loginAs(testEnv, 1, 'ada');
+    const cancel = async (id: string): Promise<{ status: string }> =>
+      (await (
+        await makeApp(testEnv)(
+          new Request(`https://x/api/v1/agents/tasks/${id}/cancel`, {
+            method: 'POST',
+            headers: { cookie: auth.cookie },
+          }),
+        )
+      ).json()) as { status: string };
+
+    // queued task, fresh DO (empty state): the row still flips to cancelled
+    expect(await cancel(taskId)).toMatchObject({ status: 'cancelled' });
+    expect(
+      await q1(dbEnv, `SELECT * FROM ${T.agentTasks} WHERE id = ?`, [taskId]),
+    ).toMatchObject({ status: 'cancelled' });
+    // …and the queued message, when delivered, does not run it
+    const { batch, acked } = mockBatch([
+      { body: { task_id: taskId, opts: { mode: 'echo' } }, attempts: 1 },
+    ]);
+    await agentJobsQueue(batch, testEnv);
+    expect(acked).toEqual([0]);
+    expect(
+      await q1(dbEnv, `SELECT * FROM ${T.agentTasks} WHERE id = ?`, [taskId]),
+    ).toMatchObject({ status: 'cancelled' });
+    expect((await stubFor(taskId).getStateSnapshot()).steps).toBe(0);
+
+    // a landed task cannot be cancelled after the fact
+    const second = await makeApp(testEnv)(
+      new Request('https://x/api/v1/repos/acme/agents/agents/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', cookie: auth.cookie },
+        body: JSON.stringify({ kind: 'freeform', prompt: 'second' }),
+      }),
+    );
+    const doneId = ((await second.json()) as { task_id: string }).task_id;
+    await stubFor(doneId).runTask(doneId, { mode: 'echo' });
+    expect(await cancel(doneId)).toMatchObject({ status: 'landed' });
+    expect(
+      await q1(dbEnv, `SELECT * FROM ${T.agentTasks} WHERE id = ?`, [doneId]),
+    ).toMatchObject({ status: 'landed' });
+  });
+
   it('deadline: tasks past deadline fail with timeout', async () => {
     await createTaskViaApi('acme/agents');
     const row = await q1(dbEnv, `SELECT * FROM ${T.agentTasks} ORDER BY created_at DESC`);
     const taskId = (row as { id: string }).id;
 
     const stub = stubFor(taskId);
-    await expect(Promise.resolve(stub.runTask(taskId, { steps: 5, deadlineMs: 1 }))).rejects.toThrow(
-      /timeout/,
-    );
+    await expect(
+      Promise.resolve(stub.runTask(taskId, { steps: 5, deadlineMs: 1 })),
+    ).rejects.toThrow(/timeout/);
 
     const state = await stub.getStateSnapshot();
     expect(state.status).toBe('failed');

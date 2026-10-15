@@ -69,11 +69,11 @@ Token scopes:
 
 <!-- generated:scopes:end -->
 
-| Scope        | Grants                                                                                        |
-| ------------ | --------------------------------------------------------------------------------------------- |
-| `repo:read`  | `read` and `history` on repos the token's user can see                                        |
-| `repo:write` | Everything `repo:read` grants, plus `write`. Also required (with the user's role) for `admin` |
-| `agent:run`  | `POST /api/v1/repos/:repo/agents/tasks` and the MCP endpoint (also needs repo `write`)        |
+| Scope        | Grants                                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `repo:read`  | `read` and `history` on repos the token's user can see                                                                        |
+| `repo:write` | Everything `repo:read` grants, plus `write`. Also required (with the user's role) for `admin`                                 |
+| `agent:run`  | `POST /api/v1/repos/:repo/agents/tasks`, superfan registration and the MCP endpoint (repo `read`; `write` for mutating tools) |
 
 Scopes only narrow access. A token never exceeds its user's role. A repo-bound token
 cannot see any other repo, which surfaces as 404.
@@ -120,10 +120,22 @@ In the route table, **Permission** names the guard the handler calls:
 - `read` / `write` / `admin`: the repo-level check.
 - `path:read` / `path:history`: an additional check of path rules on the requested
   `path`.
-- `(whole repo)`: pull requests and CI read every source path, so the caller must not be
-  restricted by **any** path rule, or the request is `403 whole_repository_required`. On
-  these routes a token also needs `repo:read` (reads) or `repo:write` (everything else),
-  otherwise `403 insufficient_scope`.
+- `(whole repo)`: the route can expose or replace any source path, so the caller must
+  not be restricted by **any** path rule (`read` for reads, `read` and `write` for
+  writes), or the request is `403 whole_repository_required` with `denied_by` naming the
+  restricting rule. This covers pull requests and CI, content-addressed objects
+  (`object/*`, `fetch-objects`, `checkout-info`: a hash cannot be mapped back to a path),
+  every export, and ref moves (pointing a ref at a changeset publishes all its paths).
+  On these routes a token also needs `repo:read` (reads) or `repo:write` (everything
+  else), otherwise `403 insufficient_scope`.
+
+Path rules also shape two kinds of route the table marks only `read` or `write`:
+
+- **Listings** (`tree`, `diff`, `changed-paths`, `history`, `changesets`) drop every
+  path the caller may not `read` instead of failing. Each response that dropped
+  something carries `omitted_paths_count` (on the body, or on each changeset).
+- **Commits** (`POST …/changesets`) need `write` on every changed path. The first denied
+  path fails the whole commit with `403 forbidden`, `path` and `denied_by`.
 
 ### 404 vs 403 contract
 
@@ -136,6 +148,8 @@ Repo existence is never leaked (`worker/src/auth/guards.ts`):
 | Repo exists but the caller cannot `read` it, whatever perm the route needed | `404 repo_not_found`                                               |
 | Caller can read the repo but lacks the needed perm                          | `403 forbidden`, with `denied_by` when a path rule denied          |
 | A path rule explicitly denies `history` or `read` on a blame/history path   | `403 forbidden` with `denied_by`                                   |
+| A path rule denies `write` on a path a commit changes                       | `403 forbidden` with `path` and `denied_by`                        |
+| Any path rule restricts the caller on a `(whole repo)` route                | `403 whole_repository_required` with `denied_by`                   |
 | Token bound to another repo (pulls/CI)                                      | `404 repo_not_found`                                               |
 | Token lacks the scope a route checks                                        | `403 insufficient_scope`, or `403 forbidden` with `required_scope` |
 
@@ -239,79 +253,81 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-69 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+71 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
-| Method | Path                                     | Auth    | Permission                              | Rate bucket  | Purpose                                          |
-| ------ | ---------------------------------------- | ------- | --------------------------------------- | ------------ | ------------------------------------------------ |
-| GET    | `/api/v1`                                | any     | —                                       | api_read     | API root: `{ok, service, api: "v1"}`             |
-| GET    | `/api/v1/admin/metrics`                  | session | admin on any repo                       | api_read     | Operational metrics (`?component=&window=`)      |
-| POST   | `/api/v1/agents/superfans`               | session | —                                       | api_write    | Start a long-lived per-component monitor         |
-| GET    | `/api/v1/agents/tasks/:id`               | any     | read                                    | agent_run    | Agent task row plus live agent state             |
-| POST   | `/api/v1/agents/tasks/:id/cancel`        | any     | write                                   | agent_run    | Cancel an agent task                             |
-| GET    | `/api/v1/agents/tasks/:id/transcript`    | any     | read                                    | agent_run    | Transcript entries (`?since=` ms)                |
-| POST   | `/api/v1/cache-token`                    | session | —                                       | api_write    | Mint a signed `cache_token` for one URL          |
-| GET    | `/api/v1/github/install-url`             | session | —                                       | api_read     | 302 to the GitHub App install page               |
-| GET    | `/api/v1/repos`                          | any     | token needs `repo:read` or `repo:write` | api_read     | List repos visible to the caller (keyset paged)  |
-| POST   | `/api/v1/repos`                          | session | —                                       | api_write    | Create a repo (creator becomes admin)            |
-| GET    | `/api/v1/repos/:owner/:name`             | any     | read                                    | api_read     | Repo metadata plus `can_admin`                   |
-| POST   | `/api/v1/repos/:owner/:name/initialize`  | any     | admin                                   | api_write    | Seed `README.md` on an empty repo default branch |
-| POST   | `/api/v1/repos/:repo/agents/mcp`         | token   | write + `agent:run`                     | agent_run    | MCP JSON-RPC 2.0 endpoint                        |
-| GET    | `/api/v1/repos/:repo/agents/tasks`       | any     | read                                    | agent_run    | List agent tasks (`?status=&limit=`)             |
-| POST   | `/api/v1/repos/:repo/agents/tasks`       | any     | write + `agent:run`                     | agent_run    | Queue an agent task                              |
-| GET    | `/api/v1/repos/:repo/ancestor-distance`  | any     | read                                    | api_read     | First-parent distance between `a` and `b`        |
-| GET    | `/api/v1/repos/:repo/blame`              | any     | read + path:history                     | api_read     | Line ranges to changesets for one file           |
-| PUT    | `/api/v1/repos/:repo/blob`               | any     | write                                   | api_write    | Pre-upload a blob (hash-verified, max 64 MiB)    |
-| GET    | `/api/v1/repos/:repo/changed-paths`      | any     | read                                    | api_read     | Files changed by one changeset                   |
-| GET    | `/api/v1/repos/:repo/changesets`         | any     | read                                    | api_read     | First-parent changeset log (cursor paged)        |
-| POST   | `/api/v1/repos/:repo/changesets`         | any     | write                                   | api_write    | Commit: create a changeset (never moves refs)    |
-| GET    | `/api/v1/repos/:repo/changesets/:id`     | any     | read                                    | api_read     | One changeset                                    |
-| GET    | `/api/v1/repos/:repo/checkout-info`      | any     | read                                    | api_read     | Root tree and size estimate for a checkout       |
-| GET    | `/api/v1/repos/:repo/ci`                 | any     | read (whole repo)                       | api_read     | CI policy, recent runs, budget and capabilities  |
-| PUT    | `/api/v1/repos/:repo/ci`                 | any     | admin (whole repo)                      | api_write    | Save the CI policy                               |
-| GET    | `/api/v1/repos/:repo/ci/detect`          | any     | admin (whole repo)                      | api_read     | Suggest CI commands from the default branch      |
-| POST   | `/api/v1/repos/:repo/ci/runs`            | any     | write (whole repo); admin if `publish`  | api_write    | Queue a CI run                                   |
-| POST   | `/api/v1/repos/:repo/ci/runs/:id/cancel` | any     | write (whole repo)                      | api_write    | Cancel a CI run                                  |
-| GET    | `/api/v1/repos/:repo/ci/runs/:id/log`    | any     | read (whole repo)                       | api_read     | CI run log (`text/plain`)                        |
-| POST   | `/api/v1/repos/:repo/connect`            | session | admin                                   | api_write    | Link the repo to a GitHub repo via the App       |
-| GET    | `/api/v1/repos/:repo/diff`               | any     | read                                    | api_read     | Server-side diff between two revisions           |
-| GET    | `/api/v1/repos/:repo/export/fast-import` | any     | read                                    | api_read     | Stream a `git fast-import` export                |
-| POST   | `/api/v1/repos/:repo/export/github`      | any     | write                                   | api_write    | Queue a push of a revision to GitHub             |
-| GET    | `/api/v1/repos/:repo/export/tarball`     | any     | read                                    | api_read     | Stream a `.tar.gz` of one revision               |
-| POST   | `/api/v1/repos/:repo/fetch-objects`      | any     | read                                    | object_fetch | Batched want-only object fetch                   |
-| GET    | `/api/v1/repos/:repo/file`               | any     | read + path:read                        | api_read     | Read one file at a revision                      |
-| GET    | `/api/v1/repos/:repo/history`            | any     | read + path:history                     | api_read     | First-parent or per-path history                 |
-| POST   | `/api/v1/repos/:repo/import`             | any     | write                                   | api_write    | Queue a GitHub import job                        |
-| GET    | `/api/v1/repos/:repo/import/:job_id`     | any     | read                                    | api_read     | Import job progress                              |
-| GET    | `/api/v1/repos/:repo/is-ancestor`        | any     | read                                    | api_read     | Whether `a` is a first-parent ancestor of `b`    |
-| GET    | `/api/v1/repos/:repo/members`            | session | admin                                   | api_read     | List repo members                                |
-| PUT    | `/api/v1/repos/:repo/members`            | session | admin                                   | api_write    | Add or change a member role                      |
-| DELETE | `/api/v1/repos/:repo/members/:userId`    | session | admin                                   | api_write    | Remove a member                                  |
-| GET    | `/api/v1/repos/:repo/merge-base`         | any     | read                                    | api_read     | Merge base of `a` and `b`                        |
-| GET    | `/api/v1/repos/:repo/object/blob/:hash`  | any     | read                                    | object_fetch | One blob (`?encoding=zstd\|identity`)            |
-| GET    | `/api/v1/repos/:repo/object/tree/:hash`  | any     | read                                    | object_fetch | One tree object                                  |
-| GET    | `/api/v1/repos/:repo/path-rules`         | session | admin                                   | api_read     | List directory-level permission rules            |
-| POST   | `/api/v1/repos/:repo/path-rules`         | session | admin                                   | api_write    | Add a path rule                                  |
-| DELETE | `/api/v1/repos/:repo/path-rules/:id`     | session | admin                                   | api_write    | Delete a path rule                               |
-| GET    | `/api/v1/repos/:repo/pulls`              | any     | read (whole repo)                       | api_read     | List pull requests (50 per page)                 |
-| POST   | `/api/v1/repos/:repo/pulls`              | any     | write (whole repo)                      | api_write    | Open a pull request                              |
-| GET    | `/api/v1/repos/:repo/pulls/:id`          | any     | read (whole repo)                       | api_read     | Pull request, reviews and merge gate             |
-| POST   | `/api/v1/repos/:repo/pulls/:id/merge`    | any     | write (whole repo)                      | api_write    | Merge a pull request                             |
-| POST   | `/api/v1/repos/:repo/pulls/:id/review`   | any     | write (whole repo)                      | api_write    | Comment, approve or request changes              |
-| POST   | `/api/v1/repos/:repo/pulls/:id/update`   | any     | write (whole repo)                      | api_write    | Edit title/body/state or move the head           |
-| GET    | `/api/v1/repos/:repo/refs`               | any     | read                                    | api_read     | List refs                                        |
-| GET    | `/api/v1/repos/:repo/refs/:name`         | any     | read                                    | api_read     | One ref                                          |
-| PUT    | `/api/v1/repos/:repo/refs/:name`         | any     | write                                   | api_write    | Compare-and-swap move a ref                      |
-| GET    | `/api/v1/repos/:repo/tree`               | any     | read + path:read                        | api_read     | List a directory at a revision                   |
-| GET    | `/api/v1/tokens`                         | session | —                                       | api_read     | List your API tokens (metadata only)             |
-| POST   | `/api/v1/tokens`                         | session | —                                       | api_write    | Create an API token (raw value returned once)    |
-| DELETE | `/api/v1/tokens/:id`                     | session | —                                       | api_write    | Revoke one of your API tokens                    |
-| GET    | `/auth/github`                           | none    | —                                       | auth         | Start GitHub OAuth login (302 to GitHub)         |
-| GET    | `/auth/github/callback`                  | none    | —                                       | auth         | OAuth callback: sets `yag_session`, 302 to `/`   |
-| GET    | `/auth/github/install-callback`          | none    | —                                       | auth         | GitHub App post-install landing: echoes `state`  |
-| POST   | `/auth/logout`                           | none    | —                                       | auth         | Revoke the session and clear the cookie          |
-| GET    | `/auth/status`                           | none    | —                                       | auth         | Whether GitHub OAuth is configured               |
-| GET    | `/healthz`                               | none    | —                                       | api_read     | Liveness probe: `{ok: true}`                     |
-| POST   | `/webhooks/github`                       | HMAC    | —                                       | exempt       | GitHub App webhook receiver                      |
+| Method | Path                                              | Auth    | Permission                                                  | Rate bucket  | Purpose                                          |
+| ------ | ------------------------------------------------- | ------- | ----------------------------------------------------------- | ------------ | ------------------------------------------------ |
+| GET    | `/api/v1`                                         | any     | —                                                           | api_read     | API root: `{ok, service, api: "v1"}`             |
+| GET    | `/api/v1/admin/metrics`                           | session | admin on any repo                                           | api_read     | Operational metrics (`?component=&window=`)      |
+| GET    | `/api/v1/agents/tasks/:id`                        | any     | read                                                        | agent_run    | Agent task row plus live agent state             |
+| POST   | `/api/v1/agents/tasks/:id/cancel`                 | any     | write                                                       | agent_run    | Cancel an agent task                             |
+| GET    | `/api/v1/agents/tasks/:id/transcript`             | any     | read                                                        | agent_run    | Transcript entries (`?since=` ms)                |
+| POST   | `/api/v1/cache-token`                             | session | —                                                           | api_write    | Mint a signed `cache_token` for one URL          |
+| GET    | `/api/v1/github/install-url`                      | session | —                                                           | api_read     | 302 to the GitHub App install page               |
+| GET    | `/api/v1/repos`                                   | any     | token needs `repo:read` or `repo:write`                     | api_read     | List repos visible to the caller (keyset paged)  |
+| POST   | `/api/v1/repos`                                   | session | —                                                           | api_write    | Create a repo (creator becomes admin)            |
+| GET    | `/api/v1/repos/:owner/:name`                      | any     | read                                                        | api_read     | Repo metadata plus `can_admin`                   |
+| POST   | `/api/v1/repos/:owner/:name/initialize`           | any     | admin                                                       | api_write    | Seed `README.md` on an empty repo default branch |
+| POST   | `/api/v1/repos/:repo/agents/mcp`                  | token   | read; write for `commit`/`land`/`create_task` + `agent:run` | agent_run    | MCP JSON-RPC 2.0 endpoint                        |
+| GET    | `/api/v1/repos/:repo/agents/superfans`            | any     | admin                                                       | api_read     | List the repo's superfans and their findings     |
+| POST   | `/api/v1/repos/:repo/agents/superfans`            | any     | admin + `agent:run`                                         | api_write    | Start a per-component monitor on this repo       |
+| DELETE | `/api/v1/repos/:repo/agents/superfans/:component` | any     | admin                                                       | api_write    | Stop a superfan                                  |
+| GET    | `/api/v1/repos/:repo/agents/tasks`                | any     | read                                                        | agent_run    | List agent tasks (`?status=&limit=`)             |
+| POST   | `/api/v1/repos/:repo/agents/tasks`                | any     | write + `agent:run`                                         | agent_run    | Queue an agent task                              |
+| GET    | `/api/v1/repos/:repo/ancestor-distance`           | any     | read                                                        | api_read     | First-parent distance between `a` and `b`        |
+| GET    | `/api/v1/repos/:repo/blame`                       | any     | read + path:history                                         | api_read     | Line ranges to changesets for one file           |
+| PUT    | `/api/v1/repos/:repo/blob`                        | any     | write                                                       | api_write    | Pre-upload a blob (hash-verified, max 64 MiB)    |
+| GET    | `/api/v1/repos/:repo/changed-paths`               | any     | read                                                        | api_read     | Files changed by one changeset                   |
+| GET    | `/api/v1/repos/:repo/changesets`                  | any     | read                                                        | api_read     | First-parent changeset log (cursor paged)        |
+| POST   | `/api/v1/repos/:repo/changesets`                  | any     | write                                                       | api_write    | Commit: create a changeset (never moves refs)    |
+| GET    | `/api/v1/repos/:repo/changesets/:id`              | any     | read                                                        | api_read     | One changeset                                    |
+| GET    | `/api/v1/repos/:repo/checkout-info`               | any     | read (whole repo)                                           | api_read     | Root tree and size estimate for a checkout       |
+| GET    | `/api/v1/repos/:repo/ci`                          | any     | read (whole repo)                                           | api_read     | CI policy, recent runs, budget and capabilities  |
+| PUT    | `/api/v1/repos/:repo/ci`                          | any     | admin (whole repo)                                          | api_write    | Save the CI policy                               |
+| GET    | `/api/v1/repos/:repo/ci/detect`                   | any     | admin (whole repo)                                          | api_read     | Suggest CI commands from the default branch      |
+| POST   | `/api/v1/repos/:repo/ci/runs`                     | any     | write (whole repo); admin if `publish`                      | api_write    | Queue a CI run                                   |
+| POST   | `/api/v1/repos/:repo/ci/runs/:id/cancel`          | any     | write (whole repo)                                          | api_write    | Cancel a CI run                                  |
+| GET    | `/api/v1/repos/:repo/ci/runs/:id/log`             | any     | read (whole repo)                                           | api_read     | CI run log (`text/plain`)                        |
+| POST   | `/api/v1/repos/:repo/connect`                     | session | admin                                                       | api_write    | Link the repo to a GitHub repo via the App       |
+| GET    | `/api/v1/repos/:repo/diff`                        | any     | read                                                        | api_read     | Server-side diff between two revisions           |
+| GET    | `/api/v1/repos/:repo/export/fast-import`          | any     | read (whole repo)                                           | api_read     | Stream a `git fast-import` export                |
+| POST   | `/api/v1/repos/:repo/export/github`               | any     | write (whole repo)                                          | api_write    | Queue a push of a revision to GitHub             |
+| GET    | `/api/v1/repos/:repo/export/tarball`              | any     | read (whole repo)                                           | api_read     | Stream a `.tar.gz` of one revision               |
+| POST   | `/api/v1/repos/:repo/fetch-objects`               | any     | read (whole repo)                                           | object_fetch | Batched want-only object fetch                   |
+| GET    | `/api/v1/repos/:repo/file`                        | any     | read + path:read                                            | api_read     | Read one file at a revision                      |
+| GET    | `/api/v1/repos/:repo/history`                     | any     | read + path:history                                         | api_read     | First-parent or per-path history                 |
+| POST   | `/api/v1/repos/:repo/import`                      | any     | write (whole repo)                                          | api_write    | Queue a GitHub import job                        |
+| GET    | `/api/v1/repos/:repo/import/:job_id`              | any     | read                                                        | api_read     | Import job progress                              |
+| GET    | `/api/v1/repos/:repo/is-ancestor`                 | any     | read                                                        | api_read     | Whether `a` is a first-parent ancestor of `b`    |
+| GET    | `/api/v1/repos/:repo/members`                     | session | admin                                                       | api_read     | List repo members                                |
+| PUT    | `/api/v1/repos/:repo/members`                     | session | admin                                                       | api_write    | Add or change a member role                      |
+| DELETE | `/api/v1/repos/:repo/members/:userId`             | session | admin                                                       | api_write    | Remove a member                                  |
+| GET    | `/api/v1/repos/:repo/merge-base`                  | any     | read                                                        | api_read     | Merge base of `a` and `b`                        |
+| GET    | `/api/v1/repos/:repo/object/blob/:hash`           | any     | read (whole repo)                                           | object_fetch | One blob (`?encoding=zstd\|identity`)            |
+| GET    | `/api/v1/repos/:repo/object/tree/:hash`           | any     | read (whole repo)                                           | object_fetch | One tree object                                  |
+| GET    | `/api/v1/repos/:repo/path-rules`                  | session | admin                                                       | api_read     | List directory-level permission rules            |
+| POST   | `/api/v1/repos/:repo/path-rules`                  | session | admin                                                       | api_write    | Add a path rule                                  |
+| DELETE | `/api/v1/repos/:repo/path-rules/:id`              | session | admin                                                       | api_write    | Delete a path rule                               |
+| GET    | `/api/v1/repos/:repo/pulls`                       | any     | read (whole repo)                                           | api_read     | List pull requests (50 per page)                 |
+| POST   | `/api/v1/repos/:repo/pulls`                       | any     | write (whole repo)                                          | api_write    | Open a pull request                              |
+| GET    | `/api/v1/repos/:repo/pulls/:id`                   | any     | read (whole repo)                                           | api_read     | Pull request, reviews and merge gate             |
+| POST   | `/api/v1/repos/:repo/pulls/:id/merge`             | any     | write (whole repo)                                          | api_write    | Merge a pull request                             |
+| POST   | `/api/v1/repos/:repo/pulls/:id/review`            | any     | write (whole repo)                                          | api_write    | Comment, approve or request changes              |
+| POST   | `/api/v1/repos/:repo/pulls/:id/update`            | any     | write (whole repo)                                          | api_write    | Edit title/body/state or move the head           |
+| GET    | `/api/v1/repos/:repo/refs`                        | any     | read                                                        | api_read     | List refs                                        |
+| GET    | `/api/v1/repos/:repo/refs/:name`                  | any     | read                                                        | api_read     | One ref                                          |
+| PUT    | `/api/v1/repos/:repo/refs/:name`                  | any     | write (whole repo)                                          | api_write    | Compare-and-swap move a ref                      |
+| GET    | `/api/v1/repos/:repo/tree`                        | any     | read + path:read                                            | api_read     | List a directory at a revision                   |
+| GET    | `/api/v1/tokens`                                  | session | —                                                           | api_read     | List your API tokens (metadata only)             |
+| POST   | `/api/v1/tokens`                                  | session | —                                                           | api_write    | Create an API token (raw value returned once)    |
+| DELETE | `/api/v1/tokens/:id`                              | session | —                                                           | api_write    | Revoke one of your API tokens                    |
+| GET    | `/auth/github`                                    | none    | —                                                           | auth         | Start GitHub OAuth login (302 to GitHub)         |
+| GET    | `/auth/github/callback`                           | none    | —                                                           | auth         | OAuth callback: sets `yag_session`, 302 to `/`   |
+| GET    | `/auth/github/install-callback`                   | none    | —                                                           | auth         | GitHub App post-install landing: echoes `state`  |
+| POST   | `/auth/logout`                                    | none    | —                                                           | auth         | Revoke the session and clear the cookie          |
+| GET    | `/auth/status`                                    | none    | —                                                           | auth         | Whether GitHub OAuth is configured               |
+| GET    | `/healthz`                                        | none    | —                                                           | api_read     | Liveness probe: `{ok: true}`                     |
+| POST   | `/webhooks/github`                                | HMAC    | —                                                           | exempt       | GitHub App webhook receiver                      |
 
 <!-- generated:routes:end -->
 
@@ -360,17 +376,20 @@ file_too_large`; use `format=raw` for those. `format=raw` streams the bytes with
   JS). The stream is hash-verified and aborts on a mismatch.
 - `GET …/tree?cs=[&path=][&recursive=1]` returns `{path, entries}`. Entries are
   `{name, kind: "tree"|"blob", hash, size?, mode?}`. Recursive entries are
-  `{path, kind, hash, size?}`, capped at 5000 (`409 tree_too_large`). A non-directory
-  path is `400 not_a_tree`.
+  `{path, kind, hash, size?}`, capped at 5000 walked entries (`409 tree_too_large`). A
+  non-directory path is `400 not_a_tree`. Entries the caller may not read are left out
+  and counted in `omitted_paths_count`.
 - `GET …/history?cs=ref:main&limit=50[&path=][&background=1]` returns `{changesets}`
   (first-parent). With `path`, it returns
   `{path, changesets, next, complete}` and checks `history` on the path. When the
   derived index is cold and `background=1`, it returns
   `202 {status: "computing", path, cs}`. `limit` is at most 500.
-- `GET …/changed-paths?cs=` returns `{cs, changed_files}`.
+- `GET …/changed-paths?cs=` returns `{cs, changed_files, omitted_paths_count?}`.
 
 A **changeset** is `{id, repo_id, first_parent, parents, author, message, created_at,
-changed_files, root_tree}`. `author` is either `{name, email}` or `{agent}`.
+changed_files, root_tree}`. `author` is either `{name, email}` or `{agent}`. When path
+rules hide some of its `changed_files` from the caller, the changeset also carries
+`omitted_paths_count`.
 
 ### Ancestry, diff, blame
 
@@ -384,7 +403,8 @@ changed_files, root_tree}`. `author` is either `{name, email}` or `{agent}`.
 size_delta?, side?}`. The default `merge-base` (three-dot) mode tags each file with
   `side: "from"|"to"`. `text=1` adds unified `texts: [{path, unified, side?}]`. If those
   exceed 4 MiB they are dropped, with `texts_truncated: true` and `texts_hint`.
-  `max_files` is at most 5000.
+  `max_files` is at most 5000. Files the caller may not read are left out of `files`
+  and `texts` and counted in `omitted_paths_count`.
 - `GET …/blame?cs=&path=[&background=1][&annotate=1]` returns
   `{path, cs, ranges: [{start, end, cs}], complete}`. `annotate=1` adds `message` and
   `author` per range. A cold index with `background=1`, or one over the inline budget,
@@ -413,7 +433,8 @@ size_delta?, side?}`. The default `merge-base` (three-dot) mode tags each file w
 It returns `201 {changeset, deduped: false}`, or `200 {changeset, deduped: true}` when
 an identical changeset already exists. Changesets are content-addressed. `add` requires
 the path to be absent and `mod`/`del` require it to be present. Validation failures are
-`400 invalid_request` with `issues`.
+`400 invalid_request` with `issues`. Every changed path needs `write`: a path rule
+denying it fails the commit with `403 forbidden`, `path` and `denied_by`.
 
 - `PUT …/blob?sha256=<hex>[&encoding=identity|<codec>]` (write) takes raw bytes, at most
   64 MiB. The hash covers the **uncompressed** content and is verified (`400
@@ -422,7 +443,7 @@ hash_mismatch`). Returns `201 {sha256, size, deduped}`.
   `GET …/changesets/:id` returns `{changeset}`.
 - `GET …/refs` returns `{refs: [{name, head, updated_at}]}`. `GET …/refs/:name` returns
   `{name, head, updated_at}`. Ref names may contain `/`.
-- `PUT …/refs/:name` (write) takes `{from: string|null, to: string, force?: boolean}`.
+- `PUT …/refs/:name` (write, whole repo) takes `{from: string|null, to: string, force?: boolean}`.
   This is a compare-and-swap through the per-ref Durable Object. It returns
   `{ok: true, from, to}`. Use `from: null` to create a ref. The error cases:
 
@@ -435,7 +456,9 @@ hash_mismatch`). Returns `201 {sha256, size, deduped}`.
 
 ### Sparse checkout objects
 
-The checkout protocol is want-only. Clients never send what they already have.
+The checkout protocol is want-only. Clients never send what they already have. Every
+route here needs whole-repository read (`403 whole_repository_required` otherwise).
+Callers restricted by a path rule use `file` and `tree` instead.
 
 - `GET …/checkout-info?cs=` returns `{cs, root_tree, size_estimate: {blobs, bytes}}`.
 - `GET …/object/tree/:hash` returns `{hash, entries}`.
@@ -453,13 +476,16 @@ The checkout protocol is want-only. Clients never send what they already have.
 mode?: "snapshot"|"full_history", ref?}` and returns `202 {job_id, status: "queued"}`.
 - `GET …/import/:job_id` returns
   `{job_id, status, mode, commits_total, commits_done, checkpoint, error}`.
+  Exports carry every path, so all three need whole-repository access (read for tarball
+  and fast-import, write for GitHub).
+
 - `GET …/export/tarball?cs=` streams `application/gzip`, named
   `<owner>-<name>-<cs8>.tar.gz`. The cap is 100k objects or 512 MiB
   (`413 export_too_large`).
 - `GET …/export/fast-import?head=[&mode=snapshot|full|ranged][&from=]` streams
   `application/x-git-fast-import-stream`. Over 10k commits returns `413
 export_too_large`.
-- `POST …/export/github` (write) takes `{target_branch?: string = "yag-sync", head?}`
+- `POST …/export/github` (write, whole repo) takes `{target_branch?: string = "yag-sync", head?}`
   and returns `202 {job_id, status: "queued"}`.
 
 ### Pull requests
@@ -514,16 +540,50 @@ monthly_budget_usd, reserved_usd, max_run_usd, registry}`.
 
 - `POST …/agents/tasks` (write + `agent:run`) takes
   `{kind: "freeform"|"fix_issue"|"post_merge_check"|"superfan", prompt: 1–65536,
-base_cs?: rev = "ref:main"}` and returns `202 {task_id, status: "queued"}`.
+base_cs?: rev = "ref:main", github_issue?: positive int}` and returns
+  `202 {task_id, status: "queued"}`. `github_issue` is only accepted with
+  `kind: "fix_issue"` (otherwise `400 invalid_request`). For a repo connected to GitHub,
+  the issue's title and body become the task prompt. On success the work is exported to
+  `yag-sync` and the changeset id is commented on the issue.
 - `GET …/agents/tasks?status=&limit=50` (≤ 200) returns `{tasks}`.
 - `GET /api/v1/agents/tasks/:id` returns `{task, state}`. Visibility follows read access
-  to the task's repo.
+  to the task's repo. `state.budget` and `state.turn` hold the persisted budget counters,
+  so a resumed task keeps spending from the same budget and deadline.
 - `GET /api/v1/agents/tasks/:id/transcript?since=<ms>` returns `{entries}`, the JSONL
   transcript entries with `t >= since`.
-- `POST /api/v1/agents/tasks/:id/cancel` (write) returns `{ok: true, status: "cancelled"}`.
-- `POST /api/v1/agents/superfans` (session) takes
+- `POST /api/v1/agents/tasks/:id/cancel` (write) returns `{ok: true, status}`. Only a
+  `queued` or `running` task becomes `cancelled`, including one that has not started
+  yet. The loop stops before its next turn or tool call. For a task that has already
+  ended, `status` is its unchanged terminal status.
+- **Task statuses.** `landed` means the agent called `finish`. `failed` means it called
+  `report_failure`, ran out of budget (tool calls, commits, LLM turns or the deadline,
+  with `state.error` such as `"budget exhausted (tool)"`), hit the deadline alarm
+  (`"timeout"`), or failed twice on infrastructure. `landed`, `cancelled` and a timeout
+  are final: later loop results and queue redeliveries never overwrite them.
+- **Spawned tasks** (`create_task`, the post-merge check queued by `land`, superfan
+  investigations) record the real user as `created_by` and run as that user, so they
+  work on private repos the user can access.
+- **Post-merge checks.** A successful `land` queues a `post_merge_check` with
+  `base_cs` = the pre-land head. The checked head is the landed changeset. The prompt
+  lists the changed files, and the budget is 20 tool calls. If the check calls
+  `report_failure`, a `freeform` fix task is queued for the same repo and user, with the
+  findings in its prompt. That task's prompt starts with `[post-merge-fix]`. A failed
+  check on a fix task's own land does not spawn another fix, so fixes stop after one
+  level.
+- `POST …/agents/superfans` (admin + `agent:run`) takes
   `{component: "commit-path"|"import-pipeline"|"queues"|"refs"|"agents"|"ai",
-interval_min: 1–1440}` and returns 201 with the monitor's state.
+interval_min: 1–1440}` and returns 201 with the monitor's state. There is one
+  monitor per repo and component, and re-registering replaces its interval. When a
+  check finds an anomaly, the finding is recorded and a `freeform` investigation task is
+  queued in this repo, based on the default branch head and running as the admin who
+  registered the monitor.
+- `GET …/agents/superfans?limit=50` (admin, ≤ 200) returns
+  `{superfans: [{component, interval_min, repo_id, created_by, last_check?}],
+findings: [{id, component, ts, finding, task_id}]}`. Findings are the newest first,
+  limited to those whose investigation task is in this repo.
+- `DELETE …/agents/superfans/:component` (admin) stops the monitor and clears its alarm.
+  It returns `{ok: true, component, stopped}`, where `stopped` is `false` if none was
+  running.
 
 ### Administration
 
@@ -570,23 +630,33 @@ params?, id?: string|number|null}`.
 | `tools/list` | `{tools: [{name, description, inputSchema}]}`, where `inputSchema` is JSON Schema                                         |
 | `tools/call` | params `{name, arguments?, base_cs?, head_cs?}`, result `{content: [{type: "text", text: "<JSON tool result>"}], budget}` |
 
-`tools/call` requires repo `write`. When `head_cs` is omitted it defaults to the head of
-the repository's default branch, and `base_cs` defaults to `head_cs`. Tools: `read_file`,
-`list_dir`, `file_history`, `blame`, `diff`, `grep`, `commit`, `land`, `create_task`,
-`finish`, `report_failure`. Tool-level permission failures come back inside the tool
-result. `land` moves the default branch: a lost race returns
+`tools/call` requires repo `read` for the read-only tools (`read_file`, `list_dir`,
+`file_history`, `blame`, `diff`, `grep`, `finish`, `report_failure`) and repo `write`
+for `commit`, `land` and `create_task`. A `repo:read` token with `agent:run` can
+therefore inspect a repo but not change it. When `head_cs` is omitted it defaults to the
+head of the repository's default branch, and `base_cs` defaults to `head_cs`. Revision
+arguments (`cs` on `read_file`, `list_dir`, `grep` and `blame`, and `from`/`to` on
+`diff`) take a changeset id, `ref:<name>`, or a bare ref name, as the HTTP read routes
+do. Tool-level permission failures come back inside the tool result. Path rules apply
+per file. `diff` needs repo read and drops files the caller cannot read from both
+`files` and `texts`, just as `grep` skips them. `commit` needs `write` on every path it
+touches, as `POST …/changesets` does. Otherwise it returns
+`{error: "forbidden", perm: "write", path, denied_by?}` and commits nothing. `land`
+needs write on the whole repo, as ref moves do: if any path rule restricts the caller,
+it returns `{landed: false, reason: "whole_repository_required", final: true, denied_by?}`.
+`land` moves the default branch: a lost race returns
 `{landed: false, reason: "stale", main_head}` (merge `main_head` in and land again); any
 other refusal, such as a protected default branch, returns
 `{landed: false, reason: "<code>", final: true}` and must not be retried.
 
 JSON-RPC errors are returned with HTTP **200**:
 
-| Code     | Meaning                                                     |
-| -------- | ----------------------------------------------------------- |
-| `-32600` | Body does not match the request schema                      |
-| `-32601` | `forbidden`: the caller lacks repo `write` for `tools/call` |
-| `-32602` | `unknown repo`, or invalid `tools/call` params              |
-| `-32603` | `empty repository` (no head to operate on)                  |
+| Code     | Meaning                                                          |
+| -------- | ---------------------------------------------------------------- |
+| `-32600` | Body does not match the request schema                           |
+| `-32601` | `forbidden`: the caller lacks the repo permission the tool needs |
+| `-32602` | `unknown repo`, or invalid `tools/call` params                   |
+| `-32603` | `empty repository` (no head to operate on)                       |
 
 ## Webhook contract
 

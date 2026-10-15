@@ -462,8 +462,9 @@ function PathRulesPanel({ repos }: { repos: Repo[] }): ReactElement {
 // Superfans
 // ---------------------------------------------------------------------------
 
-function SuperfansPanel(): ReactElement {
+function SuperfansPanel({ repos }: { repos: Repo[] }): ReactElement {
   const toast = useToast();
+  const [slug, setSlug] = useState('');
   const [component, setComponent] =
     useState<(typeof SUPERFAN_COMPONENTS)[number]>('commit-path');
   const [intervalMin, setIntervalMin] = useState('30');
@@ -475,27 +476,30 @@ function SuperfansPanel(): ReactElement {
     setError(null);
     try {
       const minutes = Number(intervalMin);
+      if (slug === '') throw new Error('select a repo to file investigations into');
       if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 1440) {
         throw new Error('interval must be an integer between 1 and 1440 minutes');
       }
-      await api.createSuperfan({ component, interval_min: minutes });
-      toast.show(`superfan registered for ${component} (every ${minutes}m)`);
+      await api.createSuperfan(slug, { component, interval_min: minutes });
+      toast.show(`superfan registered for ${component} on ${slug} (every ${minutes}m)`);
     } catch (err) {
       setError(asApiError(err));
     } finally {
       setBusy(false);
     }
-  }, [component, intervalMin, toast]);
+  }, [slug, component, intervalMin, toast]);
 
   return (
     <div className="panel">
       <h2>Superfans</h2>
       <div className="small muted" style={{ marginBottom: 8 }}>
-        Long-lived per-component monitors (issue #19) — registered via the API and driven
-        by a Durable Object alarm loop. Registration is idempotent per component.
+        Long-lived per-component monitors (issue #19) — registered by a repo admin and
+        driven by a Durable Object alarm loop. Anomalies open investigation tasks in that
+        repo. Registration is idempotent per repo and component.
       </div>
       {error && <ErrorNotice error={error} />}
       <div className="row" style={{ alignItems: 'flex-end' }}>
+        <RepoSelector repos={repos} value={slug} onChange={setSlug} />
         <Field label="Component">
           <select
             value={component}
@@ -544,7 +548,7 @@ export function SettingsView(): ReactElement {
       <TokensPanel />
       <MembersPanel repos={repos} />
       <PathRulesPanel repos={repos} />
-      <SuperfansPanel />
+      <SuperfansPanel repos={repos} />
       <div className="small faint">
         Session identity is a GitHub OAuth cookie — managed on{' '}
         <a href="/auth/github">/auth/github</a>. Machine access uses the tokens above.

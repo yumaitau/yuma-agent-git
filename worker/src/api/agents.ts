@@ -9,12 +9,14 @@ import { ulid } from '../core/ids';
 import { lookupRev } from '../core/read';
 import { hasScope, type Principal } from '../auth/principal';
 import {
+  loadAdminRepo,
   loadReadableRepo,
   loadReadableRepoById,
   loadWritableRepo,
   loadWritableRepoById,
 } from '../auth/guards';
 import type { AgentState } from '../agents/runtime';
+import { SUPERFAN_COMPONENTS, superfanName } from '../agents/superfan';
 import { r2 } from '../observability/phase';
 
 /**
@@ -24,24 +26,32 @@ import { r2 } from '../observability/phase';
  *   GET  /api/v1/repos/:repo/agents/tasks        (list)
  *   GET  /api/v1/agents/tasks/:id/transcript     (R2 jsonl tail, ?since=)
  *   POST /api/v1/agents/tasks/:id/cancel
+ *   POST|GET /api/v1/repos/:repo/agents/superfans (admin)
+ *   DELETE   /api/v1/repos/:repo/agents/superfans/:component (admin)
  */
 export const agentsRoutes = new Hono<AppEnv>();
 
 interface AgentStub {
   runTask(taskId: string, opts?: Record<string, unknown>): Promise<unknown>;
   getStateSnapshot(): Promise<AgentState>;
-  cancel(): Promise<{ ok: true }>;
+  cancel(taskId?: string): Promise<{ ok: true }>;
 }
 
 function stubFor(env: Env, taskId: string): AgentStub {
   return env.AGENT.get(env.AGENT.idFromName(taskId)) as unknown as AgentStub;
 }
 
-const createTaskSchema = z.object({
-  kind: z.enum(['freeform', 'fix_issue', 'post_merge_check', 'superfan']),
-  prompt: z.string().min(1).max(65536),
-  base_cs: z.string().optional(),
-});
+const createTaskSchema = z
+  .object({
+    kind: z.enum(['freeform', 'fix_issue', 'post_merge_check', 'superfan']),
+    prompt: z.string().min(1).max(65536),
+    base_cs: z.string().optional(),
+    /** GitHub issue number — fix_issue only (the issue body becomes the prompt). */
+    github_issue: z.number().int().positive().optional(),
+  })
+  .refine((t) => t.github_issue === undefined || t.kind === 'fix_issue', {
+    message: 'github_issue is only valid for fix_issue tasks',
+  });
 
 agentsRoutes.post('/repos/:repo{.+}/agents/tasks', async (c) => {
   try {
@@ -75,8 +85,9 @@ agentsRoutes.post('/repos/:repo{.+}/agents/tasks', async (c) => {
       `INSERT INTO ${T.agentTasks}
          (${C.agentTasks.id}, ${C.agentTasks.repoId}, ${C.agentTasks.kind}, ${C.agentTasks.prompt},
           ${C.agentTasks.status}, ${C.agentTasks.baseCs}, ${C.agentTasks.agentState},
-          ${C.agentTasks.createdBy}, ${C.agentTasks.createdAt}, ${C.agentTasks.updatedAt})
-       VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+          ${C.agentTasks.githubIssue}, ${C.agentTasks.createdBy}, ${C.agentTasks.createdAt},
+          ${C.agentTasks.updatedAt})
+       VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
       [
         taskId,
         loaded.repo.id,
@@ -84,6 +95,7 @@ agentsRoutes.post('/repos/:repo{.+}/agents/tasks', async (c) => {
         parsed.data.prompt,
         base.id,
         taskId, // DO name — deep-linkable from the dashboard
+        parsed.data.github_issue === undefined ? null : String(parsed.data.github_issue),
         principal?.userId ?? 'anonymous',
         now,
         now,
@@ -169,32 +181,104 @@ agentsRoutes.get('/agents/tasks/:id/transcript', async (c) => {
 });
 
 const superfanSchema = z.object({
-  component: z.enum(['commit-path', 'import-pipeline', 'queues', 'refs', 'agents', 'ai']),
+  component: z.enum(SUPERFAN_COMPONENTS),
   interval_min: z.number().int().positive().max(1440),
 });
 
-/** Superfans (issue #19): long-lived per-component monitors. */
-agentsRoutes.post('/agents/superfans', async (c) => {
+interface SuperfanStub {
+  fetch(request: Request): Promise<Response>;
+}
+
+function superfanStub(env: Env, repoId: string, component: string): SuperfanStub {
+  return env.SUPERFAN.get(
+    env.SUPERFAN.idFromName(superfanName(repoId, component)),
+  ) as unknown as SuperfanStub;
+}
+
+/**
+ * Superfans (issue #19): long-lived per-component monitors, registered on a
+ * repo by one of its admins. Investigations are filed into that repo and run
+ * as the registering admin.
+ */
+agentsRoutes.post('/repos/:repo{.+}/agents/superfans', async (c) => {
   try {
-    const user = c.get('user');
-    if (!user) return apiError(c, 401, 'unauthorized', 'session required');
+    const loaded = await loadAdminRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const principal = (c.get('principal') ?? null) as Principal | null;
+    if (!principal || !hasScope(principal, 'agent:run')) {
+      return apiError(c, 403, 'forbidden', 'agent:run scope required', {
+        required_scope: 'agent:run',
+      });
+    }
     const body = await readJsonBody(c);
     const parsed = superfanSchema.safeParse(body);
     if (!parsed.success) {
       return apiError(c, 400, 'invalid_request', 'invalid superfan request');
     }
-    const stub = c.env.SUPERFAN.get(
-      c.env.SUPERFAN.idFromName(parsed.data.component),
-    ) as unknown as {
-      fetch(request: Request): Promise<Response>;
-    };
-    const res = await stub.fetch(
+    const res = await superfanStub(c.env, loaded.repo.id, parsed.data.component).fetch(
       new Request('https://superfan/start', {
         method: 'POST',
-        body: JSON.stringify(parsed.data),
+        body: JSON.stringify({
+          ...parsed.data,
+          repo_id: loaded.repo.id,
+          created_by: principal.userId,
+        }),
       }),
     );
     return c.json(await res.json(), 201);
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+agentsRoutes.get('/repos/:repo{.+}/agents/superfans', async (c) => {
+  try {
+    const loaded = await loadAdminRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const repoId = loaded.repo.id;
+    const states = await Promise.all(
+      SUPERFAN_COMPONENTS.map(async (component) => {
+        const res = await superfanStub(c.env, repoId, component).fetch(
+          new Request('https://superfan/state'),
+        );
+        return (await res.json()) as { component?: string; repo_id?: string };
+      }),
+    );
+    const superfans = states.filter((s) => s.component && s.repo_id === repoId);
+    const limitRaw = Number(c.req.query('limit') ?? '50');
+    const limit =
+      Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+    // findings belong to the repo their investigation task was filed into
+    const findings = await q(
+      c.env,
+      `SELECT f.${C.superfanFindings.id} AS id, f.${C.superfanFindings.component} AS component,
+              f.${C.superfanFindings.ts} AS ts, f.${C.superfanFindings.finding} AS finding,
+              f.${C.superfanFindings.taskId} AS task_id
+         FROM ${T.superfanFindings} f
+         JOIN ${T.agentTasks} t ON t.${C.agentTasks.id} = f.${C.superfanFindings.taskId}
+        WHERE t.${C.agentTasks.repoId} = ?
+        ORDER BY f.${C.superfanFindings.ts} DESC LIMIT ?`,
+      [repoId, limit],
+    );
+    return c.json({ superfans, findings }, 200, { 'cache-control': 'private, no-store' });
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+agentsRoutes.delete('/repos/:repo{.+}/agents/superfans/:component', async (c) => {
+  try {
+    const loaded = await loadAdminRepo(c, c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const component = superfanSchema.shape.component.safeParse(c.req.param('component'));
+    if (!component.success) {
+      return apiError(c, 404, 'superfan_not_found', 'unknown superfan component');
+    }
+    const res = await superfanStub(c.env, loaded.repo.id, component.data).fetch(
+      new Request('https://superfan/stop', { method: 'POST' }),
+    );
+    const body = (await res.json()) as { stopped: boolean };
+    return c.json({ ok: true, component: component.data, stopped: body.stopped });
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -212,8 +296,14 @@ agentsRoutes.post('/agents/tasks/:id/cancel', async (c) => {
     const loaded = await loadWritableRepoById(c, task.repo_id);
     if (!loaded.ok) return loaded.response;
 
-    await stubFor(c.env, task.id).cancel();
-    return c.json({ ok: true, status: 'cancelled' });
+    await stubFor(c.env, task.id).cancel(task.id);
+    // terminal statuses stick: report what the task actually is now
+    const after = await q1<{ status: string }>(
+      c.env,
+      `SELECT ${C.agentTasks.status} FROM ${T.agentTasks} WHERE ${C.agentTasks.id} = ?`,
+      [task.id],
+    );
+    return c.json({ ok: true, status: after?.status ?? 'cancelled' });
   } catch (err) {
     return errorResponse(c, err);
   }

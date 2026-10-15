@@ -4,7 +4,8 @@ import { C, T } from '../db/schema';
 import { q1, run } from '../db/client';
 import { getChangeset } from '../core/changesets';
 import { getTree } from '../core/trees';
-import { newBudget } from './budget';
+import { POST_MERGE_MAX_TOOL_CALLS, newBudget, type TaskBudget } from './budget';
+import { parsePostMergeTask } from './prompt';
 import { r2 } from '../observability/phase';
 import { recordAgent } from '../observability/metrics';
 
@@ -45,6 +46,10 @@ export interface AgentState {
   flushed?: number;
   /** Terminal summary (AI loop finish). */
   summary?: string;
+  /** AI loop budget counters — persisted so a resume never re-spends them. */
+  budget?: TaskBudget;
+  /** Last AI loop turn started (resume continues after it). */
+  turn?: number;
 }
 
 export interface RunTaskOptions {
@@ -91,13 +96,19 @@ export class YagAgent extends Agent<Env, AgentState> {
     return this.state;
   }
 
-  /** Cancel: the in-flight step finishes, then the loop exits. */
-  async cancel(): Promise<{ ok: true }> {
+  /**
+   * Cancel: the in-flight step/tool finishes, then the loop exits. Only a
+   * queued or running task can be cancelled — terminal statuses stick.
+   * `taskId` covers tasks whose DO has not run yet (empty state).
+   */
+  async cancel(taskId?: string): Promise<{ ok: true }> {
+    const id = taskId ?? this.state.task_id;
     this.setState({ ...this.state, cancelled: true });
     await run(
       this.env,
-      `UPDATE ${T.agentTasks} SET ${C.agentTasks.status} = 'cancelled', ${C.agentTasks.updatedAt} = ? WHERE ${C.agentTasks.id} = ?`,
-      [Date.now(), this.state.task_id],
+      `UPDATE ${T.agentTasks} SET ${C.agentTasks.status} = 'cancelled', ${C.agentTasks.updatedAt} = ?
+        WHERE ${C.agentTasks.id} = ? AND ${C.agentTasks.status} IN ('queued', 'running')`,
+      [Date.now(), id],
     );
     return { ok: true };
   }
@@ -115,9 +126,35 @@ export class YagAgent extends Agent<Env, AgentState> {
       repo_id: string;
       base_cs: string | null;
       prompt: string;
+      kind: string;
+      status: string;
+      created_by: string;
+      github_issue?: string | null;
     } | null;
     if (!task) {
       throw new Error(`no agent task ${taskId}`);
+    }
+
+    // terminal statuses stick: a cancelled, landed or timed-out task is never
+    // resurrected by a queue redelivery (an infra-failed one may retry)
+    const resuming = this.state.task_id === taskId;
+    const timedOut =
+      resuming && this.state.status === 'failed' && this.state.error === 'timeout';
+    const cancelled = resuming && this.state.cancelled === true;
+    if (
+      task.status === 'cancelled' ||
+      task.status === 'landed' ||
+      timedOut ||
+      cancelled
+    ) {
+      return this.state;
+    }
+
+    // post-merge checks verify pre-land head → landed changeset
+    let headCs = task.base_cs ?? '';
+    if (task.kind === 'post_merge_check') {
+      const landed = parsePostMergeTask(task.prompt).landed_cs;
+      if (landed && (await getChangeset(this.env, task.repo_id, landed))) headCs = landed;
     }
 
     if (this.state.task_id !== taskId) {
@@ -126,7 +163,7 @@ export class YagAgent extends Agent<Env, AgentState> {
         repo_id: task.repo_id,
         status: 'thinking',
         base_cs: task.base_cs ?? '',
-        head_cs: task.base_cs ?? '',
+        head_cs: headCs,
         steps: 0,
         transcript: [],
         attempt,
@@ -135,9 +172,9 @@ export class YagAgent extends Agent<Env, AgentState> {
         flushed: 0,
       });
     } else {
-      // crash-safe resume / queue retry: keep transcript + steps (attempt meta
-      // is what distinguishes the runs in the transcript)
-      this.setState({ ...this.state, attempt, cancelled: false, status: 'thinking' });
+      // crash-safe resume / queue retry: keep transcript, steps, budget and
+      // turn (attempt meta is what distinguishes the runs in the transcript)
+      this.setState({ ...this.state, attempt, status: 'thinking', error: undefined });
     }
 
     await this.pushTranscript({
@@ -147,39 +184,53 @@ export class YagAgent extends Agent<Env, AgentState> {
     });
     await this.transition('running');
 
-    // deadline: DO alarm + in-loop check (10 min default)
-    const deadlineMs = opts.deadlineMs ?? 10 * 60 * 1000;
-    await this.ctx.storage.setAlarm(Date.now() + deadlineMs);
-    const deadline = Date.now() + deadlineMs;
+    const aiMode =
+      opts.mode !== 'echo' && opts.steps === undefined && opts.failAtStep === undefined;
 
-    if (
-      opts.mode !== 'echo' &&
-      opts.steps === undefined &&
-      opts.failAtStep === undefined
-    ) {
+    // deadline: DO alarm + in-loop check (10 min default). The AI loop's
+    // deadline lives in its persisted budget, so a resume keeps the original.
+    const deadlineMs = opts.deadlineMs ?? 10 * 60 * 1000;
+    const budget =
+      this.state.budget ??
+      newBudget({
+        deadlineMs,
+        maxToolCalls:
+          task.kind === 'post_merge_check' ? POST_MERGE_MAX_TOOL_CALLS : undefined,
+      });
+    const deadline = aiMode ? budget.deadline : Date.now() + deadlineMs;
+    await this.ctx.storage.setAlarm(deadline);
+
+    if (aiMode) {
       // Workers AI think-act-observe loop (issue #19)
+      this.setState({ ...this.state, budget });
       const { runAgentLoop, onTaskFinished } = await import('./loop');
       try {
         const outcome = await runAgentLoop(this.env, {
           task_id: taskId,
           repo_id: task.repo_id,
           prompt: task.prompt,
-          kind: (row as { kind: string }).kind,
-          github_issue: (row as { github_issue?: string | null }).github_issue ?? null,
+          kind: task.kind,
+          github_issue: task.github_issue ?? null,
+          // the task runs as the user who (transitively) created it
           principal: {
             kind: 'token',
-            userId: (row as { created_by: string }).created_by ?? taskId,
+            userId: task.created_by ?? taskId,
             tokenId: taskId,
             scopes: ['repo:read', 'repo:write', 'agent:run'],
             repoId: task.repo_id,
           },
-          budget: newBudget({ deadlineMs }),
+          budget,
           state: () => this.state,
           setState: (next) => {
             this.setState(next);
           },
           record: (entry) => this.pushTranscript(entry),
         });
+        await this.flushTranscript();
+        await this.ctx.storage.deleteAlarm();
+        // cancellation already wrote its own terminal status; a timeout's
+        // 'failed' must not be overwritten either
+        if (outcome.via === 'cancelled' || outcome.via === 'timeout') return this.state;
         this.setState({
           ...this.state,
           head_cs: outcome.head_cs,
@@ -187,18 +238,24 @@ export class YagAgent extends Agent<Env, AgentState> {
           error: outcome.reason,
           summary: outcome.summary,
         });
-        await this.transition(outcome.status === 'done' ? 'landed' : 'failed');
-        await this.flushTranscript();
-        await this.ctx.storage.deleteAlarm();
-        await onTaskFinished(
-          this.env,
-          {
-            kind: (row as { kind: string }).kind,
-            github_issue: (row as { github_issue?: string | null }).github_issue ?? null,
-            repo_id: task.repo_id,
-          },
-          outcome,
+        // 'landed' = the agent called finish (the enum's only success state)
+        const moved = await this.transition(
+          outcome.status === 'done' ? 'landed' : 'failed',
         );
+        if (moved) {
+          await onTaskFinished(
+            this.env,
+            {
+              id: taskId,
+              kind: task.kind,
+              github_issue: task.github_issue ?? null,
+              repo_id: task.repo_id,
+              prompt: task.prompt,
+              created_by: task.created_by,
+            },
+            outcome,
+          );
+        }
         return this.state;
       } catch (err) {
         // infrastructure failure (eviction, gateway): persist + rethrow — the
@@ -268,7 +325,10 @@ export class YagAgent extends Agent<Env, AgentState> {
     }
   }
 
-  /** Deadline alarm: fail the task if it is still running. */
+  /**
+   * Deadline alarm: fail the task if it is still running. The loop sees the
+   * timeout between turns and stops; the final transition never overwrites it.
+   */
   async alarm(): Promise<void> {
     const state = this.state;
     if (state.status === 'done' || state.status === 'failed' || state.cancelled) return;
@@ -292,24 +352,32 @@ export class YagAgent extends Agent<Env, AgentState> {
     };
   }
 
-  private async transition(status: 'running' | 'landed' | 'failed'): Promise<void> {
-    await run(
-      this.env,
+  /**
+   * D1 status transition. Terminal statuses stick: `running` may (re)enter
+   * from queued or an infra-failed attempt, but never from landed/cancelled;
+   * `landed`/`failed` only replace `running`. Returns whether the row moved.
+   */
+  private async transition(status: 'running' | 'landed' | 'failed'): Promise<boolean> {
+    const from = status === 'running' ? `NOT IN ('landed', 'cancelled')` : `= 'running'`;
+    const result = await this.env.DB.prepare(
       `UPDATE ${T.agentTasks}
           SET ${C.agentTasks.status} = ?,
               ${C.agentTasks.updatedAt} = ?,
               ${C.agentTasks.resultCs} = ?,
               ${C.agentTasks.agentState} = ?
-        WHERE ${C.agentTasks.id} = ?`,
-      [
+        WHERE ${C.agentTasks.id} = ? AND ${C.agentTasks.status} ${from}`,
+    )
+      .bind(
         status,
         Date.now(),
         this.state.head_cs || null,
         this.ctx.id.name,
         this.state.task_id,
-      ],
-    );
-    await recordAgent(this.env, status);
+      )
+      .run();
+    const moved = (result.meta.changes ?? 0) > 0;
+    if (moved) await recordAgent(this.env, status);
+    return moved;
   }
 
   /**
@@ -336,7 +404,10 @@ export class YagAgent extends Agent<Env, AgentState> {
     const existing = await r2(this.env.OBJECTS).get(key);
     const prior = existing ? await existing.text() : '';
     const tail = entries.map((e) => JSON.stringify(e)).join('\n');
-    await r2(this.env.OBJECTS).put(key, `${prior}${prior.length > 0 ? '\n' : ''}${tail}\n`);
+    await r2(this.env.OBJECTS).put(
+      key,
+      `${prior}${prior.length > 0 ? '\n' : ''}${tail}\n`,
+    );
     this.setState({ ...this.state, flushed: total });
   }
 }

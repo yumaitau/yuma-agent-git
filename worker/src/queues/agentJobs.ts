@@ -33,7 +33,9 @@ export async function agentJobsQueue(
       if (message.attempts >= 2) {
         await run(
           env,
-          `UPDATE ${T.agentTasks} SET ${C.agentTasks.status} = 'failed', ${C.agentTasks.updatedAt} = ? WHERE ${C.agentTasks.id} = ?`,
+          // terminal statuses (landed/cancelled) stick
+          `UPDATE ${T.agentTasks} SET ${C.agentTasks.status} = 'failed', ${C.agentTasks.updatedAt} = ?
+            WHERE ${C.agentTasks.id} = ? AND ${C.agentTasks.status} NOT IN ('landed', 'cancelled')`,
           [Date.now(), taskId],
         );
         await recordAgent(env, 'failed');

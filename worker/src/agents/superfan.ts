@@ -11,8 +11,32 @@ import { ulid } from '../core/ids';
  * component".
  *
  * Baseline: median + 3×MAD over the last 24h of `component_metrics` rows —
- * pure TS, no stats service. An anomaly opens a freeform investigation task.
+ * pure TS, no stats service. An anomaly opens a freeform investigation task
+ * in the repo the superfan was registered on, running as the admin who
+ * registered it. One DO per (repo, component): `superfanName()`.
  */
+
+export const SUPERFAN_COMPONENTS = [
+  'commit-path',
+  'import-pipeline',
+  'queues',
+  'refs',
+  'agents',
+  'ai',
+] as const;
+
+export interface SuperfanConfig {
+  component: string;
+  interval_min: number;
+  /** Repo investigations are filed into, and the admin they run as. */
+  repo_id?: string;
+  created_by?: string;
+}
+
+/** DO name for a repo's monitor of one component. */
+export function superfanName(repoId: string, component: string): string {
+  return `${repoId}:${component}`;
+}
 
 export interface SuperfanState {
   component: string;
@@ -34,7 +58,7 @@ export class SuperfanDO {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/start') {
-      const body = (await request.json()) as { component: string; interval_min: number };
+      const body = (await request.json()) as SuperfanConfig;
       await this.state.storage.put('config', body);
       // alarm loop: check every interval
       await this.state.storage.setAlarm(Date.now() + body.interval_min * 60_000);
@@ -43,8 +67,17 @@ export class SuperfanDO {
     if (request.method === 'POST' && url.pathname === '/check') {
       return Response.json(await this.checkNow());
     }
+    if (request.method === 'POST' && url.pathname === '/stop') {
+      const stopped = (await this.state.storage.get('config')) !== undefined;
+      await this.state.storage.deleteAlarm();
+      await this.state.storage.deleteAll();
+      return Response.json({ ok: true, stopped });
+    }
     if (request.method === 'GET' && url.pathname === '/state') {
-      return Response.json(((await this.state.storage.get('config')) ?? {}) as object);
+      const config = (await this.state.storage.get('config')) as
+        SuperfanConfig | undefined;
+      const status = (await this.state.storage.get('status')) as object | undefined;
+      return Response.json({ ...(config ?? {}), ...(status ?? {}) });
     }
     return new Response('not found', { status: 404 });
   }
@@ -60,10 +93,10 @@ export class SuperfanDO {
   }
 
   /** Evaluate telemetry against the baseline (also the test entry point). */
-  async checkNow(): Promise<{ anomalous: boolean; finding?: string }> {
-    const config = (await this.state.storage.get('config')) as
-      { component: string; interval_min: number } | undefined;
+  async checkNow(): Promise<{ anomalous: boolean; finding?: string; task_id?: string }> {
+    const config = (await this.state.storage.get('config')) as SuperfanConfig | undefined;
     if (!config) return { anomalous: false };
+    await this.state.storage.put('status', { last_check: Date.now() });
 
     const window = Date.now() - 24 * 60 * 60 * 1000;
     const rows = await q(
@@ -85,6 +118,8 @@ export class SuperfanDO {
         baseline.mad === 0 ? latest !== baseline.median : deviation > 3 * baseline.mad;
       if (anomalous) {
         const finding = `anomaly on ${config.component}: value ${latest} deviates ${deviation.toFixed(2)} from median ${baseline.median} (3×MAD ${baseline.mad.toFixed(2)})`;
+        // pre-repo registrations have nowhere to file — report, don't guess
+        if (!config.repo_id || !config.created_by) return { anomalous: true, finding };
         const taskId = ulid();
         const now = Date.now();
         await run(
@@ -94,12 +129,24 @@ export class SuperfanDO {
         );
         await run(
           this.env,
-          `INSERT INTO ${T.agentTasks} (${C.agentTasks.id}, ${C.agentTasks.repoId}, ${C.agentTasks.kind}, ${C.agentTasks.prompt}, ${C.agentTasks.status}, ${C.agentTasks.createdBy}, ${C.agentTasks.createdAt}, ${C.agentTasks.updatedAt})
-           VALUES (?, (SELECT id FROM ${T.repos} LIMIT 1), 'freeform', ?, 'queued', 'superfan', ?, ?)`,
-          [taskId, `Investigate: ${finding}`, now, now],
+          `INSERT INTO ${T.agentTasks} (${C.agentTasks.id}, ${C.agentTasks.repoId}, ${C.agentTasks.kind}, ${C.agentTasks.prompt}, ${C.agentTasks.status}, ${C.agentTasks.baseCs}, ${C.agentTasks.agentState}, ${C.agentTasks.createdBy}, ${C.agentTasks.createdAt}, ${C.agentTasks.updatedAt})
+           VALUES (?, ?, 'freeform', ?, 'queued',
+                   (SELECT ${C.refs.head} FROM ${T.refs} WHERE ${C.refs.repoId} = ? AND ${C.refs.name} = (SELECT ${C.repos.defaultBranch} FROM ${T.repos} WHERE ${C.repos.id} = ?)),
+                   ?, ?, ?, ?)`,
+          [
+            taskId,
+            config.repo_id,
+            `Investigate: ${finding}`,
+            config.repo_id,
+            config.repo_id,
+            taskId,
+            config.created_by,
+            now,
+            now,
+          ],
         );
         await this.env.AGENT_QUEUE.send({ task_id: taskId });
-        return { anomalous: true, finding };
+        return { anomalous: true, finding, task_id: taskId };
       }
     }
     return { anomalous: false };
