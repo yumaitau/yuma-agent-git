@@ -345,14 +345,78 @@ describe('export → GitHub contents sync', () => {
       ],
     });
     await setRef(dbEnv, repoId, 'main', second.changeset.id);
+    // a finished job never re-pushes (at-least-once redelivery)
     await runExportJob(dbEnv, jobId);
+    expect(gh.puts).toHaveLength(0);
+    const firstRow = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [
+      jobId,
+    ]);
+    expect(firstRow).toMatchObject({ head_cs: first.changeset.id });
+    expect(String((firstRow as { github_sha: string }).github_sha)).toMatch(
+      /^commit-\d$/,
+    );
+
+    const secondJob = (
+      await startExportToGithub(dbEnv, repoId, { target_branch: 'yag-sync' })
+    ).job_id;
+    await runExportJob(dbEnv, secondJob);
 
     expect(gh.puts).toHaveLength(1);
     expect(gh.puts[0]?.path).toBe('a.txt');
     expect(gh.puts[0]?.body.sha).toBe('gh-1'); // current GitHub sha on updates
     expect(gh.deletes).toEqual(['b.txt']);
 
-    const row = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [jobId]);
+    const row = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [
+      secondJob,
+    ]);
+    // github_sha is the real GitHub commit sha from the last write, not a cs id
+    expect(row).toMatchObject({
+      status: 'done',
+      head_cs: second.changeset.id,
+      github_sha: 'del-commit',
+    });
+  });
+
+  it('exports the requested head (not as diff base) from the default branch', async () => {
+    const repo = await createRepo(dbEnv, {
+      slug: 'acme/trunk',
+      visibility: 'public',
+      githubInstallationId: 42,
+      githubRepoId: 778,
+      defaultBranch: 'trunk',
+    });
+    const first = await commitChanges(dbEnv, repo.id, {
+      first_parent: null,
+      message: 'one',
+      author,
+      changes: [{ path: 'a.txt', op: 'add', content_b64: b64('a') }],
+    });
+    const second = await commitChanges(dbEnv, repo.id, {
+      first_parent: first.changeset.id,
+      message: 'two',
+      author,
+      changes: [{ path: 'b.txt', op: 'add', content_b64: b64('b') }],
+    });
+    await setRef(dbEnv, repo.id, 'trunk', second.changeset.id);
+
+    // explicit head = the target to export, even when the branch is ahead
+    const pinned = (
+      await startExportToGithub(dbEnv, repo.id, {
+        target_branch: 'yag-sync',
+        head: first.changeset.id,
+      })
+    ).job_id;
+    await runExportJob(dbEnv, pinned);
+    expect(gh.puts.map((p) => p.path)).toEqual(['a.txt']);
+
+    // no head → the default branch ('trunk', not 'main'), diffed from the last sync
+    gh.puts = [];
+    const latest = (
+      await startExportToGithub(dbEnv, repo.id, { target_branch: 'yag-sync' })
+    ).job_id;
+    await runExportJob(dbEnv, latest);
+    expect(gh.puts.map((p) => p.path)).toEqual(['b.txt']);
+    const row = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [latest]);
     expect(row).toMatchObject({ status: 'done', head_cs: second.changeset.id });
   });
 
@@ -433,6 +497,70 @@ describe('export → GitHub contents sync', () => {
     );
     expect(gh.puts).toHaveLength(100);
     expect(probe.sends).toHaveLength(1); // continuation batch queued
+
+    // the continuation resumes from its cursor instead of recomputing file 1..100
+    const continuation = probe.sends[0]?.body as GitImportMessage & {
+      type: 'export_job';
+    };
+    expect(continuation.cursor).toMatchObject({ offset: 100, head: first.changeset.id });
+    await runExportJob(dbEnv, jobId, continuation.cursor);
+    expect(gh.puts).toHaveLength(120);
+    expect(new Set(gh.puts.map((p) => p.path)).size).toBe(120);
+    expect(probe.sends).toHaveLength(1); // finished — nothing more queued
+    const row = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [jobId]);
+    expect(row).toMatchObject({
+      status: 'done',
+      head_cs: first.changeset.id,
+      github_sha: 'commit-120',
+    });
+  });
+
+  it('incremental diffs over 100 files page through every batch', async () => {
+    const repoId = await connect('acme/batched-delta');
+    const base = await commitChanges(dbEnv, repoId, {
+      first_parent: null,
+      message: 'base',
+      author,
+      changes: [{ path: 'keep.txt', op: 'add', content_b64: b64('k') }],
+    });
+    await setRef(dbEnv, repoId, 'main', base.changeset.id);
+    const seed = (await startExportToGithub(dbEnv, repoId, {})).job_id;
+    await runExportJob(dbEnv, seed);
+
+    const changes = [];
+    for (let i = 0; i < 250; i++) {
+      changes.push({
+        path: `d/f${i}.txt`,
+        op: 'add' as const,
+        content_b64: b64(`c${i}`),
+      });
+    }
+    const big = await commitChanges(dbEnv, repoId, {
+      first_parent: base.changeset.id,
+      message: 'big',
+      author,
+      changes,
+    });
+    await setRef(dbEnv, repoId, 'main', big.changeset.id);
+    gh.puts = [];
+
+    const jobId = (await startExportToGithub(dbEnv, repoId, {})).job_id;
+    const probe = instrumentQueues(testEnv);
+    const penv = probe.env as unknown as Env;
+    await runExportJob(penv, jobId);
+    let runs = 1;
+    while (probe.sends.length >= runs && runs < 10) {
+      const msg = probe.sends[runs - 1]?.body as GitImportMessage & {
+        type: 'export_job';
+      };
+      await runExportJob(penv, msg.job_id, msg.cursor);
+      runs++;
+    }
+    expect(runs).toBe(3); // 100 + 100 + 50
+    expect(gh.puts).toHaveLength(250);
+    expect(new Set(gh.puts.map((p) => p.path)).size).toBe(250);
+    const row = await q1(dbEnv, `SELECT * FROM ${T.exportJobs} WHERE id = ?`, [jobId]);
+    expect(row).toMatchObject({ status: 'done', head_cs: big.changeset.id });
   });
 });
 

@@ -29,9 +29,17 @@ interface GithubState {
     message: string;
     author: { name: string; email: string; date: string };
     parents: string[];
-    files: { filename: string; status: string; previous_filename?: string }[];
+    files: {
+      filename: string;
+      status: string;
+      previous_filename?: string;
+      sha?: string;
+    }[];
   }[];
   contents: Record<string, string>; // path → text at each sha (simplified: one map)
+  largeContents: Set<string>; // paths the contents API answers with encoding "none"
+  blobs: Record<string, string>; // git blob sha → text (git blobs API)
+  tarballs: Record<string, Uint8Array>; // per-ref tarballs (fallback: `tarball`)
   failContentsAt: Set<number>; // 1-based contents call index to fail
   compareCommits: string[]; // shas returned by compare (incremental sync)
   contentsCalls: number;
@@ -43,6 +51,9 @@ const gh: GithubState = {
   tarball: new Uint8Array(),
   commits: [],
   contents: {},
+  largeContents: new Set(),
+  blobs: {},
+  tarballs: {},
   failContentsAt: new Set(),
   compareCommits: [],
   contentsCalls: 0,
@@ -80,10 +91,13 @@ function mockGithub(): void {
     }
     const tarball = /^\/repos\/[^/]+\/[^/]+\/tarball\/([^/]+)$/.exec(url.pathname);
     if (tarball) {
-      return new Response(gh.tarball as unknown as BodyInit, {
-        status: 200,
-        headers: { 'content-type': 'application/x-gzip' },
-      });
+      return new Response(
+        (gh.tarballs[tarball[1] as string] ?? gh.tarball) as unknown as BodyInit,
+        {
+          status: 200,
+          headers: { 'content-type': 'application/x-gzip' },
+        },
+      );
     }
     const compare = /^\/repos\/[^/]+\/[^/]+\/compare\/(.+)\.\.\.(.+)$/.exec(url.pathname);
     if (compare) {
@@ -102,9 +116,20 @@ function mockGithub(): void {
         throw new Error('simulated network failure');
       }
       const text = gh.contents[path];
+      if (text !== undefined && gh.largeContents.has(path)) {
+        const sha = Object.keys(gh.blobs).find((k) => gh.blobs[k] === text);
+        return json({ content: '', encoding: 'none', size: text.length, sha });
+      }
       return text === undefined
         ? json({ message: 'Not Found' }, 404)
         : json({ content: btoa(text), encoding: 'base64' });
+    }
+    const blob = /^\/repos\/[^/]+\/[^/]+\/git\/blobs\/([^/]+)$/.exec(url.pathname);
+    if (blob) {
+      const text = gh.blobs[blob[1] as string];
+      return text === undefined
+        ? json({ message: 'Not Found' }, 404)
+        : json({ content: btoa(text), encoding: 'base64', size: text.length });
     }
     const commitDetail = /^\/repos\/[^/]+\/[^/]+\/commits\/([^/]+)$/.exec(url.pathname);
     if (commitDetail) {
@@ -112,7 +137,21 @@ function mockGithub(): void {
       // unknown refs resolve to the branch head, like GitHub
       const entry =
         gh.commits.find((c) => c.sha === ref) ?? gh.commits[gh.commits.length - 1];
-      return entry ? json(githubShape(entry)) : json({ message: 'Not Found' }, 404);
+      if (!entry) return json({ message: 'Not Found' }, 404);
+      // GitHub pages the file list 300 at a time with a Link header
+      const page = Number(url.searchParams.get('page') ?? '1');
+      const shaped = githubShape(entry) as { files: unknown[] };
+      const res = json({
+        ...shaped,
+        files: entry.files.slice((page - 1) * 300, page * 300),
+      });
+      if (entry.files.length > page * 300) {
+        res.headers.set(
+          'link',
+          `<https://api.github.com${url.pathname}?page=${page + 1}>; rel="next"`,
+        );
+      }
+      return res;
     }
     if (/\/commits$/.test(url.pathname)) {
       // newest first, like GitHub
@@ -377,6 +416,150 @@ describe('full-history import', () => {
     expect(cs.first_parent).toBeNull();
     const job = await getImportJob(dbEnv, repo.id, jobId);
     expect(job.checkpoint).toMatchObject({ merge_imported_single_parent: true });
+  });
+});
+
+describe('full-history import: oversized commits and large files', () => {
+  beforeEach(async () => {
+    await seedSchema(testEnv);
+    await cleanDb(testEnv);
+    mockGithub();
+    gh.calls = [];
+    gh.contentsCalls = 0;
+    gh.failContentsAt.clear();
+    gh.largeContents = new Set();
+    gh.blobs = {};
+    gh.tarballs = {};
+  });
+
+  it('falls back to a snapshot at the commit past the file cap and records a warning', async () => {
+    const repo = await seedGithubRepo('acme/huge');
+    const c1 = 'h1'.padEnd(40, '0');
+    const c2 = 'h2'.padEnd(40, '0');
+    const c3 = 'h3'.padEnd(40, '0');
+    // the big commit: 1,200 adds + one modify + one delete — beyond MAX_FILES_PER_COMMIT
+    const bigFiles: Record<string, string> = { 'keep.txt': 'keep', 'edit.txt': 'v2' };
+    for (let i = 0; i < 1200; i++) bigFiles[`gen/f${i}.txt`] = `g${i}`;
+    gh.tarballs[c2] = gzipSync(
+      Buffer.from(snapshotTarball(bigFiles)),
+    ) as unknown as Uint8Array;
+    gh.commits = [
+      {
+        sha: c1,
+        message: 'base',
+        author: { name: 'Ada', email: 'ada@x', date: '2024-01-01T00:00:00Z' },
+        parents: [],
+        files: [
+          { filename: 'keep.txt', status: 'added' },
+          { filename: 'edit.txt', status: 'added' },
+          { filename: 'gone.txt', status: 'added' },
+        ],
+      },
+      {
+        sha: c2,
+        message: 'vendor everything',
+        author: { name: 'Ada', email: 'ada@x', date: '2024-02-01T00:00:00Z' },
+        parents: [c1],
+        files: [
+          ...Object.keys(bigFiles)
+            .filter((f) => f.startsWith('gen/'))
+            .map((filename) => ({ filename, status: 'added' })),
+          { filename: 'edit.txt', status: 'modified' },
+          { filename: 'gone.txt', status: 'removed' },
+        ],
+      },
+      {
+        sha: c3,
+        message: 'after',
+        author: { name: 'Bob', email: 'bob@x', date: '2024-03-01T00:00:00Z' },
+        parents: [c2],
+        files: [{ filename: 'late.txt', status: 'added' }],
+      },
+    ];
+    gh.contents = {
+      'keep.txt': 'keep',
+      'edit.txt': 'v1',
+      'gone.txt': 'bye',
+      'late.txt': 'l',
+    };
+
+    const jobId = await startImportAs('acme/huge', 'full_history');
+    await runJob(jobId, repo.id);
+
+    const job = await getImportJob(dbEnv, repo.id, jobId);
+    expect(job.status).toBe('done');
+    expect(job.commits_done).toBe(3);
+    expect((job.checkpoint as { warnings: unknown[] }).warnings).toEqual([
+      expect.objectContaining({ commit: c2, warning: 'snapshot_fallback' }),
+    ]);
+    // the file list was paged (Link rel="next") until past the cap, then the tarball
+    expect(gh.calls.filter((c) => c.includes(`/commits/${c2}`))).toHaveLength(4);
+    expect(gh.calls).toContain(`GET /repos/acme/huge/tarball/${c2}`);
+
+    const rows = (
+      await q(
+        dbEnv,
+        `SELECT * FROM ${T.changesets} WHERE ${C.changesets.repoId} = ? ORDER BY ${C.changesets.createdAt}`,
+        [repo.id],
+      )
+    ).map(parseChangesetRow);
+    expect(rows.map((r) => r.message)).toEqual(['base', 'vendor everything', 'after']);
+    const big = rows[1]!;
+    expect(big.first_parent).toBe(rows[0]?.id);
+    // nothing dropped: every file in the commit, plus the delete and the modify
+    expect(big.changed_files).toHaveLength(1202);
+    expect(big.changed_files.find((f) => f.path === 'gone.txt')?.op).toBe('del');
+    const edit = big.changed_files.find((f) => f.path === 'edit.txt');
+    expect(edit?.op).toBe('mod');
+    const editBlob = await getBlob(dbEnv, repo.id, edit?.hash as string);
+    expect(new TextDecoder().decode(editBlob?.content as Uint8Array)).toBe('v2');
+    expect(big.changed_files.some((f) => f.path === 'keep.txt')).toBe(false); // unchanged
+    expect(rows[2]?.first_parent).toBe(big.id);
+  });
+
+  it('fetches files over 1 MiB via the git blobs API and warns on fetch failures', async () => {
+    const repo = await seedGithubRepo('acme/blobs');
+    gh.commits = [
+      {
+        sha: 'b1'.padEnd(40, '0'),
+        message: 'big file',
+        author: { name: 'Ada', email: 'ada@x', date: '2024-01-01T00:00:00Z' },
+        parents: [],
+        files: [
+          { filename: 'small.txt', status: 'added' },
+          { filename: 'big.bin', status: 'added', sha: 'blob-big' },
+          { filename: 'missing.txt', status: 'added', sha: 'blob-missing' },
+        ],
+      },
+    ];
+    gh.contents = { 'small.txt': 's', 'big.bin': 'large payload' };
+    gh.largeContents.add('big.bin'); // contents API: encoding "none"
+    gh.blobs = { 'blob-big': 'large payload' };
+
+    const jobId = await startImportAs('acme/blobs', 'full_history');
+    await runJob(jobId, repo.id);
+
+    expect(gh.calls).toContain('GET /repos/acme/blobs/git/blobs/blob-big');
+    const cs = parseChangesetRow(
+      await q1(dbEnv, `SELECT * FROM ${T.changesets} WHERE ${C.changesets.repoId} = ?`, [
+        repo.id,
+      ]),
+    );
+    expect(cs.changed_files.map((f) => f.path).sort()).toEqual(['big.bin', 'small.txt']);
+    const big = cs.changed_files.find((f) => f.path === 'big.bin');
+    const blob = await getBlob(dbEnv, repo.id, big?.hash as string);
+    expect(new TextDecoder().decode(blob?.content as Uint8Array)).toBe('large payload');
+
+    const job = await getImportJob(dbEnv, repo.id, jobId);
+    expect(job.status).toBe('done');
+    expect((job.checkpoint as { warnings: unknown[] }).warnings).toEqual([
+      {
+        commit: 'b1'.padEnd(40, '0'),
+        path: 'missing.txt',
+        skipped: 'fetch_failed',
+        status: 404,
+      },
+    ]);
   });
 });
 

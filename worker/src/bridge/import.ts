@@ -9,6 +9,7 @@ import { ConflictError, NotFoundError, RequestValidationError } from '../core/er
 import { ulid } from '../core/ids';
 import { moveRefViaDO } from '../core/refs';
 import { githubApi } from './github';
+import { treeFiles } from './fastimport';
 import { gunzipIfNeeded, parseTar } from './tar';
 
 /**
@@ -17,7 +18,10 @@ import { gunzipIfNeeded, parseTar } from './tar';
  *
  *  - **snapshot** (default): the ref's tarball becomes one root changeset
  *  - **full_history**: commit-by-commit via the GitHub commits API, with a
- *    checkpoint after every commit so retries resume instead of restarting
+ *    checkpoint after every commit so retries resume instead of restarting.
+ *    A commit touching > MAX_FILES_PER_COMMIT files falls back to a snapshot
+ *    of the tree at that commit (tarball diffed against the parent) and the
+ *    job records a warning; files that cannot be fetched are warnings too
  *  - **incremental sync**: push webhooks (#13) list what arrived after the
  *    checkpointed `github_sha` and land it the same way (rebase-and-retry CAS)
  *
@@ -28,6 +32,8 @@ import { gunzipIfNeeded, parseTar } from './tar';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_FILES_PER_COMMIT = 1_000;
+/** Cap on warnings kept in the job checkpoint (the rest are only counted). */
+const MAX_WARNINGS = 200;
 
 const IMPORT_AUTHOR = { name: 'yag-import', email: 'import@yuma-agent-git' };
 
@@ -282,7 +288,12 @@ interface GithubCommit {
     author: { name: string; email: string; date: string };
   };
   parents?: { sha: string }[];
-  files?: { filename: string; status: string; previous_filename?: string }[];
+  files?: {
+    filename: string;
+    status: string;
+    previous_filename?: string;
+    sha?: string;
+  }[];
 }
 
 async function fullHistoryImport(env: Env, job: ImportJobRow): Promise<void> {
@@ -310,10 +321,19 @@ async function fullHistoryImport(env: Env, job: ImportJobRow): Promise<void> {
   // 2. resume from the checkpoint cursor — idempotent (content-addressed ids)
   let cursor = typeof checkpoint.cursor === 'number' ? checkpoint.cursor : 0;
   let parentCs = typeof checkpoint.last_cs === 'string' ? checkpoint.last_cs : null;
+  const warnings = new WarningLog(checkpoint);
 
   while (cursor < ordered.length) {
     const entry = ordered[cursor] as GithubCommit;
-    const changes = await changesForCommit(env, installationId, owner, name, entry);
+    const { changes, warnings: commitWarnings } = await changesForCommit(env, {
+      installationId,
+      owner,
+      name,
+      repoId: job.repo_id,
+      parentCs,
+      entry,
+    });
+    warnings.add(commitWarnings);
     const created = await commitChanges(env, job.repo_id, {
       first_parent: parentCs,
       message: entry.commit.message,
@@ -334,6 +354,7 @@ async function fullHistoryImport(env: Env, job: ImportJobRow): Promise<void> {
         cursor,
         last_cs: parentCs,
         github_sha: entry.sha,
+        ...warnings.fields(),
         ...(entry.parents && entry.parents.length > 1
           ? { merge_imported_single_parent: true }
           : {}),
@@ -351,33 +372,80 @@ async function fullHistoryImport(env: Env, job: ImportJobRow): Promise<void> {
   }
 }
 
+type ImportChange =
+  | { path: string; op: 'del' }
+  | { path: string; op: 'add' | 'mod'; content_b64: string }
+  | { path: string; op: 'add' | 'mod'; blob_sha256: string };
+
+export type ImportWarning = Record<string, string | number>;
+
+/** Job-checkpoint warnings: kept up to MAX_WARNINGS, the rest counted. */
+class WarningLog {
+  private list: ImportWarning[];
+  private dropped: number;
+  constructor(checkpoint: Record<string, unknown>) {
+    this.list = Array.isArray(checkpoint.warnings)
+      ? (checkpoint.warnings as ImportWarning[])
+      : [];
+    this.dropped =
+      typeof checkpoint.warnings_dropped === 'number' ? checkpoint.warnings_dropped : 0;
+  }
+  add(items: ImportWarning[]): void {
+    for (const item of items) {
+      if (this.list.length < MAX_WARNINGS) this.list.push(item);
+      else this.dropped++;
+    }
+  }
+  fields(): Record<string, unknown> {
+    if (this.list.length === 0) return {};
+    return {
+      warnings: this.list,
+      ...(this.dropped > 0 ? { warnings_dropped: this.dropped } : {}),
+    };
+  }
+}
+
 async function changesForCommit(
   env: Env,
-  installationId: number,
-  owner: string,
-  name: string,
-  entry: GithubCommit,
-): Promise<
-  (
-    { path: string; op: 'del' } | { path: string; op: 'add' | 'mod'; content_b64: string }
-  )[]
-> {
-  const detailRes = await githubApi(
-    env,
-    installationId,
-    `/repos/${owner}/${name}/commits/${entry.sha}`,
-  );
-  const detail = (await detailRes.json()) as GithubCommit;
-  const files = detail.files ?? [];
-  if (files.length > MAX_FILES_PER_COMMIT) {
-    console.warn(
-      `import: commit ${entry.sha} touches ${files.length} files — capped at ${MAX_FILES_PER_COMMIT}`,
-    );
+  opts: {
+    installationId: number;
+    owner: string;
+    name: string;
+    repoId: string;
+    parentCs: string | null;
+    entry: GithubCommit;
+  },
+): Promise<{ changes: ImportChange[]; warnings: ImportWarning[] }> {
+  const { installationId, owner, name, entry } = opts;
+  // the commit API pages its file list (300 per page, `Link: rel="next"`)
+  const files: NonNullable<GithubCommit['files']> = [];
+  let next: string | null = `/repos/${owner}/${name}/commits/${entry.sha}`;
+  while (next !== null && files.length <= MAX_FILES_PER_COMMIT) {
+    const detailRes = await githubApi(env, installationId, next);
+    if (!detailRes.ok) throw new Error(`commit fetch failed: ${detailRes.status}`);
+    const detail = (await detailRes.json()) as GithubCommit;
+    files.push(...(detail.files ?? []));
+    next = nextPage(detailRes.headers.get('link'));
   }
-  const changes: (
-    { path: string; op: 'del' } | { path: string; op: 'add' | 'mod'; content_b64: string }
-  )[] = [];
-  for (const file of files.slice(0, MAX_FILES_PER_COMMIT)) {
+  if (files.length > MAX_FILES_PER_COMMIT) {
+    // too big to replay file-by-file: import the tree at this commit instead
+    const snapshot = await snapshotChangesAt(env, opts);
+    return {
+      changes: snapshot.changes,
+      warnings: [
+        {
+          commit: entry.sha,
+          warning: 'snapshot_fallback',
+          reason: `commit touches more than ${MAX_FILES_PER_COMMIT} files`,
+        },
+        ...snapshot.warnings,
+      ],
+    };
+  }
+
+  const changes: ImportChange[] = [];
+  const warnings: ImportWarning[] = [];
+  for (const file of files) {
     if (file.status === 'removed') {
       changes.push({ path: file.filename, op: 'del' });
       continue;
@@ -385,24 +453,137 @@ async function changesForCommit(
     if (file.status === 'renamed' && file.previous_filename) {
       changes.push({ path: file.previous_filename, op: 'del' });
     }
-    const contentRes = await githubApi(
-      env,
-      installationId,
-      `/repos/${owner}/${name}/contents/${file.filename}?ref=${entry.sha}`,
-    );
-    if (!contentRes.ok) continue;
-    const content = (await contentRes.json()) as {
-      content?: string;
-      encoding?: string;
-    };
-    if (content.encoding !== 'base64' || !content.content) continue;
+    const fetched = await fileContentAt(env, opts, file);
+    if ('skipped' in fetched) {
+      warnings.push({ commit: entry.sha, path: file.filename, ...fetched });
+      continue;
+    }
     changes.push({
       path: file.filename,
       op: file.status === 'added' || file.status === 'renamed' ? 'add' : 'mod',
-      content_b64: content.content.replace(/\n/g, ''),
+      content_b64: fetched.content_b64,
     });
   }
-  return changes;
+  return { changes, warnings };
+}
+
+/**
+ * File content at a commit. The contents API inlines base64 only up to 1 MiB
+ * (`encoding: "none"` above that), so larger files come from the git blobs
+ * API by the file's blob sha (base64 up to 100 MiB).
+ */
+async function fileContentAt(
+  env: Env,
+  opts: { installationId: number; owner: string; name: string; entry: GithubCommit },
+  file: { filename: string; sha?: string },
+): Promise<{ content_b64: string } | { skipped: string; status?: number }> {
+  const { installationId, owner, name, entry } = opts;
+  const contentRes = await githubApi(
+    env,
+    installationId,
+    `/repos/${owner}/${name}/contents/${file.filename}?ref=${entry.sha}`,
+  );
+  if (contentRes.ok) {
+    const content = (await contentRes.json()) as {
+      content?: string;
+      encoding?: string;
+      size?: number;
+      sha?: string;
+    };
+    if (content.encoding === 'base64' && typeof content.content === 'string') {
+      return { content_b64: content.content.replace(/\n/g, '') };
+    }
+    if ((content.size ?? 0) > MAX_FILE_BYTES) return { skipped: 'too_large' };
+    file = { ...file, sha: file.sha ?? content.sha };
+  }
+  if (!file.sha) {
+    return { skipped: 'fetch_failed', status: contentRes.status };
+  }
+  const blobRes = await githubApi(
+    env,
+    installationId,
+    `/repos/${owner}/${name}/git/blobs/${file.sha}`,
+  );
+  if (!blobRes.ok) return { skipped: 'fetch_failed', status: blobRes.status };
+  const blob = (await blobRes.json()) as {
+    content?: string;
+    encoding?: string;
+    size?: number;
+  };
+  if ((blob.size ?? 0) > MAX_FILE_BYTES) return { skipped: 'too_large' };
+  if (blob.encoding !== 'base64' || typeof blob.content !== 'string') {
+    return { skipped: 'unsupported_encoding' };
+  }
+  return { content_b64: blob.content.replace(/\n/g, '') };
+}
+
+/** `Link` header → the rel="next" API path, or null on the last page. */
+function nextPage(link: string | null): string | null {
+  const match = link
+    ? /<https:\/\/api\.github\.com([^>]+)>;\s*rel="next"/.exec(link)
+    : null;
+  return match ? (match[1] as string) : null;
+}
+
+/**
+ * Snapshot-at-commit fallback: the commit's tarball, diffed against the
+ * parent changeset's tree, as content-addressed changes. Oversized tar
+ * entries are skipped (kept at their parent version) with a warning.
+ */
+async function snapshotChangesAt(
+  env: Env,
+  opts: {
+    installationId: number;
+    owner: string;
+    name: string;
+    repoId: string;
+    parentCs: string | null;
+    entry: GithubCommit;
+  },
+): Promise<{ changes: ImportChange[]; warnings: ImportWarning[] }> {
+  const { installationId, owner, name, repoId, parentCs, entry } = opts;
+  const tarRes = await githubApi(
+    env,
+    installationId,
+    `/repos/${owner}/${name}/tarball/${entry.sha}`,
+  );
+  if (!tarRes.ok || !tarRes.body) {
+    throw new Error(`tarball fetch failed: ${tarRes.status}`);
+  }
+  const parentTree = parentCs
+    ? (await getChangeset(env, repoId, parentCs))?.root_tree
+    : null;
+  const before = new Map(
+    (parentTree ? await treeFiles(env, repoId, parentTree) : []).map((f) => [
+      f.path,
+      f.hash,
+    ]),
+  );
+
+  const upserts: ImportChange[] = [];
+  const warnings: ImportWarning[] = [];
+  const seen = new Set<string>();
+  const tar = parseTar(await gunzipIfNeeded(tarRes.body, true), {
+    maxBodyBytes: MAX_FILE_BYTES,
+  });
+  for await (const item of tar) {
+    if (item.type !== 'file' && item.type !== 'symlink') continue; // dirs are implicit
+    const path = item.name.replace(/^[^/]+\//, '');
+    seen.add(path);
+    if (item.skipped) {
+      warnings.push({ commit: entry.sha, path, skipped: 'too_large' });
+      continue;
+    }
+    const put = await putBlob(env, repoId, item.body);
+    const prev = before.get(path);
+    if (prev === put.hash) continue;
+    upserts.push({ path, op: prev === undefined ? 'add' : 'mod', blob_sha256: put.hash });
+  }
+  // deletions first, so a file → directory swap can land in one changeset
+  const deletes: ImportChange[] = [...before.keys()]
+    .filter((path) => !seen.has(path))
+    .map((path) => ({ path, op: 'del' as const }));
+  return { changes: [...deletes, ...upserts], warnings };
 }
 
 /** Single CAS land (from whatever main currently is). */
@@ -461,8 +642,17 @@ async function incrementalSyncFromPush(
     );
     const head = current ? ((current as { head: string }).head as string) : null;
     let parentCs = head;
+    const warnings = new WarningLog(checkpoint);
     for (const entry of incoming) {
-      const changes = await changesForCommit(env, installationId, owner, name, entry);
+      const { changes, warnings: commitWarnings } = await changesForCommit(env, {
+        installationId,
+        owner,
+        name,
+        repoId: message.repo_id,
+        parentCs,
+        entry,
+      });
+      warnings.add(commitWarnings);
       const created = await commitChanges(env, message.repo_id, {
         first_parent: parentCs,
         message: entry.commit.message,
@@ -484,7 +674,7 @@ async function incrementalSyncFromPush(
       if (jobRow) {
         await updateJob(env, parseJob(jobRow).id, {
           status: 'done',
-          checkpoint: { ...checkpoint, github_sha: message.after },
+          checkpoint: { ...checkpoint, ...warnings.fields(), github_sha: message.after },
         });
       }
       return;

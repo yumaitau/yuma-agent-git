@@ -16,7 +16,7 @@ export async function importQueue(
     await recordQueue(env);
     try {
       if (message.body.type === 'export_job') {
-        await runExportJob(env, message.body.job_id);
+        await runExportJob(env, message.body.job_id, message.body.cursor);
       } else {
         await recordImport(env, 'active');
         await runImportMessage(env, message.body);
