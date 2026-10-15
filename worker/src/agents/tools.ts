@@ -8,6 +8,7 @@ import { getChangeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
 import { getTree, resolvePath } from '../core/trees';
 import { readRefHead, moveRefViaDO } from '../core/refs';
+import { ApiError, ConflictError } from '../core/errors';
 import { diffRevisions } from '../core/diff';
 import { blameFile } from '../core/derived/blame';
 import { pathHistoryAt } from '../core/derived/pathHistory';
@@ -358,22 +359,28 @@ export const tools: Tool[] = [
   {
     name: 'land',
     description:
-      'CAS-move main to head_cs. Stale → merge (parents [head_cs, main_head]) and retry; success triggers post-merge checks.',
+      'CAS-move the default branch to head_cs. Stale → merge (parents [head_cs, main_head]) and retry; any other refusal is final; success triggers post-merge checks.',
     input_schema: z.object({}),
     async execute(env, ctx) {
-      const current = await readRefHead(env, ctx.repo_id, 'main');
       const repo = await getRepo(env, ctx.repo_id);
       const allowed = repo ? await can(env, repo, ctx.principal, 'write') : false;
-      if (!allowed) return { error: 'forbidden', perm: 'write' };
+      if (!repo || !allowed) return { error: 'forbidden', perm: 'write' };
+      const branch = repo.default_branch;
+      const current = await readRefHead(env, ctx.repo_id, branch);
       try {
-        await moveRefViaDO(env, ctx.repo_id, 'main', {
+        await moveRefViaDO(env, ctx.repo_id, branch, {
           from: current,
           to: ctx.head_cs,
         });
       } catch (err) {
-        // stale: someone else landed — the loop merges and retries
-        const head = await readRefHead(env, ctx.repo_id, 'main');
-        void err;
+        // only losing the race to another land is retryable (merge, then land
+        // again) — a protected branch would otherwise loop until the budget dies
+        if (!(err instanceof ConflictError)) {
+          const code = err instanceof ApiError ? err.code : 'internal_error';
+          return { landed: false, reason: code, final: true, head_cs: ctx.head_cs };
+        }
+        // stale or not a fast-forward: someone else landed — merge and retry
+        const head = await readRefHead(env, ctx.repo_id, branch);
         return { landed: false, reason: 'stale', main_head: head, head_cs: ctx.head_cs };
       }
       // post-merge, pre-deploy checks — the no-merge-queue model (§2.3)

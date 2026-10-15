@@ -58,17 +58,24 @@ program
   .argument('<dir>', 'new working directory')
   .requiredOption('--api <url>', 'server URL')
   .option('--rev <rev>', 'revision to check out', 'ref:main')
-  .action(async (repo: string, dir: string, opts: { api: string; rev: string }) => {
-    const { mkdir, readdir } = await import('node:fs/promises');
-    await mkdir(dir, { recursive: true });
-    if ((await readdir(dir)).length) throw new Error('Clone destination must be empty');
-    await saveConfig(dir, { api: opts.api, repo });
-    const { api, cache } = await client(dir);
-    const result = await checkout({ api, cache, dir, rev: opts.rev, prefixes: [] });
-    console.log(
-      `Checked out ${result.files.length} files into ${dir}. Run yag status to get started.`,
-    );
-  });
+  .option('--token <token>', 'bearer token (or set YAG_TOKEN)')
+  .action(
+    async (
+      repo: string,
+      dir: string,
+      opts: { api: string; rev: string; token?: string },
+    ) => {
+      const { mkdir, readdir } = await import('node:fs/promises');
+      await mkdir(dir, { recursive: true });
+      if ((await readdir(dir)).length) throw new Error('Clone destination must be empty');
+      await saveConfig(dir, { api: opts.api, repo, token: opts.token });
+      const { api, cache } = await client(dir);
+      const result = await checkout({ api, cache, dir, rev: opts.rev, prefixes: [] });
+      console.log(
+        `Checked out ${result.files.length} files into ${dir}. Run yag status to get started.`,
+      );
+    },
+  );
 
 program
   .command('pr')

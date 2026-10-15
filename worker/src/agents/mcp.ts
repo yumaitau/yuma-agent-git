@@ -93,7 +93,8 @@ mcpRoutes.post('/repos/:repo{.+}/agents/mcp', async (c) => {
     const call = callParamsSchema.safeParse(params);
     if (!call.success) return jsonRpcError(id, -32602, 'invalid params');
 
-    const headCs = call.data.head_cs ?? (await readHead(c.env, repo.id));
+    const headCs =
+      call.data.head_cs ?? (await readHead(c.env, repo.id, repo.default_branch));
     if (headCs === null) return jsonRpcError(id, -32603, 'empty repository');
 
     const ctx: ToolCtx = {
@@ -119,7 +120,11 @@ mcpRoutes.post('/repos/:repo{.+}/agents/mcp', async (c) => {
   }
 });
 
-async function readHead(env: Env, repoId: string): Promise<string | null> {
+async function readHead(
+  env: Env,
+  repoId: string,
+  branch: string,
+): Promise<string | null> {
   const { readRefHead } = await import('../core/refs');
-  return readRefHead(env, repoId, 'main');
+  return readRefHead(env, repoId, branch);
 }

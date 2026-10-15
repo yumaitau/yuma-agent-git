@@ -7,6 +7,7 @@ import { C, T } from '../src/db/schema';
 import { q1, run } from '../src/db/client';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
+import { readRefHead } from '../src/core/refs';
 import { executeTool, toolRegistry, type ToolCtx } from '../src/agents/tools';
 import { newBudget, charge, DEFAULT_BUDGET } from '../src/agents/budget';
 import type { Principal } from '../src/auth/principal';
@@ -181,6 +182,50 @@ describe('agent tools', () => {
     expect(merged.cs).toBeTypeOf('string');
     const retry = await executeTool(dbEnv, ctx2, 'land', {});
     expect(retry).toMatchObject({ landed: true, main_head: merged.cs });
+  });
+
+  it('land targets the default branch and treats protection as final', async () => {
+    const trunk = await createRepo(dbEnv, {
+      slug: 'acme/trunk',
+      createdBy: userId,
+      defaultBranch: 'release/trunk',
+    });
+    const seeded = await commitChanges(dbEnv, trunk.id, {
+      first_parent: null,
+      message: 'seed',
+      author,
+      changes: [{ path: 'a.txt', op: 'add', content_b64: b64('a') }],
+    });
+    await setRef(dbEnv, trunk.id, 'release/trunk', seeded.changeset.id);
+    const ctx = ctxFor(trunk.id, seeded.changeset.id);
+    await executeTool(dbEnv, ctx, 'commit', {
+      message: 'agent change',
+      changes: [{ path: 'b.txt', op: 'add', content_b64: b64('b') }],
+    });
+    expect(await executeTool(dbEnv, ctx, 'land', {})).toMatchObject({ landed: true });
+    expect(await readRefHead(dbEnv, trunk.id, 'release/trunk')).toBe(ctx.head_cs);
+    expect(await readRefHead(dbEnv, trunk.id, 'main')).toBeNull();
+
+    // a protected default branch refuses agent lands; the agent must not
+    // mistake that for a lost race and merge/retry until its budget dies
+    await run(
+      dbEnv,
+      'INSERT INTO ci_settings (repo_id, version, config, updated_at) VALUES (?, 1, ?, ?)',
+      [
+        trunk.id,
+        JSON.stringify({ commands: ['npm test'], protect_default: true }),
+        Date.now(),
+      ],
+    );
+    await executeTool(dbEnv, ctx, 'commit', {
+      message: 'second change',
+      changes: [{ path: 'c.txt', op: 'add', content_b64: b64('c') }],
+    });
+    expect(await executeTool(dbEnv, ctx, 'land', {})).toMatchObject({
+      landed: false,
+      reason: 'protected_branch',
+      final: true,
+    });
   });
 
   it('budgets are structural: 51st call errors, finish still works', async () => {
