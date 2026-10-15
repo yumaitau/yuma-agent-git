@@ -155,7 +155,8 @@ describe('fast-import → real git (CI smoke)', () => {
       const chunks: Uint8Array[] = [];
       for await (const chunk of stream) chunks.push(chunk);
 
-      const init = spawnSync('git', ['init', '-q'], { cwd: dir });
+      // The export targets main; never depend on the host's init.defaultBranch.
+      const init = spawnSync('git', ['init', '-q', '--initial-branch=main'], { cwd: dir });
       expect(init.status).toBe(0);
       const importRun = spawnSync('git', ['fast-import', '--quiet'], {
         cwd: dir,
@@ -167,6 +168,7 @@ describe('fast-import → real git (CI smoke)', () => {
         cwd: dir,
         encoding: 'utf8',
       });
+      expect(show.status, show.stderr).toBe(0);
       expect(show.stdout).toBe('hello from yag\n');
     },
     60_000,
