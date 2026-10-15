@@ -153,8 +153,9 @@ try:
     request(repo_path + '/changesets', 'POST', {}, readonly, 403)
     request('/api/v1/repos/' + other['slug'] + '/changesets', credential=readonly, expected=404)
     assert [r['id'] for r in request('/api/v1/repos', credential=readonly)['repos']] == [repo['id']]
-    request(repo_path + '/changesets', expected=404)
-    passed('live read-only scope, repository isolation, and token escalation denial')
+    for anonymous_path in (repo_path + '/changesets', repo_path, '/api/v1/repos', '/api/v1'):
+        request(anonymous_path, expected=401)
+    passed('live read-only scope, repository isolation, sign-in requirement, and token escalation denial')
     files = {'hello.txt': 'hello from the live smoke test\n',
              'package.json': json.dumps({'name': 'yag-live-smoke', 'private': True,
                  'scripts': {'lint': 'node --check build.js', 'build': 'node build.js'}}),
