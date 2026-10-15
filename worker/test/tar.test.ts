@@ -163,4 +163,46 @@ describe('tar reader', () => {
     expect(entries[1]?.body).toBe('long content');
     expect(entries[2]?.type).toBe('symlink');
   });
+
+  it('reassembles entries split across odd-sized stream chunks', async () => {
+    const body = new Uint8Array(70_001).map((_, i) => i % 251);
+    const archive = concatBlocks(
+      ustarHeader('pkg/big.bin', body.length, '0'),
+      padded(body),
+      ustarHeader('pkg/a.txt', 5, '0'),
+      padded(new TextEncoder().encode('hello')),
+      tarEnd(),
+    );
+    const chunked = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < archive.length; i += 333) {
+          controller.enqueue(archive.subarray(i, i + 333));
+        }
+        controller.close();
+      },
+    });
+    const entries = [];
+    for await (const entry of parseTar(chunked)) entries.push(entry);
+    expect(entries.map((e) => e.name)).toEqual(['pkg/big.bin', 'pkg/a.txt']);
+    expect(entries[0]!.body).toEqual(body);
+    expect(new TextDecoder().decode(entries[1]!.body)).toBe('hello');
+  });
+
+  it('streams past bodies over maxBodyBytes without buffering them', async () => {
+    const archive = concatBlocks(
+      ustarHeader('pkg/huge.bin', 4096, '0'),
+      padded(new Uint8Array(4096).fill(7)),
+      ustarHeader('pkg/a.txt', 5, '0'),
+      padded(new TextEncoder().encode('hello')),
+      tarEnd(),
+    );
+    const entries = [];
+    for await (const entry of parseTar(streamOf(archive), { maxBodyBytes: 1024 })) {
+      entries.push(entry);
+    }
+    expect(entries[0]).toMatchObject({ name: 'pkg/huge.bin', size: 4096, skipped: true });
+    expect(entries[0]!.body).toHaveLength(0);
+    expect(entries[1]).toMatchObject({ name: 'pkg/a.txt', size: 5 });
+    expect(entries[1]!.skipped).toBeUndefined();
+  });
 });

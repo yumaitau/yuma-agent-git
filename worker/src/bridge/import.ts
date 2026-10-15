@@ -230,10 +230,13 @@ async function snapshotImport(env: Env, job: ImportJobRow): Promise<void> {
 
   const changes: { path: string; op: 'add'; blob_sha256: string }[] = [];
   const warnings: { path: string; skipped: string }[] = [];
-  for await (const entry of parseTar(await gunzipIfNeeded(tarRes.body, true))) {
+  const tar = parseTar(await gunzipIfNeeded(tarRes.body, true), {
+    maxBodyBytes: MAX_FILE_BYTES,
+  });
+  for await (const entry of tar) {
     // symlinks import as blobs whose content is the target (mode 120000 in git)
     if (entry.type !== 'file' && entry.type !== 'symlink') continue; // dirs are implicit
-    if (entry.body.byteLength > MAX_FILE_BYTES) {
+    if (entry.skipped) {
       warnings.push({ path: entry.name, skipped: 'too_large' });
       continue;
     }

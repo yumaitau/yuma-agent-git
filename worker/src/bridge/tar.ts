@@ -18,12 +18,17 @@ export interface TarEntry {
   size: number;
   /** File contents or symlink target. */
   body: Uint8Array;
+  /** Set when the body exceeded `maxBodyBytes` and was skipped unread. */
+  skipped?: true;
 }
 
 const BLOCK = 512;
 
 class ByteReader {
-  private buffer: Uint8Array = new Uint8Array(0);
+  // Pending chunks are kept as a list and only joined when a read needs them:
+  // re-copying one growing buffer per chunk made large entries quadratic.
+  private chunks: Uint8Array[] = [];
+  private buffered = 0;
   private done = false;
   private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
 
@@ -39,24 +44,46 @@ class ByteReader {
       this.done = true;
       return false;
     }
-    const merged = new Uint8Array(this.buffer.length + value.length);
-    merged.set(this.buffer, 0);
-    merged.set(value, this.buffer.length);
-    this.buffer = merged;
+    if (value.length > 0) {
+      this.chunks.push(value);
+      this.buffered += value.length;
+    }
     return true;
+  }
+
+  /** Remove and return the first `n` buffered bytes (`n` ≤ buffered). */
+  private take(n: number): Uint8Array {
+    const first = this.chunks[0];
+    if (first !== undefined && first.length >= n) {
+      // common case: served from one chunk without copying
+      this.chunks[0] = first.subarray(n);
+      if (this.chunks[0].length === 0) this.chunks.shift();
+      this.buffered -= n;
+      return first.subarray(0, n);
+    }
+    const out = new Uint8Array(n);
+    let filled = 0;
+    while (filled < n) {
+      const chunk = this.chunks[0] as Uint8Array;
+      const used = Math.min(chunk.length, n - filled);
+      out.set(chunk.subarray(0, used), filled);
+      filled += used;
+      if (used === chunk.length) this.chunks.shift();
+      else this.chunks[0] = chunk.subarray(used);
+    }
+    this.buffered -= n;
+    return out;
   }
 
   /** Exactly `n` bytes, or null at clean EOF; throws on truncation. */
   async readExact(n: number): Promise<Uint8Array | null> {
-    while (this.buffer.length < n) {
+    while (this.buffered < n) {
       if (!(await this.pull())) {
-        if (this.buffer.length === 0) return null;
+        if (this.buffered === 0) return null;
         throw new Error('tar: truncated archive');
       }
     }
-    const out = this.buffer.subarray(0, n);
-    this.buffer = this.buffer.subarray(n);
-    return out;
+    return this.take(n);
   }
 
   async skip(n: number): Promise<void> {
@@ -86,11 +113,13 @@ function isZeroBlock(block: Uint8Array): boolean {
 
 /**
  * Stream-parse a tar archive (optionally gzip-wrapped). Yields entries in
- * archive order; regular-file bodies are materialized per entry (callers cap
- * their own sizes — GitHub tarballs are bounded per file).
+ * archive order; regular-file bodies are materialized per entry. Bodies larger
+ * than `maxBodyBytes` are streamed past without buffering and yielded empty
+ * with `skipped: true`, so one huge file cannot exhaust Worker memory.
  */
 export async function* parseTar(
   source: ReadableStream<Uint8Array>,
+  opts: { maxBodyBytes?: number } = {},
 ): AsyncGenerator<TarEntry> {
   const reader = new ByteReader(source);
   let paxOverrides: Record<string, string> = {};
@@ -121,6 +150,20 @@ export async function* parseTar(
     }
 
     const padded = Math.ceil(paxSize / BLOCK) * BLOCK;
+    const isFile = typeflag === '0' || typeflag === '\0' || typeflag === '7';
+    if (isFile && opts.maxBodyBytes !== undefined && paxSize > opts.maxBodyBytes) {
+      await reader.skip(padded);
+      paxOverrides = {};
+      yield {
+        name,
+        type: 'file',
+        mode: decodeField(block, 100, 8),
+        size: paxSize,
+        body: new Uint8Array(0),
+        skipped: true,
+      };
+      continue;
+    }
     const raw = padded > 0 ? await reader.readExact(padded) : new Uint8Array(0);
     if (raw === null) throw new Error('tar: truncated entry data');
     const body = raw.subarray(0, paxSize);
