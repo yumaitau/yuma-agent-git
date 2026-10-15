@@ -5,6 +5,8 @@ import { q1, run } from '../db/client';
 import { getChangeset } from '../core/changesets';
 import { getTree } from '../core/trees';
 import { newBudget } from './budget';
+import { r2 } from '../observability/phase';
+import { recordAgent } from '../observability/metrics';
 
 /**
  * Agent runtime (issue #17, architecture §4) — agents that consume and produce
@@ -307,6 +309,7 @@ export class YagAgent extends Agent<Env, AgentState> {
         this.state.task_id,
       ],
     );
+    await recordAgent(this.env, status);
   }
 
   /**
@@ -330,10 +333,10 @@ export class YagAgent extends Agent<Env, AgentState> {
     if (pending <= 0) return;
     const entries = this.state.transcript.slice(-pending);
     const key = `repos/${this.state.repo_id}/agents/${this.state.task_id}/transcript.jsonl`;
-    const existing = await this.env.OBJECTS.get(key);
+    const existing = await r2(this.env.OBJECTS).get(key);
     const prior = existing ? await existing.text() : '';
     const tail = entries.map((e) => JSON.stringify(e)).join('\n');
-    await this.env.OBJECTS.put(key, `${prior}${prior.length > 0 ? '\n' : ''}${tail}\n`);
+    await r2(this.env.OBJECTS).put(key, `${prior}${prior.length > 0 ? '\n' : ''}${tail}\n`);
     this.setState({ ...this.state, flushed: total });
   }
 }

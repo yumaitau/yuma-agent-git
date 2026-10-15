@@ -6,3 +6,6 @@ GITHUB_CLIENT_SECRET=
 GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
+
+# HMAC key for signed cache tokens (issue #21). Any long random string.
+CACHE_SIGNING_KEY=

@@ -30,6 +30,23 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
 
     const body = await readJsonBody(c);
     const parsed = commitRequestSchema.safeParse(body);
+    if (parsed.success) {
+      // per-repo write burst guard (issue #21): huge commits get 429, not a
+      // wedged D1 row / R2 write storm
+      const changes = parsed.data.changes;
+      const inlineBytes = changes.reduce((sum, change) => {
+        const content = 'content_b64' in change ? change.content_b64 : undefined;
+        return sum + (content ? Math.floor((content.length * 3) / 4) : 0);
+      }, 0);
+      if (changes.length > 1000 || inlineBytes > 64 * 1024 * 1024) {
+        return apiError(c, 429, 'write_too_large', 'commit exceeds write burst limits', {
+          max_files: 1000,
+          max_inline_bytes: 64 * 1024 * 1024,
+          files: changes.length,
+          inline_bytes: inlineBytes,
+        });
+      }
+    }
     if (!parsed.success) {
       return apiError(c, 400, 'invalid_request', 'invalid commit request', {
         issues: parsed.error.issues.map((i) => ({

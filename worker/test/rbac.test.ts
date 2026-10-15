@@ -103,6 +103,15 @@ describe('can() resolution matrix', () => {
     expect(await can(dbEnv, repo, principalOf(nobody.userId), 'read')).toBe(false);
   });
 
+  it('signed-in non-members can read public repos', async () => {
+    const pub = await createRepo(dbEnv, { slug: 'acme/world', visibility: 'public' });
+    const reader = principalOf(stranger.userId);
+    expect(await can(dbEnv, pub, reader, 'read')).toBe(true);
+    expect(await can(dbEnv, pub, reader, 'history')).toBe(true);
+    expect(await can(dbEnv, pub, reader, 'write')).toBe(false);
+    expect(await can(dbEnv, pub, reader, 'admin')).toBe(false);
+  });
+
   it('repo creators are admins', async () => {
     const repo = await createRepo(dbEnv, {
       slug: 'acme/created',

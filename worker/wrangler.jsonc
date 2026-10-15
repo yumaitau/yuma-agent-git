@@ -3,7 +3,20 @@
   // No plaintext secrets in this file (CI greps for key material).
   "name": "yuma-agent-git",
   "main": "src/index.ts",
+  "assets": {
+    "directory": "./dashboard/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/healthz"],
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
   "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_als"],
   "d1_databases": [
     {
       "binding": "DB",
@@ -47,6 +60,34 @@
   // block below); the gateway fails gracefully without the binding.
   "env": {
     "prod": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "yag-db",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+        },
+      ],
+      "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yag-objects" }],
+      "durable_objects": {
+        "bindings": [
+          { "name": "REF_LOCK", "class_name": "RefLockDO" },
+          { "name": "AGENT", "class_name": "YagAgent" },
+          { "name": "SUPERFAN", "class_name": "SuperfanDO" },
+          { "name": "RATE_LIMIT", "class_name": "RateLimitDO" },
+        ],
+      },
+      "queues": {
+        "producers": [
+          { "binding": "DERIVED_QUEUE", "queue": "derived-data" },
+          { "binding": "AGENT_QUEUE", "queue": "agent-jobs" },
+          { "binding": "IMPORT_QUEUE", "queue": "git-import" },
+        ],
+        "consumers": [
+          { "queue": "derived-data", "max_batch_size": 10, "max_retries": 3 },
+          { "queue": "agent-jobs", "max_batch_size": 5, "max_retries": 3 },
+          { "queue": "git-import", "max_batch_size": 1, "max_retries": 3 },
+        ],
+      },
       "ai": {
         "binding": "AI",
       },
@@ -66,6 +107,10 @@
         "name": "SUPERFAN",
         "class_name": "SuperfanDO",
       },
+      {
+        "name": "RATE_LIMIT",
+        "class_name": "RateLimitDO",
+      },
     ],
   },
   "migrations": [
@@ -80,6 +125,10 @@
     {
       "tag": "v3",
       "new_sqlite_classes": ["SuperfanDO"],
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["RateLimitDO"],
     },
   ],
 }

@@ -15,6 +15,7 @@ import { computeEager } from './derived';
 import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
+import { recordCommit } from '../observability/metrics';
 
 /** Max inline content per file in a commit request (route maps to 413). */
 export const MAX_INLINE_BYTES = 4 * 1024 * 1024;
@@ -81,6 +82,17 @@ export interface CommitResult {
  *    derived-data hook (issue #9)
  */
 export async function commitChanges(
+  env: Env,
+  repoId: string,
+  rawReq: CommitRequest,
+): Promise<CommitResult> {
+  const started = Date.now();
+  const result = await commitChangesInner(env, repoId, rawReq);
+  await recordCommit(env, Date.now() - started);
+  return result;
+}
+
+async function commitChangesInner(
   env: Env,
   repoId: string,
   rawReq: CommitRequest,

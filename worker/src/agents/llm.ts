@@ -5,6 +5,8 @@ import type { TranscriptEntry } from './runtime';
 import type { TaskBudget } from './budget';
 import { remaining } from './budget';
 import { SYSTEM_PROMPT } from './prompt';
+import { timePhase } from '../observability/phase';
+import { recordAi } from '../observability/metrics';
 
 /**
  * Workers AI gateway (issue #19) — the model behind think-act-observe.
@@ -176,8 +178,17 @@ export function setChatProvider(custom: ChatProvider | null): void {
   provider = custom ?? defaultProvider;
 }
 
-export function chat(env: Env, input: ChatInput): Promise<ChatResult> {
-  return provider(env, input);
+export async function chat(env: Env, input: ChatInput): Promise<ChatResult> {
+  try {
+    const result = await timePhase('ai', () => provider(env, input));
+    const tokens =
+      (result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0);
+    await recordAi(env, tokens, false);
+    return result;
+  } catch (err) {
+    await recordAi(env, 0, true);
+    throw err;
+  }
 }
 
 /** #18 registry → function-calling tool schemas. */

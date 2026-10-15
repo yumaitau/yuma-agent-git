@@ -157,7 +157,7 @@ describe('agent runtime', () => {
     const taskId = (row as { id: string }).id;
 
     const stub = stubFor(taskId);
-    await expect(stub.runTask(taskId, { steps: 5, deadlineMs: 1 })).rejects.toThrow(
+    await expect(Promise.resolve(stub.runTask(taskId, { steps: 5, deadlineMs: 1 }))).rejects.toThrow(
       /timeout/,
     );
 

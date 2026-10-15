@@ -3,6 +3,8 @@ import type { Env } from '../env';
 import type { RefRecord } from '../db/client';
 import { getRef, listRefs } from '../db/repos';
 import { ApiError, ConflictError, RequestValidationError } from './errors';
+import { timePhase } from '../observability/phase';
+import { recordRefMove } from '../observability/metrics';
 
 export { getRef, listRefs };
 export type { RefRecord };
@@ -73,17 +75,19 @@ export async function moveRefViaDO(
 ): Promise<MoveRefResult> {
   const id = env.REF_LOCK.idFromName(`${repoId}:${name}`);
   const stub = env.REF_LOCK.get(id);
-  const res = await stub.fetch('https://ref-lock/move', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      repo_id: repoId,
-      name,
-      from: input.from,
-      to: input.to,
-      force: input.force ?? false,
+  const res = await timePhase('do', () =>
+    stub.fetch('https://ref-lock/move', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        repo_id: repoId,
+        name,
+        from: input.from,
+        to: input.to,
+        force: input.force ?? false,
+      }),
     }),
-  });
+  );
 
   const body = (await res.json()) as MoveRefErrorBody & MoveRefResult;
   if (res.ok) {
@@ -96,6 +100,7 @@ export async function moveRefViaDO(
         'ref lock returned an invalid response',
       );
     }
+    await recordRefMove(env, false);
     return parsed.data;
   }
 
@@ -103,6 +108,7 @@ export async function moveRefViaDO(
   const code = error.code ?? 'internal_error';
   const message = error.message ?? 'ref move failed';
   if (res.status === 409) {
+    await recordRefMove(env, true);
     throw new ConflictError(code, message, {
       expected: error.expected ?? input.from,
       actual: error.actual ?? null,

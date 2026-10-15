@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Env } from '../env';
+import { timePhase } from '../observability/phase';
 
 /**
  * Thin typed helpers over `D1Database` plus zod row parsers — zod at every
@@ -12,9 +13,11 @@ export async function q<T = Record<string, unknown>>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<T[]> {
-  const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
-  const res = await stmt.all<T>();
-  return res.results;
+  return timePhase('d1', async () => {
+    const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
+    const res = await stmt.all<T>();
+    return res.results;
+  });
 }
 
 /** Fetch the first row of a query, or null. */
@@ -23,8 +26,10 @@ export async function q1<T = Record<string, unknown>>(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<T | null> {
-  const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
-  return stmt.first<T>();
+  return timePhase('d1', async () => {
+    const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
+    return stmt.first<T>();
+  });
 }
 
 /** Run a single statement with no rows of interest. */
@@ -33,8 +38,10 @@ export async function run(
   sql: string,
   params: readonly unknown[] = [],
 ): Promise<void> {
-  const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
-  await stmt.run();
+  await timePhase('d1', async () => {
+    const stmt = env.DB.prepare(sql).bind(...(params as unknown[]));
+    await stmt.run();
+  });
 }
 
 /** A statement queue flushed as a single `env.DB.batch()`. */
@@ -50,14 +57,16 @@ export async function tx(
   env: Env,
   fn: (t: Tx) => void,
 ): Promise<D1Result<Record<string, unknown>>[]> {
-  const stmts: D1PreparedStatement[] = [];
-  const t: Tx = {
-    q(sql, params = []) {
-      stmts.push(env.DB.prepare(sql).bind(...(params as unknown[])));
-    },
-  };
-  fn(t);
-  return env.DB.batch(stmts);
+  return timePhase('d1', async () => {
+    const stmts: D1PreparedStatement[] = [];
+    const t: Tx = {
+      q(sql, params = []) {
+        stmts.push(env.DB.prepare(sql).bind(...(params as unknown[])));
+      },
+    };
+    fn(t);
+    return env.DB.batch(stmts);
+  });
 }
 
 // ---------------------------------------------------------------------------

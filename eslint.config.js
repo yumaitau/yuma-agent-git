@@ -23,4 +23,12 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['worker/dashboard/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+    },
+  },
 );

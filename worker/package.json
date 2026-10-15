@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev:ui": "vite",
+    "deploy": "npm run build && bash ../scripts/setup-queues.sh && wrangler d1 migrations apply yag-db --remote --env prod && wrangler deploy --env prod",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src test"
+    "test:ui": "vitest run --config dashboard/vitest.config.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit",
+    "lint": "eslint src test dashboard",
+    "build": "vite build && node ../scripts/check-bundle-size.mjs",
+    "build:dashboard": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "latest",
@@ -21,7 +25,17 @@
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.2",
     "@cloudflare/workers-types": "^5.20261014.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^28.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.0",
     "typescript": "^5.9.3",
+    "vite": "^7.1.0",
     "vitest": "^4.1.0",
     "wrangler": "^4.151.0"
   }

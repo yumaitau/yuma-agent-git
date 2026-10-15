@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Env } from '../env';
+import { r2 } from '../observability/phase';
 import { compressBytes, decompressBytes, parseCodec, preferredCodec } from './compress';
 import { InvalidTreeError, ObjectCorruptError, ObjectWalkLimitError } from './errors';
 import { canonicalJson, sha256Hex } from './hashing';
@@ -91,13 +92,17 @@ export async function putTree(
   const text = canonicalTreeText(tree);
   const hash = await sha256Hex(new TextEncoder().encode(text));
   const key = treeKey(repoId, hash);
-  const existing = await env.OBJECTS.head(key);
+  const existing = await r2(env.OBJECTS).head(key);
   if (existing) return { hash, stored: false };
   const codec = preferredCodec();
-  await env.OBJECTS.put(key, await compressBytes(new TextEncoder().encode(text), codec), {
-    httpMetadata: { contentType: 'application/json' },
-    customMetadata: { encoding: codec },
-  });
+  await r2(env.OBJECTS).put(
+    key,
+    await compressBytes(new TextEncoder().encode(text), codec),
+    {
+      httpMetadata: { contentType: 'application/json' },
+      customMetadata: { encoding: codec },
+    },
+  );
   return { hash, stored: true };
 }
 
@@ -107,7 +112,7 @@ export async function getTree(
   repoId: string,
   hash: string,
 ): Promise<Tree | null> {
-  const obj = await env.OBJECTS.get(treeKey(repoId, hash));
+  const obj = await r2(env.OBJECTS).get(treeKey(repoId, hash));
   if (!obj) return null;
   const stored = new Uint8Array(await obj.arrayBuffer());
   let text: string;

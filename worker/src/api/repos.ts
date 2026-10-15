@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { C, T } from '../db/schema';
-import { q } from '../db/client';
+import { parseRepoRow, q } from '../db/client';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { createRepo, getRepoBySlug } from '../db/repos';
 import type { AppEnv } from '../auth/principal';
@@ -51,22 +51,57 @@ reposRoutes.post('/api/v1/repos', async (c) => {
   }
 });
 
+function pageLimit(raw: string | undefined): number {
+  const n = Number(raw ?? 50);
+  if (!Number.isInteger(n) || n < 1) return 50;
+  return Math.min(n, 100);
+}
+
 reposRoutes.get('/api/v1/repos', async (c) => {
   try {
     const principal = c.get('principal');
-    // visible: public repos + repos where the caller is a member/creator
+    const userId = principal?.userId ?? '';
+    const limit = pageLimit(c.req.query('limit'));
+    const cursorRaw = c.req.query('cursor');
+    let hasCursor = 0;
+    let cursorCreated = 0;
+    let cursorId = '';
+    if (cursorRaw !== undefined && cursorRaw !== '') {
+      const split = cursorRaw.indexOf(':');
+      const created = Number(cursorRaw.slice(0, split));
+      const id = cursorRaw.slice(split + 1);
+      if (split <= 0 || !Number.isInteger(created) || id === '') {
+        return apiError(c, 400, 'invalid_request', 'invalid cursor');
+      }
+      hasCursor = 1;
+      cursorCreated = created;
+      cursorId = id;
+    }
+    // visible: public repos + repos where the caller is a member/creator.
+    // Keyset pagination on (created_at, id) descending.
     const rows = await q(
       c.env,
-      `SELECT * FROM ${T.repos} WHERE ${C.repos.visibility} = 'public'
-       UNION
-       SELECT r.* FROM ${T.repos} r
-         JOIN ${T.repoMembers} m ON m.${C.repoMembers.repoId} = r.${C.repos.id}
-        WHERE m.${C.repoMembers.userId} = ?
-       UNION
-       SELECT * FROM ${T.repos} WHERE created_by = ?`,
-      [principal?.userId ?? '', principal?.userId ?? ''],
+      `SELECT * FROM (
+         SELECT * FROM ${T.repos} WHERE ${C.repos.visibility} = 'public'
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.repoMembers} m ON m.${C.repoMembers.repoId} = r.${C.repos.id}
+          WHERE m.${C.repoMembers.userId} = ?
+         UNION
+         SELECT * FROM ${T.repos} WHERE created_by = ?
+       )
+       WHERE (? = 0) OR created_at < ? OR (created_at = ? AND id < ?)
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+      [userId, userId, hasCursor, cursorCreated, cursorCreated, cursorId, limit + 1],
     );
-    return c.json({ repos: rows }, 200, { 'cache-control': 'private, no-store' });
+    const page = rows.slice(0, limit).map((row) => parseRepoRow(row));
+    const last = page[page.length - 1];
+    const nextCursor =
+      rows.length > limit && last ? `${last.created_at}:${last.id}` : null;
+    return c.json({ repos: page, next_cursor: nextCursor }, 200, {
+      'cache-control': 'private, no-store',
+    });
   } catch (err) {
     return errorResponse(c, err);
   }

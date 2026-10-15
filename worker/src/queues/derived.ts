@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { recordQueue } from '../observability/metrics';
 import { RowParseError } from '../db/client';
 import {
   FAILED_SENTINEL,
@@ -21,6 +22,7 @@ export async function derivedQueue(
   env: Env,
 ): Promise<void> {
   for (const message of batch.messages.slice(0, 10)) {
+    await recordQueue(env);
     const { repo_id: repoId, kind, cs_id: csId, compaction } = message.body;
     try {
       if (compaction) {

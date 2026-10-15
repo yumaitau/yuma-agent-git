@@ -5,9 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +27,20 @@ jobs:
       - name: Lint
         run: npm run lint --workspaces --if-present
 
+      - name: Typecheck
+        run: npm run typecheck -w worker
+
+      - name: Build dashboard
+        run: npm run build -w worker
+
       - name: Test
         run: npm test -w worker
 
+      - name: Dashboard tests
+        run: npm run test:ui -w worker
+
       - name: Deploy dry-run
-        run: npx wrangler deploy --dry-run --outdir dist -c worker/wrangler.jsonc
+        run: npx wrangler deploy --dry-run --env prod --outdir dist -c worker/wrangler.jsonc
 
       - name: D1 migrations smoke
         run: npx wrangler d1 migrations list yag-db --local -c worker/wrangler.jsonc

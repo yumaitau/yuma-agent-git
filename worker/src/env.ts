@@ -12,12 +12,20 @@ export interface Env {
   AGENT_QUEUE: Queue;
   /** Queue `git-import` — git import / incremental sync jobs. */
   IMPORT_QUEUE: Queue;
+  /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
+  ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */
   REF_LOCK: DurableObjectNamespace;
   /** Agent runtime namespace (issue #17) — one Durable Object per task. */
   AGENT: DurableObjectNamespace;
   /** Superfan monitors (issue #19) — one Durable Object per component. */
   SUPERFAN: DurableObjectNamespace;
+  /** Rate-limit shards (issue #21) — 16 DOs per bucket. */
+  RATE_LIMIT: DurableObjectNamespace;
+  /** HMAC key for signed cache tokens (issue #21) — secret, never in VCS. */
+  CACHE_SIGNING_KEY?: string;
+  /** JSON override of the rate-limit buckets (tests relax shared-IP pressure). */
+  RATE_LIMIT_BUCKETS?: string;
   /** Workers AI binding (issue #19) — present in the `prod` env, absent in tests. */
   AI?: Ai;
   /** Model id override (default: @cf/meta/llama-3.3-70b-instruct-fp8-fast). */

@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { Env } from '../env';
+import type { AppEnv } from '../auth/principal';
 import { C, T } from '../db/schema';
 import {
   parsePathRuleRow,
   parseRepoMemberRow,
+  parseRepoRow,
   parseUserRow,
   q,
   q1,
@@ -13,13 +14,15 @@ import {
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { loadAdminRepo } from '../auth/guards';
 import { parsePathRuleInput } from '../auth/rbac';
+import { readMetrics } from '../observability/metrics';
+import { can } from '../auth/rbac';
 
 /**
  * Repo administration (issue #14): members and directory-level path rules.
  * Session-authenticated and repo-admin-only — this is where monorepo security
  * is configured (e.g. deny `history` on `secrets/`).
  */
-export const adminRoutes = new Hono<{ Bindings: Env }>();
+export const adminRoutes = new Hono<AppEnv>();
 
 function requireSession(c: Parameters<typeof apiError>[0]): Response | null {
   if (!c.get('user')) {
@@ -113,6 +116,34 @@ adminRoutes.delete('/api/v1/repos/:repo{.+}/members/:userId', async (c) => {
       [loaded.repo.id, c.req.param('userId')],
     );
     return c.json({ ok: true });
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Metrics (issue #21) — admin scope
+// ---------------------------------------------------------------------------
+
+adminRoutes.get('/api/v1/admin/metrics', async (c) => {
+  try {
+    const noSession = requireSession(c);
+    if (noSession) return noSession;
+    // admin scope: any repo where the caller is admin gates the panel
+    const principal = c.get('principal');
+    const repos = await q(c.env, `SELECT * FROM ${T.repos}`);
+    const isAdmin = await Promise.all(
+      repos.map((row) => can(c.env, parseRepoRow(row), principal ?? null, 'admin')),
+    );
+    if (!isAdmin.some(Boolean)) {
+      return apiError(c, 403, 'forbidden', 'admin scope required');
+    }
+    const component = c.req.query('component');
+    const windowRaw = Number(c.req.query('window') ?? '3600000');
+    const windowMs = Number.isInteger(windowRaw) && windowRaw > 0 ? windowRaw : 3600_000;
+    return c.json(await readMetrics(c.env, component, windowMs), 200, {
+      'cache-control': 'private, no-store',
+    });
   } catch (err) {
     return errorResponse(c, err);
   }

@@ -18,7 +18,12 @@ import {
   PayloadTooLargeError,
   RequestValidationError,
 } from '../core/errors';
-import { loadReadableRepo as loadReadable } from '../auth/guards';
+import {
+  guardPathHistory,
+  guardPathRead,
+  loadReadableRepo as loadReadable,
+} from '../auth/guards';
+import { r2 } from '../observability/phase';
 
 /**
  * Read RPCs — queries with no checkout (architecture §2):
@@ -125,6 +130,8 @@ readRoutes.get('/repos/:repo{.+}/file', async (c) => {
       return apiError(c, 400, 'invalid_request', 'cs and path are required');
     }
     const path = normalizeQueryPath(rawPath, false);
+    const denied = await guardPathRead(c, repo, path);
+    if (denied) return denied;
     const cs = await resolveRevision(c.env, repo.id, rev);
     const rootTree = cs.root_tree;
     if (rootTree === null) {
@@ -148,7 +155,7 @@ readRoutes.get('/repos/:repo{.+}/file', async (c) => {
       // Streamed from R2 — never fully buffered — decompressed on the way out,
       // and hash-verified while it streams (content addresses are checked on
       // EVERY read path; a mismatch aborts the stream).
-      const obj = await c.env.OBJECTS.get(blobKey(repo.id, entry.hash));
+      const obj = await r2(c.env.OBJECTS).get(blobKey(repo.id, entry.hash));
       if (!obj) throw new ObjectNotFoundError('blob', entry.hash);
       const hasher = new IncrementalSha256();
       let decompressor: ReturnType<typeof decompressStream>;
@@ -229,6 +236,8 @@ readRoutes.get('/repos/:repo{.+}/tree', async (c) => {
     const rev = c.req.query('cs');
     if (!rev) return apiError(c, 400, 'invalid_request', 'cs is required');
     const path = normalizeQueryPath(c.req.query('path') ?? '', true);
+    const denied = await guardPathRead(c, repo, path);
+    if (denied) return denied;
     const recursive = c.req.query('recursive') === '1';
 
     const cs = await resolveRevision(c.env, repo.id, rev);
@@ -326,6 +335,8 @@ readRoutes.get('/repos/:repo{.+}/history', async (c) => {
     // provisional walk is gone). Cold + background=1 → 202 + queue; otherwise
     // bounded inline walk with a resume cursor.
     const path = normalizeQueryPath(rawPath, false);
+    const denied = await guardPathHistory(c, repo, path);
+    if (denied) return denied;
     const background = c.req.query('background') === '1';
     const cold = (await peekDerived(c.env, repo.id, PATH_HISTORY, cs.id)) === null;
     if (background && cold) {

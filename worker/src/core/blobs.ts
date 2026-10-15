@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { r2 } from '../observability/phase';
 import { compressBytes, decompressBytes, parseCodec, preferredCodec } from './compress';
 import { ObjectCorruptError } from './errors';
 import { sha256Hex } from './hashing';
@@ -33,13 +34,13 @@ export async function putBlob(
 ): Promise<PutBlobResult> {
   const hash = await sha256Hex(content);
   const key = blobKey(repoId, hash);
-  const existing = await env.OBJECTS.head(key);
+  const existing = await r2(env.OBJECTS).head(key);
   if (existing) {
     return { hash, size: content.byteLength, stored: false };
   }
   const codec = preferredCodec();
   const compressed = await compressBytes(content, codec);
-  await env.OBJECTS.put(key, compressed, {
+  await r2(env.OBJECTS).put(key, compressed, {
     httpMetadata: { contentType: 'application/octet-stream' },
     customMetadata: { size: String(content.byteLength), encoding: codec },
   });
@@ -60,7 +61,7 @@ export async function putBlobByHash(
   codec = preferredCodec(),
 ): Promise<PutBlobResult> {
   const key = blobKey(repoId, hash);
-  const existing = await env.OBJECTS.head(key);
+  const existing = await r2(env.OBJECTS).head(key);
   if (existing) {
     const size = await statBlob(env, repoId, hash);
     if (size !== null) return { hash, size, stored: false };
@@ -72,7 +73,7 @@ export async function putBlobByHash(
   if (actual !== hash) {
     throw new ObjectCorruptError('blob', hash, `hash mismatch: got ${actual}`);
   }
-  await env.OBJECTS.put(key, compressedBytes, {
+  await r2(env.OBJECTS).put(key, compressedBytes, {
     httpMetadata: { contentType: 'application/octet-stream' },
     customMetadata: { size: String(content.byteLength), encoding: codec },
   });
@@ -93,7 +94,7 @@ export async function getBlob(
   repoId: string,
   hash: string,
 ): Promise<BlobContent | null> {
-  const obj = await env.OBJECTS.get(blobKey(repoId, hash));
+  const obj = await r2(env.OBJECTS).get(blobKey(repoId, hash));
   if (!obj) return null;
   const stored = new Uint8Array(await obj.arrayBuffer());
   const content = await decodeOrThrow(hash, stored, obj.customMetadata?.encoding);
@@ -134,7 +135,7 @@ export async function hasBlob(
     for (;;) {
       const hash = queue.shift();
       if (hash === undefined) return;
-      const head = await env.OBJECTS.head(blobKey(repoId, hash));
+      const head = await r2(env.OBJECTS).head(blobKey(repoId, hash));
       if (head) found.add(hash);
     }
   };
@@ -152,7 +153,7 @@ export async function statBlob(
   repoId: string,
   hash: string,
 ): Promise<number | null> {
-  const head = await env.OBJECTS.head(blobKey(repoId, hash));
+  const head = await r2(env.OBJECTS).head(blobKey(repoId, hash));
   if (!head) return null;
   const raw = head.customMetadata?.size;
   if (raw === undefined) return null;

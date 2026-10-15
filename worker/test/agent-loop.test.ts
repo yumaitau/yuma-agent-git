@@ -246,7 +246,7 @@ describe('think-act-observe loop', () => {
       call('read_file', { path: 'src/a.txt' }),
       new Error('simulated eviction'),
     ]);
-    await expect(stubFor(taskId).runTask(taskId)).rejects.toThrow(/eviction/);
+    await expect(Promise.resolve(stubFor(taskId).runTask(taskId))).rejects.toThrow(/eviction/);
     const mid = await stubFor(taskId).getStateSnapshot();
     expect(mid.transcript.some((e) => e.name === 'read_file')).toBe(true);
 
@@ -399,6 +399,10 @@ describe('fix_issue + superfan', () => {
       (await (
         await stub.fetch(new Request('https://superfan/check', { method: 'POST' }))
       ).json()) as { anomalous: boolean; finding?: string };
+
+    // seeding the repo commits, which now records a commit-path sample.
+    // drop it so the synthetic series below is the whole baseline.
+    await run(dbEnv, `DELETE FROM ${T.componentMetrics}`);
 
     // calm telemetry → no finding
     for (let i = 0; i < 10; i++) {

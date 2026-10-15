@@ -15,6 +15,7 @@ import {
   loadWritableRepoById,
 } from '../auth/guards';
 import type { AgentState } from '../agents/runtime';
+import { r2 } from '../observability/phase';
 
 /**
  * Agent task lifecycle API (issue #17) — mounted under /api/v1:
@@ -154,7 +155,7 @@ agentsRoutes.get('/agents/tasks/:id/transcript', async (c) => {
 
     const since = Number(c.req.query('since') ?? '0');
     const key = `repos/${task.repo_id}/agents/${task.id}/transcript.jsonl`;
-    const object = await c.env.OBJECTS.get(key);
+    const object = await r2(c.env.OBJECTS).get(key);
     const text = object ? await object.text() : '';
     const entries = text
       .split('\n')

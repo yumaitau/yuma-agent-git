@@ -176,7 +176,14 @@ export async function decide(
     return { allowed: true };
   }
 
-  // 5. default deny
+  // 5. public repos are readable by every principal. Path-rule denies already
+  // returned above, so a logged-in non-member can browse a public repo the
+  // same way an anonymous client can. Write and admin stay membership-only.
+  if (repo.visibility === 'public' && (perm === 'read' || perm === 'history')) {
+    return { allowed: true };
+  }
+
+  // 6. default deny
   return { allowed: false };
 }
 

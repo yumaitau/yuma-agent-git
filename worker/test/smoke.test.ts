@@ -48,8 +48,8 @@ describe('worker entry', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it('returns the error envelope for unrouted URLs', async () => {
-    const res = await SELF.fetch('http://x/nope/nothing');
+  it('returns the error envelope for unrouted API paths', async () => {
+    const res = await SELF.fetch('http://x/api/v1/nope/nothing');
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({
       error: { code: 'not_found', message: 'no such route' },

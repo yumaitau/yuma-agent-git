@@ -22,11 +22,17 @@ network, ever.
 ## Local dev
 
 ```sh
-npm run dev -w worker   # wrangler dev on :8787
+npm run dev -w worker      # wrangler dev on :8787 (API + built dashboard assets)
+npm run dev:ui -w worker   # vite on :5173, proxies /api and /auth to :8787
 ```
 
-Copy `.dev.vars.example` to `worker/.dev.vars` and fill in GitHub credentials when
-working on auth / the GitHub bridge.
+Run both when changing the dashboard: `wrangler dev` serves the API, and `vite`
+hot-reloads the SPA. `npm run build -w worker` writes `worker/dashboard/dist`,
+which is what the assets binding serves. The gzip budget for that bundle is
+250 KiB (`scripts/check-bundle-size.mjs`).
+
+Copy `.dev.vars.example` to `worker/.dev.vars` and fill in GitHub credentials
+(and `CACHE_SIGNING_KEY`) when working on auth, the GitHub bridge, or cache tokens.
 
 ## Code style
 

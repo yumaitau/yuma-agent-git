@@ -131,7 +131,9 @@ describe('objects API (sparse checkout protocol)', () => {
       await compressBytes(enc.encode('EVIL'), codec),
       { customMetadata: { size: '4', encoding: codec } },
     );
-    const corrupt = await api(`/acme/enc/object/blob/${hash}?encoding=identity`);
+    // cache-bust: the earlier (good) identity read is legitimately cached for
+    // this URL — a distinct key reaches the now-corrupt object
+    const corrupt = await api(`/acme/enc/object/blob/${hash}?encoding=identity&nc=1`);
     expect(corrupt.status).toBe(500);
     expect(((await corrupt.json()) as { error: { code: string } }).error.code).toBe(
       'object_corrupt',

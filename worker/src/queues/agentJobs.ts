@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { C, T } from '../db/schema';
 import { run } from '../db/client';
 import type { RunTaskOptions } from '../agents/runtime';
+import { recordAgent, recordQueue } from '../observability/metrics';
 
 export interface AgentJobMessage {
   task_id: string;
@@ -21,6 +22,7 @@ export async function agentJobsQueue(
 ): Promise<void> {
   for (const message of batch.messages.slice(0, 5)) {
     const taskId = message.body.task_id;
+    await recordQueue(env);
     try {
       const stub = env.AGENT.get(env.AGENT.idFromName(taskId)) as unknown as {
         runTask(taskId: string, opts?: RunTaskOptions): Promise<unknown>;
@@ -34,6 +36,7 @@ export async function agentJobsQueue(
           `UPDATE ${T.agentTasks} SET ${C.agentTasks.status} = 'failed', ${C.agentTasks.updatedAt} = ? WHERE ${C.agentTasks.id} = ?`,
           [Date.now(), taskId],
         );
+        await recordAgent(env, 'failed');
         console.error(
           'agent-jobs: giving up',
           JSON.stringify({ task_id: taskId, attempts: message.attempts }),

@@ -9,6 +9,7 @@ import { sha256Hex } from '../core/hashing';
 import { RequestValidationError } from '../core/errors';
 import { resolveRevision } from '../core/read';
 import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
+import { r2 } from '../observability/phase';
 
 /**
  * Sparse-checkout protocol (architecture §2.4) — want-only negotiation:
@@ -76,7 +77,7 @@ objectsRoutes.get('/repos/:repo{.+}/object/blob/:hash', async (c) => {
     const hash = c.req.param('hash');
     const mode = c.req.query('encoding') ?? 'zstd';
 
-    const obj = await c.env.OBJECTS.get(blobKey(repo.id, hash));
+    const obj = await r2(c.env.OBJECTS).get(blobKey(repo.id, hash));
     if (!obj) {
       return apiError(c, 404, 'object_not_found', `no blob ${hash}`, { hash });
     }
@@ -178,7 +179,7 @@ objectsRoutes.post('/repos/:repo{.+}/fetch-objects', async (c) => {
     }
 
     for (const hash of blobHashes) {
-      const obj = await c.env.OBJECTS.get(blobKey(repo.id, hash));
+      const obj = await r2(c.env.OBJECTS).get(blobKey(repo.id, hash));
       if (obj === null) {
         missing.push(hash);
         continue;

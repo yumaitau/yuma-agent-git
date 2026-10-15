@@ -1,0 +1,79 @@
+import { useEffect } from 'react';
+import type { ReactElement } from 'react';
+import { Route, Routes, useNavigate } from 'react-router-dom';
+import { setUnauthorizedHandler } from './api';
+import { Layout } from './Layout';
+import { RequireAuth } from './RequireAuth';
+import { HomeView } from './views/Home';
+import { LoginView } from './views/Login';
+import { RepoOverviewView } from './views/RepoOverview';
+import { ChangesetView } from './views/ChangesetView';
+import { TreeView } from './views/TreeView';
+import { DiffExplorerView } from './views/DiffExplorer';
+import { AgentsView, TaskDetailView } from './views/Agents';
+import { SettingsView } from './views/Settings';
+import { Empty } from './ui';
+
+function NotFound(): ReactElement {
+  return (
+    <Empty>
+      No such page. <a href="/">Back to repositories</a>.
+    </Empty>
+  );
+}
+
+/**
+ * Route table. Repo slugs are `owner/name`, so repo routes carry the two
+ * segments separately (`/r/:owner/:name/...`).
+ */
+function AppRoutes(): ReactElement {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => navigate('/login', { replace: true }));
+    return () => setUnauthorizedHandler(null);
+  }, [navigate]);
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<HomeView />} />
+        <Route path="/login" element={<LoginView />} />
+        <Route
+          path="/settings"
+          element={
+            <RequireAuth>
+              <SettingsView />
+            </RequireAuth>
+          }
+        />
+        <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
+        <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
+        <Route path="/r/:owner/:name/diff" element={<DiffExplorerView />} />
+        <Route path="/r/:owner/:name/tree/:cs" element={<TreeView />} />
+        <Route path="/r/:owner/:name/tree/:cs/*" element={<TreeView />} />
+        <Route
+          path="/r/:owner/:name/agents"
+          element={
+            <RequireAuth>
+              <AgentsView />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/r/:owner/:name/agents/:taskId"
+          element={
+            <RequireAuth>
+              <TaskDetailView />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Layout>
+  );
+}
+
+export function App(): ReactElement {
+  return <AppRoutes />;
+}
