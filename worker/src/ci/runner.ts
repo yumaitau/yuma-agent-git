@@ -57,18 +57,26 @@ export class CiRunnerDO extends DurableObject<Env> {
         },
         Math.max(1, deadline - Date.now()),
       );
+      this.append('Preparing runner…\n');
+      await this.checkpoint(job);
       await this.start(id, deadline);
+      this.append('Reading repository source…\n');
+      await this.checkpoint(job);
       await this.command(['mkdir', '-p', '/workspace']);
       const source = await this.source(job);
+      this.append('Transferring source to runner…\n');
+      await this.checkpoint(job);
       await this.command(['tar', '-xf', '-', '-C', '/workspace', '--no-same-owner'], {
         stdin: source,
       });
       for (const command of policy.commands) {
         await this.assertRunning(id, deadline);
         this.append(`\n$ ${command}\n`);
+        await this.checkpoint(job);
         await this.command(['/bin/bash', '-euo', 'pipefail', '-c', command], {
           cwd: '/workspace',
         });
+        await this.checkpoint(job);
       }
       if (job.publish) {
         await this.assertRunning(id, deadline);
@@ -230,6 +238,14 @@ export class CiRunnerDO extends DurableObject<Env> {
     if (this.logBytes + size > MAX_LOG_BYTES) throw new Error('Log limit exceeded');
     this.log += text;
     this.logBytes += size;
+  }
+
+  private async checkpoint(job: CiRun): Promise<void> {
+    const key = `ci/logs/${job.repo_id}/${job.id}.txt`;
+    await this.env.OBJECTS.put(key, this.log, {
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+    });
+    await run(this.env, 'UPDATE ci_runs SET log_key = ? WHERE id = ?', [key, job.id]);
   }
 
   private async command(

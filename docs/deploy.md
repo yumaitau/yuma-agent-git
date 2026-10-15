@@ -1,6 +1,9 @@
 # Deploying yuma-agent-git
 
-One-command deploy once the Cloudflare resources and GitHub App exist.
+One-command deploy once the Cloudflare resources and GitHub OAuth login exist.
+Native repositories and Yuma CI do not need a connected GitHub repository or App
+installation. GitHub is the identity provider; repository storage and builds run
+on Yuma's Cloudflare resources.
 
 The [Yuma pilot](https://yuma-agent-git-prod.yuma-it.workers.dev) is deployed with
 CI enabled. Its [live smoke report](deployment-smoke-2026-10-15.md) records verified
@@ -33,17 +36,29 @@ Do **not** commit secrets: CI greps `wrangler.jsonc` for
 ```sh
 npx wrangler secret put GITHUB_CLIENT_ID --env prod -c worker/wrangler.jsonc
 npx wrangler secret put GITHUB_CLIENT_SECRET --env prod -c worker/wrangler.jsonc
+npx wrangler secret put CACHE_SIGNING_KEY --env prod -c worker/wrangler.jsonc        # cache-token HMAC key
+```
+
+Only optional GitHub import/export needs the bridge secrets:
+
+```sh
 npx wrangler secret put GITHUB_APP_ID --env prod -c worker/wrangler.jsonc
 npx wrangler secret put GITHUB_APP_PRIVATE_KEY --env prod -c worker/wrangler.jsonc   # PKCS#8 PEM
 npx wrangler secret put GITHUB_WEBHOOK_SECRET --env prod -c worker/wrangler.jsonc
-npx wrangler secret put CACHE_SIGNING_KEY --env prod -c worker/wrangler.jsonc        # cache-token HMAC key
 ```
 
 Local development uses `worker/.dev.vars` (copy `.dev.vars.example`).
 
-## 3. GitHub App
+## 3. GitHub login and optional migration bridge
 
-Create an app at https://github.com/settings/apps with:
+For sign-in alone, register a GitHub OAuth app with the deployed homepage URL and
+callback `https://<your-worker>.workers.dev/auth/github/callback`, then configure
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. Login requests only `read:user
+user:email`; it does not request repository access. No GitHub repository needs to
+exist. The Yuma pilot still needs these login credentials installed.
+
+If GitHub import/export is also needed, create an App at
+https://github.com/settings/apps with:
 
 - Callback URL: `https://<your-worker>.workers.dev/auth/github/callback`
 - Setup URL / install callback: `https://<your-worker>.workers.dev/auth/github/install-callback`

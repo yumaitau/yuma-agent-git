@@ -380,6 +380,30 @@ async function execute(runner: CiRunnerDO, id: string) {
 }
 
 describe('runner lifecycle with a simulated container', () => {
+  it('makes the active command visible before the run completes', async () => {
+    await configure({ commands: ['npm run build'] });
+    const bindings = runnable();
+    const job = await enqueueRun(bindings, repo.id, head, owner.userId);
+    const { runner, container } = mockRunner(bindings);
+    const exec = container.exec.bind(container);
+    let checked = false;
+    container.exec = async (argv, options) => {
+      if (argv.at(-1) === 'npm run build') {
+        const active = await q1<CiRun>(testEnv, 'SELECT * FROM ci_runs WHERE id=?', [
+          job.id,
+        ]);
+        expect(active?.state).toBe('running');
+        expect(active?.log_key).toBeTruthy();
+        const log = await (await testEnv.OBJECTS.get(active!.log_key!))!.text();
+        expect(log).toContain('Transferring source to runner');
+        expect(log).toContain('$ npm run build');
+        checked = true;
+      }
+      return exec(argv, options);
+    };
+    await execute(runner, job.id);
+    expect(checked).toBe(true);
+  });
   it('does not pass a run whose final command finishes after its deadline', async () => {
     await configure({ commands: ['npm run build'] });
     const bindings = runnable();
