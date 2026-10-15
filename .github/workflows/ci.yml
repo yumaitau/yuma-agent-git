@@ -39,6 +39,11 @@ jobs:
       - name: Dashboard tests
         run: npm run test:ui -w worker
 
+      - name: CLI tests (with real-git fast-import smoke)
+        run: npm test -w yag
+        env:
+          YAG_GIT_SMOKE: '1'
+
       - name: API reference matches router
         run: |
           npm run docs:api -w worker
