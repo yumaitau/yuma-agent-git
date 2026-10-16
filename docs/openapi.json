@@ -4509,6 +4509,52 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/codeowners": {
+      "get": {
+        "operationId": "getCodeowners",
+        "summary": "CODEOWNERS at a revision: rules, resolved owners, errors and the owners of a path",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "rev",
+            "in": "query",
+            "required": false,
+            "schema": { "description": "Default: the default branch", "type": "string" }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Also return the owners of this path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/connect": {
       "post": {
         "operationId": "connectGithub",
@@ -6835,6 +6881,38 @@
       "get": {
         "operationId": "getPull",
         "summary": "Pull request, reviews and merge gate",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/codeowners": {
+      "get": {
+        "operationId": "getPullCodeowners",
+        "summary": "Code owners of each changed file and whether one approved",
         "security": [{ "session": [] }, { "bearer": [] }],
         "x-yag-permission": "read (whole repo)",
         "x-yag-rate-bucket": "api_read",

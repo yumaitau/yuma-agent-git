@@ -42,6 +42,13 @@ All notable changes to this project are documented here. The format follows
   time. MCP tools `code_search` and `file_find`, and a dashboard Search page.
   The agent `grep` tool now searches through the index, so it no longer comes
   back empty on large repos.
+- CODEOWNERS (#40): a `CODEOWNERS` file in `.yuma/`, `.github/`, the root or
+  `docs/` (GitHub syntax, plus `@agent:<name>` agent reviewers) requests owners
+  on pull requests when they open, get a new head or are marked ready. The
+  `require_code_owner_review` branch rule blocks merges until an owner of each
+  changed file approves, reading owners from the target branch.
+  `GET …/codeowners` and `GET …/pulls/:id/codeowners` show owners and file
+  errors; the pull request page lists them.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

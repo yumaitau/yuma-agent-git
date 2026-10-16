@@ -103,6 +103,8 @@ export interface Review {
   id: number;
   pull_id: number;
   author_id: string;
+  /** The agent identity that submitted it, when one did (#40). */
+  agent_id?: string | null;
   head_cs: string;
   decision: string;
   body: string;
@@ -182,4 +184,37 @@ export interface ReviewRequest {
   state: 'pending' | 'reviewed';
   created_at: number;
   updated_at: number;
+}
+/** A CODEOWNERS problem (issue #40): the line is skipped, or the owner ignored. */
+export interface CodeownersError {
+  line: number;
+  column: number;
+  kind: 'invalid_pattern' | 'invalid_owner' | 'unknown_owner' | 'too_large';
+  /** The line as written. */
+  source: string;
+  message: string;
+}
+/** A CODEOWNERS rule with the owners that resolved (`user:`, `team:`, `agent:`). */
+export interface CodeownersRule {
+  line: number;
+  pattern: string;
+  owners: string[];
+}
+/** `GET …/codeowners`: the CODEOWNERS file at a revision, and a path's owners. */
+export interface Codeowners {
+  /** Where the CODEOWNERS file was found, or null when there is none. */
+  file: string | null;
+  /** The revision the file was read at. */
+  revision: string | null;
+  rules: CodeownersRule[];
+  errors: CodeownersError[];
+}
+/** `GET …/pulls/:id/codeowners`: owners of each changed file, from the target's CODEOWNERS. */
+export interface PullCodeowners {
+  file: string | null;
+  revision: string | null;
+  errors: CodeownersError[];
+  files: { path: string; owners: string[]; approved: boolean }[];
+  /** The diff was too large to list every changed file. */
+  truncated: boolean;
 }

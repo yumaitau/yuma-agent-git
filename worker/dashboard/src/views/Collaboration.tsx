@@ -13,6 +13,7 @@ import {
   type PipelineRun,
   type Pull,
   type PullConflicts,
+  type PullCodeowners,
   type PullDetail,
   type ReviewRequest,
   type ReviewThread,
@@ -260,6 +261,9 @@ export function PullView(): ReactElement {
     review_requests: ReviewRequest[];
     names: Record<string, string>;
   }>(`/repos/${slug}/pulls/${id}/reviewers`);
+  const owners = useRemote<PullCodeowners & { names: Record<string, string> }>(
+    `/repos/${slug}/pulls/${id}/codeowners`,
+  );
   const [draft, setDraft] = useState<Draft | null>(null);
   const [requested, setRequested] = useState('');
   const [diff, setDiff] = useState<DiffResult | null>(null);
@@ -513,6 +517,7 @@ export function PullView(): ReactElement {
               </form>
             )}
           </section>
+          {owners.data && <CodeownersView owned={owners.data} />}
           {tip && <PipelineRuns slug={slug} head={tip} />}
           <h2>Changes</h2>
           {diff ? (
@@ -621,6 +626,56 @@ export function PullView(): ReactElement {
         </>
       )}
     </>
+  );
+}
+
+/** Owners of each changed file from the target's CODEOWNERS, and its errors (#40). */
+function CodeownersView({
+  owned,
+}: {
+  owned: PullCodeowners & { names: Record<string, string> };
+}): ReactElement | null {
+  if (!owned.file) return null;
+  const files = owned.files.filter((f) => f.owners.length > 0);
+  return (
+    <section aria-label="Code owners">
+      <h2>
+        Code owners <span className="small muted">from {owned.file}</span>
+      </h2>
+      {owned.errors.length > 0 && (
+        <div className="notice warn" role="alert">
+          <p>
+            {owned.errors.length} problem{owned.errors.length === 1 ? '' : 's'} in{' '}
+            {owned.file}; these lines or owners are ignored:
+          </p>
+          <ul>
+            {owned.errors.map((e) => (
+              <li key={`${e.line}:${e.column}`}>
+                {e.line > 0 ? `Line ${e.line}: ` : ''}
+                {e.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {files.length === 0 ? (
+        <p className="muted">No changed file has an owner.</p>
+      ) : (
+        <ul>
+          {files.map((f) => (
+            <li key={f.path}>
+              <code>{f.path}</code> {f.owners.map((o) => owned.names[o] ?? o).join(', ')}{' '}
+              <span className="small muted">
+                {f.approved ? 'approved' : 'waiting for an owner'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {owned.truncated && (
+        <p className="small muted">Too many changed files to list every owner.</p>
+      )}
+    </section>
   );
 }
 

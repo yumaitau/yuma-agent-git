@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv, Principal } from '../auth/principal';
-import { can, type RepoWithCreator } from '../auth/rbac';
+import type { RepoWithCreator } from '../auth/rbac';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { errorResponse, readJsonBody } from './errors';
 import { q, q1 } from '../db/client';
@@ -18,6 +18,14 @@ import {
   reviewCommentInput,
 } from '../reviews/threads';
 import { autoCheck } from './collaboration';
+import {
+  agentCanReview,
+  loadCodeowners,
+  ownersOf,
+  pullCodeowners,
+  requestCodeOwners,
+} from '../reviews/codeowners';
+import { resolveRevision } from '../core/read';
 import { principalNames, resolveAssignees } from './issues';
 import type { ReviewRequest, ReviewThread } from '../../shared/collaboration';
 
@@ -269,6 +277,7 @@ reviewsRoutes.post(`${base}/suggestions/apply`, async (c) => {
         changeset: data.changeset.id,
       },
     });
+    await requestCodeOwners(c, loaded.repo, data.pull);
     return c.json({ ...data, ci: await autoCheck(c, loaded.repo, data.pull) });
   } catch (err) {
     return errorResponse(c, err);
@@ -320,14 +329,7 @@ async function resolveReviewers(
             [id],
           );
     if (agent) {
-      const repos = agent.allowed_repos
-        ? (JSON.parse(agent.allowed_repos) as string[])
-        : null;
-      const owner =
-        agent.owner_kind === 'org'
-          ? repo.owner_kind === 'org' && repo.owner_id === agent.owner_id
-          : await can(c.env, repo, { kind: 'user', userId: agent.owner_id }, 'read');
-      if (!owner || (repos && !repos.includes(repo.id)))
+      if (!(await agentCanReview(c.env, repo, agent)))
         throw new ApiError(400, 'invalid_reviewer', `${input} cannot review here`);
       out.add(`agent:${id}`);
       continue;
@@ -399,6 +401,53 @@ reviewsRoutes.put(`${base}/reviewers`, async (c) => {
       );
     }
     return c.json(await reviewRequests(c, loaded.pull));
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+/** Owners of each file the pull request changes and whether one approved (#40). */
+reviewsRoutes.get(`${base}/codeowners`, async (c) => {
+  try {
+    const repo = await loadWholeRepo(c, 'read', c.req.param('repo'));
+    if (!repo.ok) return repo.response;
+    const pull = await getPull(c.env, repo.repo.id, Number(c.req.param('id')));
+    const owned = await pullCodeowners(c.env, repo.repo, pull);
+    return c.json({
+      ...owned,
+      names: await principalNames(
+        c,
+        owned.files.flatMap((f) => f.owners),
+      ),
+    });
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+/**
+ * The CODEOWNERS file at a revision (#40; default: the default branch), its
+ * rules with resolved owners and its errors, and with `path` that path's
+ * owners. Whole-repository read, since the file names paths across the tree.
+ * Registered after the pull route: `:repo{.+}` would also match `…/pulls/:id`.
+ */
+reviewsRoutes.get('/repos/:repo{.+}/codeowners', async (c) => {
+  try {
+    const repo = await loadWholeRepo(c, 'read', c.req.param('repo'));
+    if (!repo.ok) return repo.response;
+    const rev = c.req.query('rev') ?? `ref:${repo.repo.default_branch}`;
+    const cs = await resolveRevision(c.env, repo.repo.id, rev);
+    const codeowners = await loadCodeowners(c.env, repo.repo, cs.id);
+    const path = c.req.query('path');
+    c.header('cache-control', 'private, no-store');
+    return c.json({
+      ...codeowners,
+      ...(path === undefined ? {} : { owners: ownersOf(codeowners, path) }),
+      names: await principalNames(
+        c,
+        codeowners.rules.flatMap((r) => r.owners),
+      ),
+    });
   } catch (err) {
     return errorResponse(c, err);
   }
