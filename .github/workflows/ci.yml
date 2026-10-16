@@ -56,6 +56,18 @@ jobs:
       - name: SDK tests
         run: npm test -w @yuma/agent-git-sdk
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ssh-gateway/go.mod
+          cache-dependency-path: ssh-gateway/go.sum
+
+      - name: SSH gateway tests (real git and ssh through the gateway)
+        working-directory: ssh-gateway
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+
       - name: API reference, OpenAPI document and SDK match the router
         run: |
           npm run docs:openapi
