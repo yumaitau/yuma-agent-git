@@ -10,6 +10,7 @@ import type { CiPolicy, CiRun } from './config';
 import { parseContext, type RunContext } from './context';
 import { jobTrust } from './environments';
 import { jobEnv } from './spec';
+import { githubEnv } from './gha/env';
 import { createRequestToken, issuerFor, MAX_LIFETIME_SECONDS, mintIdToken } from './oidc';
 
 export const AWS_TOKEN_FILE = '/run/yag/aws-web-identity-token';
@@ -102,16 +103,19 @@ export async function prepareJob(
       throw new ApiError(403, guard.code, guard.message, guard.details);
   }
   const trust = await jobTrust(env, job, policy, context);
+  // GITHUB_* for translated workflows (#49), trusted or not: they hold no secrets
+  const github = repo ? await githubEnv(env, job, repo, context) : {};
   if (!trust.ok || !context || !repo)
     return {
       ...none,
+      env: { ...none.env, ...github },
       summary: wants
         ? `Secrets, variables and OIDC withheld: ${trust.reason || 'repository unavailable'}.`
         : '',
     };
   const resolved = await resolveForJob(env, repo, policy.environment, policy.secrets);
   const access: JobAccess = {
-    env: { ...none.env, ...resolved.variables, ...resolved.secrets },
+    env: { ...none.env, ...github, ...resolved.variables, ...resolved.secrets },
     mask: Object.values(resolved.secrets),
     files: [],
     summary: '',

@@ -60,6 +60,14 @@ All notable changes to this project are documented here. The format follows
   swept after 7 days and each repo is kept under its quota (10 GiB shared) by
   evicting the least recently used.
 
+- GitHub Actions compatibility (#49): `GET /api/v1/repos/:repo/ci/actions`
+  reports each `.github/workflows` file as supported, translated (with what
+  changes) or unsupported (with reasons by line), and shows the translated
+  pipeline. `PUT` on the same path lets a repository admin run translated
+  workflows as pipelines when the repository has no `.yuma/pipelines` files;
+  their jobs get `GITHUB_*` variables. `yag actions check` (alias
+  `yag ci analyse`) prints the report for a local checkout or a repository, and
+  MCP gains `ci_actions_report`. See `docs/actions-compat.md` for the gaps.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

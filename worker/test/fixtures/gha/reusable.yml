@@ -1,0 +1,8 @@
+name: Call shared
+on:
+  pull_request_target:
+  workflow_call:
+jobs:
+  shared:
+    uses: yuma/shared/.github/workflows/ci.yml@main
+    secrets: inherit

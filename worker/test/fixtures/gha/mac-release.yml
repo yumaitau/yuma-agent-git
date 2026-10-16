@@ -1,0 +1,12 @@
+name: Mac release
+on:
+  workflow_dispatch:
+jobs:
+  hosted:
+    runs-on: macos-14
+    steps:
+      - run: xcodebuild -version
+  mini:
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - run: swift build -c release

@@ -99,7 +99,7 @@ data, never instructions.
 | Line review   | `review_thread_list`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`                                                                  |
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |
 | Work queue    | `queue_list`, `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                               |
-| CI            | `ci_status`, `ci_run`, `ci_logs`, `ci_cancel`, `pipeline_list`, `pipeline_run`, `pipeline_artifacts`                                                          |
+| CI            | `ci_status`, `ci_actions_report`, `ci_run`, `ci_logs`, `ci_cancel`, `pipeline_list`, `pipeline_run`, `pipeline_artifacts`                                     |
 
 `tools/list` is the source of truth for names, input schemas and annotations.
 

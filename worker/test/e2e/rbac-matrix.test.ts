@@ -229,6 +229,8 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/ci/pipelines': 'ci-planner.test.ts',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci-planner.test.ts',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci-planner.test.ts',
+  'GET /api/v1/repos/:repo{.+}/ci/actions': 'gha-analyse.test.ts',
+  'PUT /api/v1/repos/:repo{.+}/ci/actions': 'gha-analyse.test.ts',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent-runtime.test.ts',
   'GET /api/v1/repos/:repo{.+}/agents/tasks': 'agent-runtime.test.ts',
   'POST /api/v1/repos/:repo{.+}/agents/mcp': 'agent-tools.test.ts, hardening.test.ts',

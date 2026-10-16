@@ -61,6 +61,7 @@ export type AuditAction =
   | 'release.attest'
   | 'org.release_settings.set'
   | 'ci.settings.update'
+  | 'ci.actions.update'
   | 'ci.run.create'
   | 'ci.run.cancel'
   | 'ci.oidc.token'

@@ -119,6 +119,7 @@ const WIPE_ORDER = [
   'ci_schedules',
   'ci_schedule_scans',
   'ci_settings',
+  'ci_actions_settings',
   'superfan_findings',
   'component_metrics',
   'export_jobs',

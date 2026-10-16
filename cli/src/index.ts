@@ -113,6 +113,48 @@ ci.command('status').action(async () => {
     console.log(`${job.id} ${job.head_cs.slice(0, 8)} ${job.state}`);
 });
 
+/** `yag actions check` and its `yag ci analyse` alias (#49). */
+async function actionsCheck(opts: {
+  repo?: string;
+  head?: string;
+  dir?: string;
+  api?: string;
+}): Promise<void> {
+  const { checkWorkflows, formatReport } = await import('./actions.js');
+  const config = opts.api ? null : await loadConfig(process.cwd());
+  const report = await checkWorkflows({
+    api: opts.api ?? config?.api ?? '',
+    token: process.env.YAG_TOKEN ?? config?.token,
+    repo: opts.repo,
+    head: opts.head,
+    dir: opts.dir,
+  });
+  for (const line of formatReport(report)) console.log(line);
+  if (report.summary.unsupported > 0) process.exitCode = 1;
+}
+const checkOptions = (command: Command): Command =>
+  command
+    .option('--repo <slug>', "report a repository's own workflows (owner/name)")
+    .option('--head <rev>', 'revision for --repo (default: its default branch)')
+    .option('--dir <path>', 'local checkout to read .github/workflows from', '.')
+    .option('--api <url>', 'server URL (default: from .yag/config.json)')
+    .action(actionsCheck);
+checkOptions(
+  ci
+    .command('analyse')
+    .description('Same as yag actions check: GitHub Actions compatibility report'),
+);
+const actions = program
+  .command('actions')
+  .description('GitHub Actions compatibility (#49)');
+checkOptions(
+  actions
+    .command('check')
+    .description(
+      'Report how each GitHub Actions workflow runs here: supported, translated or unsupported (exits 1 when any is unsupported)',
+    ),
+);
+
 const work = program
   .command('work')
   .description('Work queue: list, claim, heartbeat and release issues');

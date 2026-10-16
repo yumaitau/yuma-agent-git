@@ -1,0 +1,8 @@
+name: Lint
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: [self-hosted, linux]
+    steps:
+      - run: npm ci
+      - run: npm run lint

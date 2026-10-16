@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env';
+import { actionsRoutes } from './actions';
 import { collaborationRoutes } from './collaboration';
 import { ciStorageRoutes } from './ci-storage';
 import { ciLimitsRoutes } from './ci-limits';
@@ -73,6 +74,7 @@ apiRouter.route('/', objectsRoutes);
 apiRouter.route('/', orgsRoutes);
 apiRouter.route('/', packagesRoutes);
 apiRouter.route('/', pipelineRoutes);
+apiRouter.route('/', actionsRoutes);
 apiRouter.route('/', orgSsoRoutes);
 apiRouter.route('/', readRoutes);
 apiRouter.route('/', openapiRoutes);

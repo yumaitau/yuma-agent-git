@@ -14,6 +14,7 @@ import {
   MAX_TIMEOUT_S,
   type InstanceType,
 } from './config';
+import { actionsEnabled, analyseTree } from './gha/analyse';
 
 /**
  * Pipeline spec v2 (issue #47): `.yuma/pipelines/*.yml` in the repository.
@@ -30,8 +31,8 @@ import {
  * YAG_SHARD_TOTAL, 1-based, for `vitest --shard`).
  */
 const PIPELINE_DIR = ['.yuma', 'pipelines'];
-const MAX_FILES = 20;
-const MAX_FILE_BYTES = 64 * 1024;
+export const MAX_FILES = 20;
+export const MAX_FILE_BYTES = 64 * 1024;
 const MAX_JOBS = 16;
 const MAX_MATRIX = 8;
 
@@ -514,6 +515,9 @@ export async function loadPipelines(
     }
     out.push(parseSpec(path, text));
   }
+  // GitHub Actions compatibility (#49): opted-in repos without pipelines run their workflows
+  if (out.length === 0 && (await actionsEnabled(env, repoId)))
+    return (await analyseTree(env, repoId, cs.root_tree)).files;
   return out;
 }
 
