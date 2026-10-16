@@ -166,6 +166,26 @@ describe('think-act-observe loop', () => {
     const row = await q1(dbEnv, `SELECT * FROM ${T.agentTasks} WHERE id = ?`, [taskId]);
     expect(row).toMatchObject({ status: 'landed' });
     expect(state).toBeTruthy();
+
+    // #58: the task is recorded as a session linked to the changeset it wrote
+    const session = await q1<{ id: string; harness: string; tools: string }>(
+      dbEnv,
+      'SELECT id, harness, tools, transcript_sha256 FROM agent_sessions WHERE task_id = ?',
+      [taskId],
+    );
+    expect(session).toMatchObject({
+      harness: 'yag-builtin',
+      transcript_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(JSON.parse(session!.tools)).toEqual(
+      expect.arrayContaining(['read_file', 'commit', 'land', 'finish']),
+    );
+    const linked = await q1<{ cs_id: string }>(
+      dbEnv,
+      'SELECT cs_id FROM changeset_sessions WHERE session_id = ?',
+      [session!.id],
+    );
+    expect(linked?.cs_id).toBe(snapshot.head_cs);
   });
 
   it('parses text-fenced JSON tool calls and nudges after 3 no-tool turns', async () => {

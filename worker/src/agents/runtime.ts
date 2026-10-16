@@ -130,6 +130,7 @@ export class YagAgent extends Agent<Env, AgentState> {
       kind: string;
       status: string;
       created_by: string;
+      created_at: number;
       github_issue?: string | null;
     } | null;
     if (!task) {
@@ -243,6 +244,7 @@ export class YagAgent extends Agent<Env, AgentState> {
         const moved = await this.transition(
           outcome.status === 'done' ? 'landed' : 'failed',
         );
+        if (moved) await this.recordSession(task.created_by, task.created_at);
         if (moved) {
           await onTaskFinished(
             this.env,
@@ -339,6 +341,30 @@ export class YagAgent extends Agent<Env, AgentState> {
   }
 
   // -----------------------------------------------------------------------
+
+  /** Signed provenance (#58): this task as an agent session. Never fails the task. */
+  private async recordSession(createdBy: string, startedAt: number): Promise<void> {
+    const { recordTaskSession } = await import('../provenance/sessions');
+    const { DEFAULT_MODEL } = await import('./llm');
+    const tools = this.state.transcript.flatMap((e) =>
+      e.kind === 'tool_call' && e.name ? [e.name] : [],
+    );
+    try {
+      await recordTaskSession(this.env, {
+        id: this.state.task_id,
+        repo_id: this.state.repo_id,
+        created_by: createdBy,
+        base_cs: this.state.base_cs,
+        head_cs: this.state.head_cs,
+        model: this.env.AGENT_MODEL ?? DEFAULT_MODEL,
+        tools,
+        transcript_key: `repos/${this.state.repo_id}/agents/${this.state.task_id}/transcript.jsonl`,
+        started_at: startedAt,
+      });
+    } catch (err) {
+      console.error('agent session not recorded', this.state.task_id, err);
+    }
+  }
 
   /** Echo placeholder step: resolve the base revision and list its root. */
   private async echoRead(): Promise<{ path: string; entries: string[] }> {

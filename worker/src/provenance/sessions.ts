@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { q, q1, run } from '../db/client';
 import { ApiError } from '../core/errors';
+import { dagMergeBases } from '../core/ancestry';
 import { getChangeset } from '../core/changesets';
 import { sha256Hex } from '../core/hashing';
 import { ulid } from '../core/ids';
@@ -227,4 +228,57 @@ export async function sessionsFor(
       WHERE l.repo_id = ? AND l.cs_id = ? ORDER BY s.id LIMIT 50`,
     [repoId, csId],
   );
+}
+
+/**
+ * The built-in agent runtime's own session (#58), recorded when a task ends:
+ * its transcript (already redacted as it streamed to R2) and the changesets
+ * it wrote between its base and head. A pull request of that work later
+ * lands with the session in its signed provenance.
+ */
+export async function recordTaskSession(
+  env: Env,
+  task: {
+    id: string;
+    repo_id: string;
+    created_by: string;
+    base_cs: string;
+    head_cs: string;
+    model: string;
+    tools: string[];
+    transcript_key: string;
+    started_at: number;
+  },
+): Promise<void> {
+  let changesets: string[] = [];
+  if (task.head_cs && task.head_cs !== task.base_cs) {
+    try {
+      changesets = task.base_cs
+        ? (
+            await dagMergeBases(env, task.repo_id, task.base_cs, task.head_cs, 2_000)
+          ).onlyB
+            .map((cs) => cs.id)
+            .slice(0, MAX_LINKS)
+        : [task.head_cs];
+    } catch {
+      changesets = [task.head_cs]; // too far apart to walk: link the head
+    }
+  }
+  const object = await env.OBJECTS.get(task.transcript_key);
+  const transcript =
+    object && object.size <= MAX_TRANSCRIPT_BYTES ? await object.text() : undefined;
+  await createSession(env, {
+    task_id: task.id,
+    model: task.model,
+    harness: 'yag-builtin',
+    tools: task.tools,
+    started_at: task.started_at,
+    ended_at: Date.now(),
+    transcript,
+    changesets,
+    repo_id: task.repo_id,
+    agent_id: null,
+    on_behalf_of: task.created_by,
+    created_by: 'system:agent-runtime',
+  });
 }
