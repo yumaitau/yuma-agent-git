@@ -7,6 +7,7 @@ import { pathDecider } from '../auth/rbac';
 import { recordAudit } from '../audit/record';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
+import { MAX_CHANGED_FILES } from '../core/changesets';
 import { commitChanges, type Change } from '../core/commit';
 import { isAncestorDag } from '../core/ancestry';
 import { ApiError } from '../core/errors';
@@ -15,6 +16,7 @@ import {
   TAG_PREFIX,
   agentRefOwner,
   moveRefViaDO,
+  validateBranchName,
   validateRefName,
   type RefsMode,
 } from '../core/refs';
@@ -60,7 +62,10 @@ import { AGENT, commitShas } from './upload-pack';
  *     failed move puts the refs already moved back
  *
  * Packs are held in memory, so they are capped (`PUSH_LIMITS`). Larger pushes
- * are refused with a clear message instead of spilling to R2.
+ * are refused with a clear message instead of spilling to R2. A changeset row
+ * holds its whole change list, so a commit may change at most
+ * `MAX_CHANGED_FILES` paths against its first parent; a commit over that is
+ * refused before anything in its update is stored.
  */
 
 export const PUSH_LIMITS = {
@@ -121,7 +126,7 @@ export async function advertiseReceivePack(
 /** Git ref → forge ref name; branches drop `refs/heads/`. */
 function forgeRefName(ref: string, mode: RefsMode): string {
   if (ref.startsWith('refs/heads/'))
-    return validateRefName(ref.slice('refs/heads/'.length), mode);
+    return validateBranchName(ref.slice('refs/heads/'.length), mode);
   if (ref.startsWith(TAG_PREFIX) || ref.startsWith(AGENT_PREFIX)) {
     return validateRefName(ref, mode);
   }
@@ -244,7 +249,10 @@ async function diffTrees(
   }
 }
 
-/** New commits reachable from `sha`, parents before children. */
+/**
+ * New commits reachable from `sha`, parents before children. A pushed commit
+ * that already maps to a changeset is not new, even when the pack carries it.
+ */
 async function newCommits(push: Push, sha: string): Promise<string[]> {
   const order: string[] = [];
   const seen = new Set<string>();
@@ -252,9 +260,9 @@ async function newCommits(push: Push, sha: string): Promise<string[]> {
   const enter = async (s: string): Promise<void> => {
     if (seen.has(s)) return;
     seen.add(s);
+    if ((await existingCommit(push, s)) !== null) return;
     if (packCommit(push, s)) stack.push({ sha: s, next: 0 });
-    else if ((await existingCommit(push, s)) === null)
-      throw new PushError(`missing commit ${s}`);
+    else throw new PushError(`missing commit ${s}`);
   };
   await enter(sha);
   while (stack.length > 0) {
@@ -432,6 +440,11 @@ export async function receivePack(
           '',
           entry,
         );
+        if (entry.changes.length > MAX_CHANGED_FILES) {
+          throw new PushError(
+            `commit ${sha} changes ${entry.changes.length} paths; at most ${MAX_CHANGED_FILES} per commit can be stored`,
+          );
+        }
         commits.set(sha, entry);
       }
       if (u.from !== null) u.fastForward = await descendsFrom(push, u.from, u.newSha);

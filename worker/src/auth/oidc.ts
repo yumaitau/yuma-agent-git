@@ -12,6 +12,8 @@ import {
   createUser,
   findIdentityUser,
   linkIdentity,
+  loginStateCookie,
+  loginStateMatches,
   requireRecentMfa,
   sessionCookie,
 } from './session';
@@ -20,7 +22,8 @@ import { recordAudit } from '../audit/record';
 
 /**
  * Generic OIDC sign-in (issue #27): authorisation code flow with PKCE (S256),
- * issuer discovery, and single-use state + nonce checks. Google Workspace and
+ * issuer discovery, and single-use state + nonce checks, the state bound to the
+ * starting browser by a cookie. Google Workspace and
  * Microsoft Entra ID are presets; any compliant issuer works.
  *
  * `OIDC_PROVIDERS` is a JSON array (a plain var, no secrets in it):
@@ -383,6 +386,7 @@ oidcRoutes.get('/auth/oidc/:provider', async (c) => {
       b64urlEncode(await sha256Bytes(new TextEncoder().encode(verifier))),
     );
     url.searchParams.set('code_challenge_method', 'S256');
+    c.header('set-cookie', loginStateCookie(c.req.url, state));
     return c.redirect(url.toString(), 302);
   } catch (err) {
     return errorResponse(c, err);
@@ -401,6 +405,9 @@ oidcRoutes.get('/auth/oidc/:provider/callback', async (c) => {
     const state = c.req.query('state');
     if (!code || !state) {
       return apiError(c, 400, 'invalid_request', 'code and state are required');
+    }
+    if (!loginStateMatches(c.req.header('cookie'), state)) {
+      return apiError(c, 400, 'invalid_state', 'sign-in was not started in this browser');
     }
 
     // single-use state: consumed atomically BEFORE any token exchange
@@ -482,6 +489,7 @@ oidcRoutes.get('/auth/oidc/:provider/callback', async (c) => {
         action: 'identity.link',
         target: { user_id: user.id, provider: identity },
       });
+      c.header('set-cookie', loginStateCookie(c.req.url, null));
       return c.redirect('/security', 302);
     }
 
@@ -517,10 +525,10 @@ oidcRoutes.get('/auth/oidc/:provider/callback', async (c) => {
       actor: { kind: 'user', id: user.id },
       target: { user_id: user.id, login: user.login, method: identity },
     });
-    return new Response(null, {
-      status: 302,
-      headers: { location: '/', 'set-cookie': sessionCookie(c.req.url, session.token) },
-    });
+    const headers = new Headers({ location: '/' });
+    headers.append('set-cookie', sessionCookie(c.req.url, session.token));
+    headers.append('set-cookie', loginStateCookie(c.req.url, null));
+    return new Response(null, { status: 302, headers });
   } catch (err) {
     return errorResponse(c, err);
   }

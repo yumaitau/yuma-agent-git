@@ -7,6 +7,7 @@ import { C, T } from '../src/db/schema';
 import { q, q1, run } from '../src/db/client';
 import {
   createSession,
+  createUser,
   readSession,
   revokeSessionToken,
   upsertUser,
@@ -57,12 +58,19 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+/** The login-state cookie a sign-in start sets, as a request `cookie` header. */
+function stateCookie(start: Response): { cookie: string } {
+  return { cookie: (start.headers.get('set-cookie') as string).split(';')[0] as string };
+}
+
 async function completeLogin(): Promise<string> {
   const start = await app('/auth/github');
   const location = start.headers.get('location') as string;
   const state = new URL(location).searchParams.get('state') as string;
   mockGithub();
-  const callback = await app(`/auth/github/callback?code=abc&state=${state}`);
+  const callback = await app(`/auth/github/callback?code=abc&state=${state}`, {
+    headers: stateCookie(start),
+  });
   const cookie = (callback.headers.get('set-cookie') as string).split(';')[0] as string;
   return cookie;
 }
@@ -119,8 +127,11 @@ describe('oauth login', () => {
       'state',
     ) as string;
     mockGithub();
-    const callback = await app(`/auth/github/callback?code=abc&state=${state}`);
+    const callback = await app(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: stateCookie(start),
+    });
     const setCookie = callback.headers.get('set-cookie') as string;
+    expect(setCookie).toContain('yag_login_state=; HttpOnly; Secure; SameSite=Lax');
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('Secure');
     expect(setCookie).toContain('SameSite=Lax');
@@ -154,9 +165,13 @@ describe('oauth login', () => {
       'state',
     ) as string;
     mockGithub();
-    const first = await app(`/auth/github/callback?code=abc&state=${state}`);
+    const first = await app(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: stateCookie(start),
+    });
     expect(first.status).toBe(302);
-    const replay = await app(`/auth/github/callback?code=abc&state=${state}`);
+    const replay = await app(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: stateCookie(start),
+    });
     expect(replay.status).toBe(400);
 
     // expired states are rejected and purged opportunistically
@@ -165,7 +180,9 @@ describe('oauth login', () => {
       `INSERT INTO ${T.oauthStates} (${C.oauthStates.stateHash}, ${C.oauthStates.createdAt}, ${C.oauthStates.expiresAt}) VALUES (?, ?, ?)`,
       [await sha256(new TextEncoder().encode('old-state')), 1, 2],
     );
-    const expired = await app('/auth/github/callback?code=abc&state=old-state');
+    const expired = await app('/auth/github/callback?code=abc&state=old-state', {
+      headers: { cookie: 'yag_login_state=old-state' },
+    });
     expect(expired.status).toBe(400);
     expect(((await expired.json()) as { error: { code: string } }).error.code).toBe(
       'invalid_state',
@@ -179,6 +196,30 @@ describe('oauth login', () => {
       [await sha256(new TextEncoder().encode('old-state'))],
     );
     expect(remaining).toHaveLength(0);
+  });
+
+  it('refuses a callback in a browser that did not start the sign-in (login CSRF)', async () => {
+    const start = await app('/auth/github');
+    expect(start.headers.get('set-cookie')).toMatch(
+      /^yag_login_state=[0-9a-f]{64}; HttpOnly; Secure; SameSite=Lax; Path=\/auth; Max-Age=600$/,
+    );
+    const state = new URL(start.headers.get('location') as string).searchParams.get(
+      'state',
+    ) as string;
+    mockGithub();
+    for (const cookie of ['', 'yag_login_state=other']) {
+      const lured = await app(`/auth/github/callback?code=abc&state=${state}`, {
+        headers: { cookie },
+      });
+      expect(lured.status).toBe(400);
+      expect(lured.headers.get('set-cookie')).toBeNull();
+    }
+    expect(await q(dbEnv, `SELECT * FROM ${T.users}`)).toHaveLength(0);
+    // the browser that started it still completes
+    const own = await app(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: stateCookie(start),
+    });
+    expect(own.status).toBe(302);
   });
 });
 
@@ -212,6 +253,28 @@ describe('sessions', () => {
     expect(await readSession(dbEnv, cookie)).toBeNull();
     expect(await readSession(dbEnv, 'yag_session=nope')).toBeNull();
     expect(await readSession(dbEnv, undefined)).toBeNull();
+  });
+
+  it('keeps logins unique: no rename or sign-up takes over a held login', async () => {
+    const early = await upsertUser(dbEnv, { id: 1, login: 'mallory' });
+    const ceo = await createUser(dbEnv, 'ceo@corp.example');
+    expect(ceo.login).toBe('ceo');
+    // a GitHub rename into a held login keeps the old login
+    expect((await upsertUser(dbEnv, { id: 1, login: 'CEO' })).login).toBe('mallory');
+    // a new GitHub user with a held login gets a suffix
+    expect((await upsertUser(dbEnv, { id: 2, login: 'ceo' })).login).toMatch(
+      /^ceo-[0-9a-f]{6}$/,
+    );
+    expect((await createUser(dbEnv, 'Mallory@corp.example')).login).toMatch(
+      /^mallory-[0-9a-f]{6}$/,
+    );
+    await expect(
+      run(
+        dbEnv,
+        `UPDATE ${T.users} SET ${C.users.login} = 'Ceo' WHERE ${C.users.id} = ?`,
+        [early.id],
+      ),
+    ).rejects.toThrow(/UNIQUE/);
   });
 });
 

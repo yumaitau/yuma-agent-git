@@ -90,11 +90,15 @@ tokens.
 
 1. `GET /auth/status` returns `{github_configured: boolean}`.
 2. `GET /auth/github` responds 302 to GitHub with a single-use `state` (10-minute TTL)
-   and scope `read:user user:email`. It returns `500 not_configured` when the OAuth
-   secrets are missing.
-3. `GET /auth/github/callback?code&state` checks and consumes the state (`400
-invalid_state` if unknown, reused or expired), exchanges the code, upserts the user
-   by GitHub id, sets `yag_session`, and responds 302 to `/`. A failed exchange is `502
+   and scope `read:user user:email`, and sets the state in an HttpOnly
+   `yag_login_state` cookie that binds the sign-in to this browser. It returns `500
+not_configured` when the OAuth secrets are missing.
+3. `GET /auth/github/callback?code&state` requires the `yag_login_state` cookie to
+   match `state`, then checks and consumes the state (`400 invalid_state` if the
+   cookie is missing or different, or the state is unknown, reused or expired),
+   exchanges the code, upserts the user by GitHub id, sets `yag_session`, clears
+   `yag_login_state`, and responds 302 to `/`. OIDC sign-in binds its state the same
+   way. A failed exchange is `502
 oauth_exchange_failed` or `502 github_api_failed`.
 4. `POST /auth/logout` revokes the session and clears the cookie, returning `{ok: true}`.
 

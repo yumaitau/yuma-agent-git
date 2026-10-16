@@ -84,7 +84,8 @@ type Loaded =
 
 /**
  * The repo and caller for a Git request: 401 anonymous, 404 unreadable, 403
- * without write for a push, and `path_restricted` for any read restriction.
+ * without write for a push, and `path_restricted` for any read or history
+ * restriction.
  */
 async function loadGitRepo(
   c: Context<AppEnv>,
@@ -110,8 +111,10 @@ async function loadGitRepo(
       };
     }
   }
+  // history too: a pack carries every path's full history
   const restricted = restrictingDecision(await pathDecider(c.env, repo, principal), [
     'read',
+    'history',
   ]);
   if (restricted) {
     return {

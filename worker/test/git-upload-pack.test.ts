@@ -161,6 +161,30 @@ describe('git upload-pack (protocol v2)', () => {
     expect(body.join('\n')).not.toContain('secrets');
   });
 
+  it('refuses clone and ls-refs when a rule denies history but grants read', async () => {
+    const reader = await loginAs(testEnv, 2, 'rita');
+    const readerToken = await createApiToken(dbEnv, reader.userId, { label: 'git' });
+    await run(
+      dbEnv,
+      'INSERT INTO repo_members (repo_id, user_id, role) VALUES (?, ?, ?)',
+      [repoId, reader.userId, 'read'],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO path_rules (repo_id, path_prefix, effect, principal, perms) VALUES (?, ?, 'deny', 'role:read', ?)`,
+      [repoId, 'secrets/', JSON.stringify(['history'])],
+    );
+    auth = `Bearer ${readerToken.raw}`;
+    const advert = await request('info/refs?service=git-upload-pack');
+    expect(lines(new Uint8Array(await advert.arrayBuffer()))[2]).toMatch(
+      /^ERR path_restricted: /,
+    );
+    const lsRefs = await request('git-upload-pack', { body: commandBody('ls-refs', []) });
+    const text = new TextDecoder().decode(await lsRefs.arrayBuffer());
+    expect(text).toContain('ERR path_restricted: ');
+    expect(text).not.toContain('secrets');
+  });
+
   it('ls-refs lists HEAD as a symref, branches and tags, and hides agent refs', async () => {
     const empty = lines(
       await command('ls-refs', ['symrefs', 'unborn', 'ref-prefix HEAD']),

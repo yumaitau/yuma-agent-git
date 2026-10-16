@@ -7,6 +7,7 @@ import {
   createChangeset,
   getChangeset,
   gitMeta,
+  MAX_CHANGED_FILES,
   pathSchema,
   type Changeset,
   type ChangesetFields,
@@ -58,13 +59,16 @@ export const commitRequestSchema = z.object({
   parents: z.array(z.string().min(1)).optional(),
   message: z.string().min(1).max(65536),
   author: authorSchema,
-  changes: z.array(changeSchema).max(5000),
+  changes: z.array(changeSchema).max(MAX_CHANGED_FILES),
   /** Server-side timestamp override (git imports preserve commit dates). */
   created_at: z.number().int().optional(),
   /** Optional Git commit metadata (issue #30); hashed only when present. */
   ...gitMetaShape,
 });
 export type CommitRequest = z.infer<typeof commitRequestSchema>;
+
+/** API callers need a message; pushed and imported Git commits may have none. */
+const storedCommitSchema = commitRequestSchema.extend({ message: z.string().max(65536) });
 
 export interface CommitResult {
   changeset: Changeset;
@@ -107,7 +111,7 @@ async function commitChangesInner(
   rawReq: CommitRequest,
 ): Promise<CommitResult> {
   // Normalize for every caller (NFC paths, schema bounds) — not just the route.
-  const req = commitRequestSchema.parse(rawReq);
+  const req = storedCommitSchema.parse(rawReq);
 
   // --- 1. parents ---------------------------------------------------------
   let firstParent: string | null = null;
@@ -135,7 +139,7 @@ async function commitChangesInner(
   const parents = firstParent === null ? [] : [firstParent, ...extraParents];
 
   // --- 2. resolve changes (hash only — no writes yet) ---------------------
-  assertNoNestedPaths(req.changes.map((c) => c.path));
+  assertNoNestedPaths(req.changes);
   const seen = new Set<string>();
   const blobStats: { hash: string; size: number }[] = [];
   const resolvedChanges: FileChange[] = [];
@@ -250,16 +254,24 @@ export async function onChangesetCreated(
 // Input + base-state validation
 // ---------------------------------------------------------------------------
 
-/** No change path may be a strict prefix of another (file/dir collision). */
-function assertNoNestedPaths(paths: string[]): void {
-  const sorted = [...paths].sort();
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1] as string;
-    const cur = sorted[i] as string;
-    if (cur.startsWith(`${prev}/`)) {
+/**
+ * No change path may sit under another (file/dir collision), except a file
+ * replaced by a directory (`del a` + `add a/…`) or the reverse (`del a/…` +
+ * `add a`), as Git commits do.
+ */
+function assertNoNestedPaths(changes: { path: string; op: string }[]): void {
+  const ops = new Map(changes.map((c) => [c.path, c.op]));
+  for (const { path, op } of changes) {
+    const segments = path.split('/');
+    for (let i = 1; i < segments.length; i++) {
+      const outer = segments.slice(0, i).join('/');
+      const outerOp = ops.get(outer);
+      if (outerOp === undefined) continue;
+      if ((outerOp === 'del' && op === 'add') || (outerOp === 'add' && op === 'del'))
+        continue;
       throw new RequestValidationError(
-        `conflicting change paths: ${JSON.stringify(prev)} and ${JSON.stringify(cur)}`,
-        { paths: [prev, cur] },
+        `conflicting change paths: ${JSON.stringify(outer)} and ${JSON.stringify(path)}`,
+        { paths: [outer, path] },
         'invalid_change',
       );
     }
@@ -279,6 +291,8 @@ interface PathLookup {
  * path nested under an existing *file* must not prune that file):
  *   add ⇔ path absent            mod ⇔ path present as file
  *   del ⇔ path present as file   (directories are not first-class in v1 ops)
+ * Deletes apply first: an `add` may replace a deleted file's directory slot,
+ * or a directory whose every file is deleted.
  */
 async function validateChanges(
   env: Env,
@@ -314,17 +328,32 @@ async function validateChanges(
     }
     return { entry: null, blobAncestor: null };
   };
+  const deleted = new Set(changes.filter((c) => c.op === 'del').map((c) => c.path));
+  const emptied = async (dirPath: string, hash: string): Promise<boolean> => {
+    const tree = await readTree(hash);
+    if (!tree) return false;
+    for (const e of tree.entries) {
+      const path = `${dirPath}/${e.name}`;
+      if (e.kind === 'tree' ? !(await emptied(path, e.hash)) : !deleted.has(path))
+        return false;
+    }
+    return true;
+  };
 
   for (const change of changes) {
     const { entry, blobAncestor } = await lookup(change.path);
-    if (blobAncestor !== null) {
+    if (blobAncestor !== null && !(change.op === 'add' && deleted.has(blobAncestor))) {
       throw new RequestValidationError(
         `cannot touch ${JSON.stringify(change.path)}: ${JSON.stringify(blobAncestor)} is a file, not a directory`,
         { path: change.path, conflicts_with: blobAncestor },
         'invalid_change',
       );
     }
-    if (change.op === 'add' && entry !== null) {
+    if (
+      change.op === 'add' &&
+      entry !== null &&
+      !(entry.kind === 'tree' && (await emptied(change.path, entry.hash)))
+    ) {
       throw new RequestValidationError(
         `cannot add ${JSON.stringify(change.path)}: it already exists`,
         { path: change.path },
@@ -459,10 +488,12 @@ async function rebuildTrees(
     entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
     if (entries.length === 0 && dirPath !== '') {
-      // Git-style: empty trees don't exist — drop this dir from its parent.
+      // Git-style: empty trees don't exist — drop this dir from its parent,
+      // unless a file replaces it there.
       const segments = dirPath.split('/');
       const name = segments.pop() as string;
-      putUpdate(segments.join('/'), name, { kind: 'tree', op: 'del' });
+      if (!updates.get(segments.join('/'))?.has(name))
+        putUpdate(segments.join('/'), name, { kind: 'tree', op: 'del' });
       continue;
     }
 

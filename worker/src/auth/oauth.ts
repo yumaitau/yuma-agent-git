@@ -8,6 +8,8 @@ import {
   createSession,
   githubEmailsSchema,
   githubUserSchema,
+  loginStateCookie,
+  loginStateMatches,
   randomHex,
   revokeSessionToken,
   sessionCookie,
@@ -23,10 +25,11 @@ import { recordAudit } from '../audit/record';
  * GitHub OAuth web flow (issue #12) — entirely on the Worker.
  *
  * `GET /auth/github` mints a single-use state (32 random bytes, stored as a
- * SHA-256 hash with a 10-minute TTL) and redirects to GitHub. The callback
- * verifies + deletes the state BEFORE doing anything else, exchanges the code,
- * upserts the user, and sets an HttpOnly session cookie. The raw session token
- * never touches D1 — only its hash.
+ * SHA-256 hash with a 10-minute TTL), binds it to this browser with a cookie
+ * and redirects to GitHub. The callback requires that cookie, verifies +
+ * deletes the state BEFORE doing anything else, exchanges the code, upserts
+ * the user, and sets an HttpOnly session cookie. The raw session token never
+ * touches D1 — only its hash.
  */
 
 export const authRoutes = new Hono<AppEnv>();
@@ -78,6 +81,7 @@ authRoutes.get('/auth/github', async (c) => {
     url.searchParams.set('state', state);
     url.searchParams.set('scope', 'read:user user:email');
     url.searchParams.set('allow_signup', 'true');
+    c.header('set-cookie', loginStateCookie(c.req.url, state));
     return c.redirect(url.toString(), 302);
   } catch (err) {
     return errorResponse(c, err);
@@ -94,6 +98,9 @@ authRoutes.get('/auth/github/callback', async (c) => {
     const state = c.req.query('state');
     if (!code || !state) {
       return apiError(c, 400, 'invalid_request', 'code and state are required');
+    }
+    if (!loginStateMatches(c.req.header('cookie'), state)) {
+      return apiError(c, 400, 'invalid_state', 'sign-in was not started in this browser');
     }
 
     // single-use state: verify + delete BEFORE any token exchange
@@ -161,10 +168,10 @@ authRoutes.get('/auth/github/callback', async (c) => {
       actor: { kind: 'user', id: user.id },
       target: { user_id: user.id, login: user.login, method: 'github' },
     });
-    return new Response(null, {
-      status: 302,
-      headers: { location: '/', 'set-cookie': sessionCookie(c.req.url, session.token) },
-    });
+    const response = new Headers({ location: '/' });
+    response.append('set-cookie', sessionCookie(c.req.url, session.token));
+    response.append('set-cookie', loginStateCookie(c.req.url, null));
+    return new Response(null, { status: 302, headers: response });
   } catch (err) {
     return errorResponse(c, err);
   }

@@ -248,7 +248,9 @@ describe('audit events', () => {
     const login = await expectOneEvent(
       'auth.login',
       () =>
-        call(`/auth/github/callback?code=abc&state=${state}`, { as: { headers: {} } }),
+        call(`/auth/github/callback?code=abc&state=${state}`, {
+          as: { headers: { cookie: `yag_login_state=${state}` } },
+        }),
       302,
     );
     expect(login).toMatchObject({ org_id: '_instance', actor_kind: 'user' });
@@ -306,6 +308,78 @@ describe('audit events', () => {
       actor_id: token.id,
       on_behalf_of: admin.userId,
     });
+  });
+
+  it('a ref move whose audit append loses to contention succeeds; its event is queued and lands once', async () => {
+    const repo = await createRepo(testEnv, {
+      slug: 'acme/race',
+      createdBy: admin.userId,
+    });
+    const first = await commitChanges(testEnv, repo.id, {
+      first_parent: null,
+      message: 'one',
+      author,
+      changes: [{ path: 'a', op: 'add', content_b64: btoa('a') }],
+    });
+    await setRef(testEnv, repo.id, 'main', first.changeset.id);
+    const second = await commitChanges(testEnv, repo.id, {
+      first_parent: first.changeset.id,
+      message: 'two',
+      author,
+      changes: [{ path: 'b', op: 'add', content_b64: btoa('b') }],
+    });
+    const sent: unknown[] = [];
+    const contended = withAudit({
+      DB: {
+        prepare: (sql: string) => testEnv.DB.prepare(sql),
+        batch: () =>
+          Promise.reject(
+            new Error('D1_ERROR: UNIQUE constraint failed: audit_events.org_id'),
+          ),
+      },
+      AUDIT_QUEUE: { send: async (body: unknown) => void sent.push(body) },
+    });
+    const res = await call(
+      '/api/v1/repos/acme/race/refs/main',
+      {
+        method: 'PUT',
+        body: JSON.stringify({ from: first.changeset.id, to: second.changeset.id }),
+      },
+      contended,
+    );
+    expect(res.status).toBe(200);
+    expect(await events()).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+
+    const acked: boolean[] = [];
+    await auditStreamQueue(
+      {
+        queue: 'audit-stream',
+        messages: [
+          {
+            id: 'm',
+            timestamp: new Date(),
+            body: sent[0],
+            attempts: 1,
+            ack: () => acked.push(true),
+            retry: () => acked.push(false),
+          },
+        ],
+        ackAll: () => undefined,
+        retryAll: () => undefined,
+      } as unknown as MessageBatch,
+      testEnv,
+    );
+    expect(acked).toEqual([true]);
+    const landed = await events();
+    expect(landed).toHaveLength(1);
+    expect(landed[0]).toMatchObject({
+      action: 'ref.move',
+      repo_id: repo.id,
+      actor_id: admin.userId,
+      ip: '203.0.113.7',
+    });
+    expect(JSON.parse(landed[0]!.target)).toMatchObject({ to: second.changeset.id });
   });
 });
 

@@ -442,6 +442,17 @@ describe('organisations, teams and org-level roles', () => {
     await expectStatus(call(outsider, 'POST', '/api/v1/repos', { slug: 'otto/x' }), 201);
   });
 
+  it('refuses org slugs over a user login or an existing repo prefix', async () => {
+    await expectStatus(call(member, 'POST', '/api/v1/repos', { slug: 'Bob/infra' }), 201);
+    for (const slug of ['otto', 'bob']) {
+      const body = await expectStatus(call(owner, 'POST', '/api/v1/orgs', { slug }), 409);
+      expect(body).toMatchObject({ error: { code: 'namespace_taken' } });
+    }
+    await expectStatus(call(owner, 'GET', '/api/v1/orgs/bob/audit'), 403);
+    // the user keeps their namespace
+    await expectStatus(call(member, 'POST', '/api/v1/repos', { slug: 'Bob/more' }), 201);
+  });
+
   it('enforces org roles, owner rules and the error contract', async () => {
     await setupOrg();
     await expectStatus(call(null, 'GET', '/api/v1/orgs/yuma'), 401);

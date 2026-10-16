@@ -117,15 +117,50 @@ export interface AuditRequestMeta {
   requestId?: string | null;
 }
 
+/** An event whose append failed after its change committed (audit-stream queue). */
+export interface QueuedAppend {
+  input: AuditInput & { actor: AuditActor };
+  meta: AuditRequestMeta;
+}
+
 /**
  * Append from outside a request (agent tools, queues). `change` statements run
  * in the same D1 batch so the change and its event land or fail together.
+ * Without `change` the action already happened (a ref moved by its Durable
+ * Object, say), so a failed append must not fail the caller and report a done
+ * change as failed: the event goes to the audit queue, whose consumer retries.
  */
 export async function appendAudit(
   env: Env,
   input: AuditInput & { actor: AuditActor },
   meta: AuditRequestMeta = {},
   change: D1PreparedStatement[] = [],
+): Promise<void> {
+  try {
+    await appendNow(env, input, meta, change);
+  } catch (err) {
+    if (change.length > 0) throw err;
+    console.error('audit: append failed after its change; queued for retry', err);
+    const queued: QueuedAppend = { input, meta };
+    try {
+      if (!env.AUDIT_QUEUE) throw new Error('AUDIT_QUEUE is not bound');
+      await env.AUDIT_QUEUE.send({ append: queued });
+    } catch (sendErr) {
+      console.error('audit: event lost', JSON.stringify(queued), sendErr);
+    }
+  }
+}
+
+/** The queue consumer's retry of a `QueuedAppend`; throws so the queue retries. */
+export function appendQueued(env: Env, queued: QueuedAppend): Promise<void> {
+  return appendNow(env, queued.input, queued.meta, []);
+}
+
+async function appendNow(
+  env: Env,
+  input: AuditInput & { actor: AuditActor },
+  meta: AuditRequestMeta,
+  change: D1PreparedStatement[],
 ): Promise<void> {
   const base = {
     org_id: input.orgId ?? input.repo?.slug.split('/')[0] ?? INSTANCE_ORG,

@@ -58,6 +58,29 @@ export function sessionCookie(reqUrl: string, token: string): string {
   return `${SESSION_COOKIE}=${token}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE}`;
 }
 
+/**
+ * Binds an OAuth/OIDC sign-in to the browser that started it: the start sets
+ * this cookie to the state, and the callback requires the two to match, so a
+ * callback URL lured from another browser cannot sign the victim in as the
+ * attacker (login CSRF).
+ */
+export const LOGIN_STATE_COOKIE = 'yag_login_state';
+
+/** Set (`state`) or clear (`null`) the login-state cookie. */
+export function loginStateCookie(reqUrl: string, state: string | null): string {
+  const secure = reqUrl.startsWith('https://') ? '; Secure' : '';
+  return `${LOGIN_STATE_COOKIE}=${state ?? ''}; HttpOnly${secure}; SameSite=Lax; Path=/auth; Max-Age=${state === null ? 0 : 600}`;
+}
+
+/** Whether the request's login-state cookie holds `state`. */
+export function loginStateMatches(
+  cookieHeader: string | undefined,
+  state: string,
+): boolean {
+  const match = /(?:^|;\s*)yag_login_state=([^;]+)/.exec(cookieHeader ?? '');
+  return match?.[1] === state;
+}
+
 /** Resolve a session cookie header to its user (with sliding renewal). */
 export async function readSession(
   env: Env,
@@ -267,7 +290,21 @@ const githubEmailsSchema = z.array(
   }),
 );
 
-/** Upsert by GitHub id — idempotent across repeated logins. */
+/** Whether another user holds `login` (logins are unique, case-insensitively). */
+async function loginTaken(env: Env, login: string, selfId?: string): Promise<boolean> {
+  const row = await q1<{ id: string }>(
+    env,
+    `SELECT ${C.users.id} AS id FROM ${T.users} WHERE ${C.users.login} = ? COLLATE NOCASE`,
+    [login],
+  );
+  return row !== null && row.id !== selfId;
+}
+
+/**
+ * Upsert by GitHub id — idempotent across repeated logins. A GitHub login
+ * another user already holds is never taken over: a rename into it keeps the
+ * old login, a new user gets a short suffix.
+ */
 export async function upsertUser(
   env: Env,
   github: { id: number; login: string; avatar_url?: string | null; email?: string },
@@ -279,10 +316,14 @@ export async function upsertUser(
     [github.id],
   );
   if (existing) {
+    const current = parseUserRow(existing);
+    const login = (await loginTaken(env, github.login, current.id))
+      ? current.login
+      : github.login;
     await run(
       env,
       `UPDATE ${T.users} SET ${C.users.login} = ?, ${C.users.avatarUrl} = ? WHERE ${C.users.githubId} = ?`,
-      [github.login, github.avatar_url ?? null, github.id],
+      [login, github.avatar_url ?? null, github.id],
     );
     const updated = await q1(
       env,
@@ -294,7 +335,9 @@ export async function upsertUser(
   const row = {
     id: ulid(now),
     github_id: github.id,
-    login: github.login,
+    login: (await loginTaken(env, github.login))
+      ? `${github.login}-${randomHex(3)}`
+      : github.login,
     avatar_url: github.avatar_url ?? null,
     created_at: now,
   };
@@ -323,13 +366,10 @@ export async function createUser(
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 39) || 'user';
-  const taken = await q1(env, `SELECT 1 FROM ${T.users} WHERE ${C.users.login} = ?`, [
-    base,
-  ]);
   const row = {
     id: ulid(now),
     github_id: null,
-    login: taken ? `${base}-${randomHex(3)}` : base,
+    login: (await loginTaken(env, base)) ? `${base}-${randomHex(3)}` : base,
     avatar_url: null,
     created_at: now,
   };

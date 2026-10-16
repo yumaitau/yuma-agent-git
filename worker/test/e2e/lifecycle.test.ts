@@ -222,7 +222,11 @@ describe('golden-path lifecycle', () => {
     const state = new URL(start.headers.get('location') as string).searchParams.get(
       'state',
     ) as string;
-    const callback = await api(`/auth/github/callback?code=abc&state=${state}`);
+    const callback = await api(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: {
+        cookie: (start.headers.get('set-cookie') as string).split(';')[0] as string,
+      },
+    });
     expect(callback.status).toBe(302);
     cookie = (callback.headers.get('set-cookie') as string).split(';')[0] as string;
     expect(cookie).toMatch(/^yag_session=[0-9a-f]{64}$/);

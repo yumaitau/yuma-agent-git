@@ -202,6 +202,18 @@ orgsRoutes.post('/orgs', async (c) => {
     if (await getOrgBySlug(c.env, input.slug)) {
       throw new ApiError(409, 'org_exists', `org ${input.slug} already exists`);
     }
+    // A user's namespace is not up for grabs: an org over it would own that
+    // user's repo prefix and its audit chain (keyed by the prefix).
+    const taken = await q1(
+      c.env,
+      `SELECT 1 FROM ${T.users} WHERE lower(${C.users.login}) = ?
+       UNION ALL SELECT 1 FROM ${T.repos} WHERE ${C.repos.slug} LIKE ?
+       LIMIT 1`,
+      [input.slug, `${input.slug}/%`],
+    );
+    if (taken) {
+      throw new ApiError(409, 'namespace_taken', `${input.slug} is a user namespace`);
+    }
     const org: OrgRecord = {
       id: ulid(),
       slug: input.slug,

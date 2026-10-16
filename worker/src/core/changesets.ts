@@ -76,13 +76,17 @@ export const pathSchema = z.string().transform((value, ctx): string => {
 
 const fileChangeInputSchema = fileChangeSchema.extend({ path: pathSchema });
 
+/** Most file changes one changeset stores (its row holds them all). */
+export const MAX_CHANGED_FILES = 5000;
+
 const changesetInputSchema = z.object({
   repo_id: z.string().min(1),
   first_parent: z.string().min(1).nullable(),
   parents: z.array(z.string().min(1)),
   author: authorSchema,
-  message: z.string().min(1).max(65536),
-  changed_files: z.array(fileChangeInputSchema).max(5000),
+  // may be empty: Git allows it (`--allow-empty-message`)
+  message: z.string().max(65536),
+  changed_files: z.array(fileChangeInputSchema).max(MAX_CHANGED_FILES),
   created_at: z.number().int().optional(),
   root_tree: z
     .string()

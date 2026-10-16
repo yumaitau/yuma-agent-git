@@ -1,10 +1,12 @@
 import type { Env } from '../env';
 import { q, q1, run } from '../db/client';
+import { appendQueued, type QueuedAppend } from './record';
 
 /**
  * Audit streaming (issue #65). Delivery is cursor based: the `audit-stream`
- * queue only carries "kick" messages, and the consumer ships events after
- * `audit_stream_state.last_id` in id order, advancing the cursor on success.
+ * queue carries "kick" messages (plus appends to retry, see `appendAudit`),
+ * and the consumer ships events after `audit_stream_state.last_id` in id
+ * order, advancing the cursor on success.
  * Order is preserved and a failed batch is retried from the same cursor.
  * The sink URL and secret are never logged or stored in the status row.
  */
@@ -124,6 +126,18 @@ export async function shipAuditEvents(env: Env, sink: AuditSink): Promise<boolea
 
 /** Queue consumer for `audit-stream`: messages are kicks; retry with backoff. */
 export async function auditStreamQueue(batch: MessageBatch, env: Env): Promise<void> {
+  // a per-message ack or retry takes precedence over the batch calls below
+  for (const message of batch.messages) {
+    const queued = (message.body as { append?: QueuedAppend }).append;
+    if (!queued) continue;
+    try {
+      await appendQueued(env, queued);
+      message.ack();
+    } catch (err) {
+      console.error('audit: queued append failed; retrying', err);
+      message.retry({ delaySeconds: Math.min(900, 10 * 2 ** (message.attempts - 1)) });
+    }
+  }
   const sink = configuredSink(env);
   if (sink === null || (await shipAuditEvents(env, sink))) {
     batch.ackAll();

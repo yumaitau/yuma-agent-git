@@ -48,7 +48,10 @@ async function signIn(
 ): Promise<Response> {
   const start = await app(`/auth/oidc/${provider}${query}`, { headers });
   expect(start.status).toBe(302);
-  return app(idp.authorize(start.headers.get('location') as string, claims), { headers });
+  const cookie = [headers.cookie, cookieOf(start)].filter(Boolean).join('; ');
+  return app(idp.authorize(start.headers.get('location') as string, claims), {
+    headers: { ...headers, cookie },
+  });
 }
 
 function cookieOf(res: Response): string {
@@ -214,10 +217,20 @@ describe('oidc sign-in', () => {
       start.headers.get('location') as string,
       googleClaims,
     );
-    expect((await app(callback)).status).toBe(302);
-    const replay = await app(callback);
+    const bound = { headers: { cookie: cookieOf(start) } };
+    expect((await app(callback, bound)).status).toBe(302);
+    const replay = await app(callback, bound);
     expect(replay.status).toBe(400);
     expect(await errorCode(replay)).toBe('invalid_state');
+
+    // a callback lured into a browser that did not start the sign-in (login CSRF)
+    const lured = google.authorize(
+      (await app('/auth/oidc/google')).headers.get('location') as string,
+      googleClaims,
+    );
+    const csrf = await app(lured, { headers: { cookie: 'yag_login_state=mine' } });
+    expect(csrf.status).toBe(400);
+    expect(await errorCode(csrf)).toBe('invalid_state');
 
     for (const claims of [
       { ...googleClaims, nonce: 'other' },

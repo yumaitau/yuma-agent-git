@@ -231,6 +231,11 @@ describe('scim users', () => {
           email: 'ola@yuma.test',
           email_verified: true,
         }),
+        {
+          headers: {
+            cookie: (start.headers.get('set-cookie') as string).split(';')[0] as string,
+          },
+        },
       );
     };
     expect((await signIn()).status).toBe(302);

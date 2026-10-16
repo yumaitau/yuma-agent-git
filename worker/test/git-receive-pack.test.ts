@@ -19,7 +19,8 @@ import { createRepo, getRef, listRefs } from '../src/db/repos';
 import { q, run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
 import { commitShas } from '../src/git/upload-pack';
-import { changesetForSha1 } from '../src/git/mapping';
+import { changesetForSha1, readGitObject } from '../src/git/mapping';
+import { commitChanges } from '../src/core/commit';
 import { getChangeset } from '../src/core/changesets';
 import { getTree } from '../src/core/trees';
 import { deflate, objectHeader, packHeader } from '../src/git/pack-writer';
@@ -457,5 +458,91 @@ describe('git receive-pack', () => {
       }),
     );
     expect(hidden.status).toBe(404);
+  });
+
+  it('reuses changesets for pushed commits that already map to one', async () => {
+    const api = await commitChanges(dbEnv, repoId, {
+      first_parent: null,
+      message: 'via api\n',
+      author: { name: 'Ada', email: 'ada@example.com' },
+      changes: [{ path: 'a.txt', op: 'add', content_b64: btoa('a\n') }],
+    });
+    const id = api.changeset.id;
+    const sha = (await commitShas(dbEnv, repoId, [id])).get(id) as string;
+    const object = await readGitObject(dbEnv, repoId, sha);
+    const report = await push(
+      pushBody(
+        [[ZERO, sha, 'refs/heads/feature']],
+        await packOf([{ type: 'commit', body: object!.body }]),
+      ),
+    );
+    expect(report.refs['refs/heads/feature']).toBe('ok');
+    expect((await getRef(dbEnv, repoId, 'feature'))?.head).toBe(id);
+  });
+
+  it('stores commits that turn a file into a directory and a directory into a file', async () => {
+    const first = await rootCommit();
+    await push(
+      pushBody([[ZERO, first.head.sha, 'refs/heads/main']], await packOf(first.objects)),
+    );
+    const inner = await blob('inner\n');
+    const readmeDir = await tree([{ name: 'index.md', sha: inner.sha }]);
+    const srcFile = await blob('now a file\n');
+    const root2 = await tree([
+      dir('README.md', readmeDir),
+      { name: 'run.sh', mode: '100755', sha: first.objects[4]!.sha },
+      { name: 'src', sha: srcFile.sha },
+    ]);
+    const c2 = await commit(root2.sha, [first.head.sha], 'swap\n');
+    const report = await push(
+      pushBody(
+        [[first.head.sha, c2.sha, 'refs/heads/main']],
+        await packOf([c2, root2, readmeDir, inner, srcFile]),
+      ),
+    );
+    expect(report.refs['refs/heads/main']).toBe('ok');
+    expect(await headSha('main')).toBe(c2.sha);
+  });
+
+  it('refuses branch names that alias tags or agent refs', async () => {
+    const { objects, head } = await rootCommit();
+    const report = await push(
+      pushBody(
+        [
+          [ZERO, head.sha, 'refs/heads/refs/tags/v1'],
+          [ZERO, head.sha, 'refs/heads/refs/agents/x/work'],
+        ],
+        await packOf(objects),
+      ),
+    );
+    expect(report.refs['refs/heads/refs/tags/v1']).toMatch(/^invalid_ref_name: /);
+    expect(report.refs['refs/heads/refs/agents/x/work']).toMatch(/^invalid_ref_name: /);
+    expect(await listRefs(dbEnv, repoId)).toEqual([]);
+  });
+
+  it('stores empty messages and refuses over-wide commits before storing any', async () => {
+    const one = await blob('x\n');
+    const root = await tree([{ name: 'a.txt', sha: one.sha }]);
+    const empty = await commit(root.sha, [], '');
+    const r1 = await push(
+      pushBody([[ZERO, empty.sha, 'refs/heads/main']], await packOf([empty, root, one])),
+    );
+    expect(r1.refs['refs/heads/main']).toBe('ok');
+    expect(await headSha('main')).toBe(empty.sha);
+
+    const wide = await tree(
+      Array.from({ length: 5001 }, (_, i) => ({ name: `f${i}`, sha: one.sha })),
+    );
+    const middle = await commit(root.sha, [empty.sha], 'middle\n', 1_700_000_100);
+    const big = await commit(wide.sha, [middle.sha], 'wide\n');
+    const r2 = await push(
+      pushBody(
+        [[empty.sha, big.sha, 'refs/heads/main']],
+        await packOf([middle, big, wide]),
+      ),
+    );
+    expect(r2.refs['refs/heads/main']).toMatch(/at most 5000 per commit can be stored$/);
+    expect(await changesetForSha1(dbEnv, repoId, middle.sha)).toBeNull();
+    expect(await headSha('main')).toBe(empty.sha);
   });
 });
