@@ -521,6 +521,8 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/repos/:repo{.+}/ci': 'ci.settings.update',
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',
+  // also environment.approval.request
+  'POST /api/v1/repos/:repo{.+}/ci/runs/:id/retry': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci.run.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent.task.create',
@@ -575,6 +577,21 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /api/v1/repos/:repo{.+}/labels/:name': 'label.delete',
   'POST /api/v1/repos/:repo{.+}/milestones': 'milestone.create',
   'PATCH /api/v1/repos/:repo{.+}/milestones/:id': 'milestone.update',
+  'POST /ci/oidc/token': 'ci.oidc.token',
+  'PUT /api/v1/repos/:repo{.+}/secrets/:name': 'secret.set',
+  'DELETE /api/v1/repos/:repo{.+}/secrets/:name': 'secret.delete',
+  'PUT /api/v1/repos/:repo{.+}/variables/:name': 'variable.set',
+  'DELETE /api/v1/repos/:repo{.+}/variables/:name': 'variable.delete',
+  'PUT /api/v1/repos/:repo{.+}/environments/:env': 'environment.set',
+  'DELETE /api/v1/repos/:repo{.+}/environments/:env': 'environment.delete',
+  // also environment.approval.reject
+  'POST /api/v1/repos/:repo{.+}/environment-approvals/:id':
+    'environment.approval.approve',
+  'PUT /api/v1/orgs/:org/secrets/:name': 'secret.set',
+  'DELETE /api/v1/orgs/:org/secrets/:name': 'secret.delete',
+  'PUT /api/v1/orgs/:org/variables/:name': 'variable.set',
+  'DELETE /api/v1/orgs/:org/variables/:name': 'variable.delete',
+  'POST /api/v1/admin/secrets/rewrap': 'secret.kek.rewrap',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':

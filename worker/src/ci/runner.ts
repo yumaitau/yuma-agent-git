@@ -8,6 +8,9 @@ import { tarEntry, tarEnd } from '../bridge/tar';
 import { storeArtifact } from './artifacts';
 import { advancePipelines } from './planner';
 import { runnerServices } from './spec';
+import { createMasker, type Masker } from './mask';
+import { ApiError } from '../core/errors';
+import { prepareJob } from './inject';
 import {
   MAX_IMAGE_BYTES,
   MAX_LOG_BYTES,
@@ -18,10 +21,15 @@ import {
 } from './config';
 
 const encoder = new TextEncoder();
-/** New, empty microVM per run. It never receives Worker bindings or registry secrets. */
+/**
+ * New, empty microVM per run. It never receives Worker bindings or registry
+ * secrets. Opted-in jobs get their own secrets and OIDC request token as
+ * command environment only (issue #50), masked in the log.
+ */
 export class CiRunnerDO extends DurableObject<Env> {
   private log = '';
   private logBytes = 0;
+  private masker?: Masker;
 
   async fetch(request: Request): Promise<Response> {
     const { run_id: id } = (await request.json()) as { run_id: string };
@@ -90,12 +98,36 @@ export class CiRunnerDO extends DurableObject<Env> {
           service.image,
         ]);
       }
+      // Credentials exist only from here on, inside this run's VM.
+      const access = await prepareJob(this.env, job, policy, deadline).catch(
+        (err: unknown) => {
+          this.append(
+            `\nJob credentials could not be prepared${err instanceof ApiError ? `: ${err.message}` : '.'}\n`,
+          );
+          throw err;
+        },
+      );
+      this.masker = createMasker(access.mask);
+      if (access.summary) this.append(`\n${access.summary}\n`);
+      for (const file of access.files) {
+        await this.command(
+          [
+            '/bin/sh',
+            '-c',
+            'umask 077 && mkdir -p "$(dirname "$0")" && cat > "$0"',
+            file.path,
+          ],
+          { stdin: new Blob([file.content]).stream() },
+          true,
+        );
+      }
       for (const command of policy.commands) {
         await this.assertRunning(id, deadline);
-        this.append(`\n$ ${command}\n`);
+        this.append(this.masked().mask(`\n$ ${command}\n`));
         await this.checkpoint(job);
         await this.command(['/bin/bash', '-euo', 'pipefail', '-c', command], {
           cwd: '/workspace',
+          env: access.env,
         });
         await this.checkpoint(job);
       }
@@ -185,6 +217,7 @@ export class CiRunnerDO extends DurableObject<Env> {
       // Do not mark a run terminal or release capacity until its VM is destroyed.
       await this.ctx.container.destroy();
       await this.env.OBJECTS.delete(imageKey);
+      await run(this.env, 'DELETE FROM ci_job_tokens WHERE run_id = ?', [id]);
       const logKey = `ci/logs/${job.repo_id}/${id}.txt`;
       await this.env.OBJECTS.put(logKey, this.log, {
         httpMetadata: { contentType: 'text/plain; charset=utf-8' },
@@ -275,6 +308,10 @@ export class CiRunnerDO extends DurableObject<Env> {
     this.logBytes += size;
   }
 
+  private masked(): Masker {
+    return (this.masker ??= createMasker([]));
+  }
+
   private async checkpoint(job: CiRun): Promise<void> {
     const key = `ci/logs/${job.repo_id}/${job.id}.txt`;
     await this.env.OBJECTS.put(key, this.log, {
@@ -290,7 +327,12 @@ export class CiRunnerDO extends DurableObject<Env> {
   ): Promise<void> {
     const process = await this.ctx.container!.exec(argv, {
       ...options,
-      env: { HOME: '/root', CI: 'true', DOCKER_HOST: 'unix:///var/run/docker.sock' },
+      env: {
+        ...options.env,
+        HOME: '/root',
+        CI: 'true',
+        DOCKER_HOST: 'unix:///var/run/docker.sock',
+      },
       stdout: silent ? 'ignore' : 'pipe',
       stderr: silent ? 'ignore' : 'combined',
     });
@@ -301,9 +343,9 @@ export class CiRunnerDO extends DurableObject<Env> {
         for (;;) {
           const chunk = await reader.read();
           if (chunk.done) break;
-          this.append(decoder.decode(chunk.value, { stream: true }));
+          this.append(this.masked().push(decoder.decode(chunk.value, { stream: true })));
         }
-        this.append(decoder.decode());
+        this.append(this.masked().push(decoder.decode()) + this.masked().flush());
       } finally {
         reader.releaseLock();
       }

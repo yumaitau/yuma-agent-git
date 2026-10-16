@@ -47,6 +47,8 @@ import {
   userRefSchema,
 } from './orgs';
 import { manual as manualPipelineRun } from './pipelines';
+import { decisionBody, environmentBody, secretBody, variableBody } from './secrets';
+import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
 import { createRepoSchema, updateRepoSchema } from './repos';
 
@@ -103,6 +105,17 @@ const scimListQuery = {
   startIndex: z.int().min(1).optional(),
   count: z.int().min(0).max(200).optional(),
 };
+const environmentQuery = z.object({
+  environment: z
+    .string()
+    .optional()
+    .describe('Environment name; omit for the repo scope'),
+});
+const idTokenQuery = z.object({
+  audience: z.string().optional().describe('Default `sts.amazonaws.com`'),
+  lifetime: lifetimeSchema.optional().describe('Seconds, 60 to 3600'),
+  run_id: z.string().optional(),
+});
 const evaluationsQuery = z.object({
   before: z.int().min(1).optional().describe('Evaluation id cursor (`next_cursor`)'),
 });
@@ -138,6 +151,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /auth/mfa/passkey': { id: 'passkeyStepUp', body: assertionSchema },
   'POST /auth/mfa/totp': { id: 'totpStepUp', body: codeSchema },
   'POST /webhooks/github': { id: 'receiveGithubWebhook', rawBody: 'application/json' },
+  'GET /ci/oidc/.well-known/openid-configuration': { id: 'getCiOidcConfiguration' },
+  'GET /ci/oidc/jwks': { id: 'getCiOidcJwks' },
+  'GET /ci/oidc/token': { id: 'getCiIdToken', query: idTokenQuery },
+  'POST /ci/oidc/token': { id: 'createCiIdToken', query: idTokenQuery },
   'GET /scim/v2/Users': {
     id: 'scimListUsers',
     query: z.object({
@@ -177,6 +194,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
 
   'GET /api/v1': { id: 'getApiRoot' },
   'GET /api/v1/openapi.json': { id: 'getOpenApi' },
+  'POST /api/v1/admin/secrets/rewrap': { id: 'rewrapSecretKeys' },
   'GET /api/v1/admin/metrics': {
     id: 'getMetrics',
     query: z.object({
@@ -222,6 +240,12 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'DELETE /api/v1/orgs/:org/members/:userId': { id: 'deleteOrgMember' },
   'GET /api/v1/orgs/:org/repos': { id: 'listOrgRepos' },
   'GET /api/v1/orgs/:org/rulesets': { id: 'listOrgRulesets' },
+  'GET /api/v1/orgs/:org/secrets': { id: 'listOrgSecrets' },
+  'PUT /api/v1/orgs/:org/secrets/:name': { id: 'putOrgSecret', body: secretBody },
+  'DELETE /api/v1/orgs/:org/secrets/:name': { id: 'deleteOrgSecret' },
+  'GET /api/v1/orgs/:org/variables': { id: 'listOrgVariables' },
+  'PUT /api/v1/orgs/:org/variables/:name': { id: 'putOrgVariable', body: variableBody },
+  'DELETE /api/v1/orgs/:org/variables/:name': { id: 'deleteOrgVariable' },
   'POST /api/v1/orgs/:org/rulesets': { id: 'createOrgRuleset', body: rulesetInputSchema },
   'PUT /api/v1/orgs/:org/rulesets/:id': {
     id: 'replaceOrgRuleset',
@@ -331,6 +355,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': { id: 'cancelPipelineRun' },
   'POST /api/v1/repos/:repo/ci/runs': { id: 'createCiRun', body: createRunSchema },
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': { id: 'cancelCiRun' },
+  'POST /api/v1/repos/:repo/ci/runs/:id/retry': { id: 'retryCiRun' },
   'GET /api/v1/repos/:repo/ci/runs/:id/log': { id: 'getCiRunLog' },
   'POST /api/v1/repos/:repo/connect': { id: 'connectGithub', body: connectSchema },
   'GET /api/v1/repos/:repo/diff': {
@@ -458,6 +483,47 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/refs/:name': { id: 'getRef' },
   'PUT /api/v1/repos/:repo/refs/:name': { id: 'moveRef', body: moveRefSchema },
   'GET /api/v1/repos/:repo/rulesets': { id: 'listRulesets' },
+  'GET /api/v1/repos/:repo/secrets': { id: 'listRepoSecrets', query: environmentQuery },
+  'PUT /api/v1/repos/:repo/secrets/:name': {
+    id: 'putRepoSecret',
+    query: environmentQuery,
+    body: secretBody,
+  },
+  'DELETE /api/v1/repos/:repo/secrets/:name': {
+    id: 'deleteRepoSecret',
+    query: environmentQuery,
+  },
+  'GET /api/v1/repos/:repo/variables': {
+    id: 'listRepoVariables',
+    query: environmentQuery,
+  },
+  'PUT /api/v1/repos/:repo/variables/:name': {
+    id: 'putRepoVariable',
+    query: environmentQuery,
+    body: variableBody,
+  },
+  'DELETE /api/v1/repos/:repo/variables/:name': {
+    id: 'deleteRepoVariable',
+    query: environmentQuery,
+  },
+  'GET /api/v1/repos/:repo/environments': { id: 'listEnvironments' },
+  'PUT /api/v1/repos/:repo/environments/:env': {
+    id: 'putEnvironment',
+    body: environmentBody,
+  },
+  'DELETE /api/v1/repos/:repo/environments/:env': { id: 'deleteEnvironment' },
+  'GET /api/v1/repos/:repo/environment-approvals': {
+    id: 'listEnvironmentApprovals',
+    query: z.object({
+      state: z
+        .enum(['pending', 'approved', 'rejected', 'dispatched', 'expired', 'failed'])
+        .optional(),
+    }),
+  },
+  'POST /api/v1/repos/:repo/environment-approvals/:id': {
+    id: 'decideEnvironmentApproval',
+    body: decisionBody,
+  },
   'POST /api/v1/repos/:repo/rulesets': { id: 'createRuleset', body: rulesetInputSchema },
   'PUT /api/v1/repos/:repo/rulesets/:id': {
     id: 'replaceRuleset',

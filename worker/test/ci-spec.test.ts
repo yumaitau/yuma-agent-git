@@ -75,7 +75,7 @@ describe('pipeline spec v2', () => {
         '  build:', // 3
         '    needs: [tset]', // 4
         '    steps:', // 5
-        '      - run: echo ${{ secrets.TOKEN }}', // 6
+        '      - run: echo ${{ github.token }}', // 6
         '  deploy:', // 7
         '    runs_on: mac', // 8
         '    steps: []', // 9
@@ -83,7 +83,7 @@ describe('pipeline spec v2', () => {
     );
     const byLine = Object.fromEntries(file.errors!.map((e) => [e.line, e.message]));
     expect(byLine[4]).toBe('jobs.build.needs.0: Unknown job "tset"');
-    expect(byLine[6]).toContain('Unsupported expression "secrets.TOKEN"');
+    expect(byLine[6]).toContain('Unsupported expression "github.token"');
     expect(byLine[8]).toMatch(/runs_on/);
     expect(byLine[9]).toMatch(/^jobs\.deploy\.steps:/);
   });

@@ -4,6 +4,7 @@ import { getChangeset } from '../core/changesets';
 import { getRepo, getRef } from '../db/repos';
 import { ApiError } from '../core/errors';
 import { monthlyBudget, reservation, settings, type CiRun } from './config';
+import type { RunContext } from './context';
 
 export async function enqueueRun(
   env: Env,
@@ -11,6 +12,7 @@ export async function enqueueRun(
   head: string,
   actor: string,
   publish = false,
+  context: RunContext | null = null,
 ): Promise<CiRun> {
   if (env.CI_ENABLED !== 'true' || !env.CI_QUEUE || !env.CI_RUNNER) {
     throw new ApiError(
@@ -73,6 +75,7 @@ export async function enqueueRun(
       actor,
       publish,
       reserved: reservation(config.policy),
+      context,
     },
     {
       // pipeline jobs on the same revision do not hold back its settings run
@@ -100,6 +103,8 @@ export interface Admission {
   reserved: number;
   pipelineRunId?: string;
   jobKey?: string;
+  /** Trigger context for secrets, environments and OIDC claims. */
+  context?: RunContext | null;
 }
 
 /**
@@ -118,8 +123,8 @@ export async function admitRun(
   // Never refund reservations: retries, failures and cancellations cannot hide spend.
   const inserted = await env.DB.prepare(
     `INSERT INTO ci_runs
-    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key)
-    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?
+    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key, context)
+    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?
     WHERE (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE month = ?) + ? <= ?
       AND (SELECT COUNT(*) FROM ci_runs WHERE state IN ('queued','running')) < 2
       AND ${guard.sql}`,
@@ -137,6 +142,7 @@ export async function admitRun(
       now,
       a.pipelineRunId ?? null,
       a.jobKey ?? null,
+      a.context ? JSON.stringify(a.context) : null,
       month,
       a.reserved,
       monthlyBudget(env),

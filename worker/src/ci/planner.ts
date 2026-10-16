@@ -3,6 +3,8 @@ import { q, q1, run } from '../db/client';
 import type { PipelineJob, PipelineRun, SpecError } from '../../shared/collaboration';
 import { ApiError } from '../core/errors';
 import { parsePolicy, reservation } from './config';
+import { parseContext, type RunContext } from './context';
+import { jobGate } from './environments';
 import { admitRun } from './runs';
 import type { Pipeline } from './spec';
 
@@ -11,7 +13,8 @@ import type { Pipeline } from './spec';
  * one `ci_runs` row once every job it needs has passed, through the same
  * admission as settings runs, so budget and runner slots stay shared. Jobs
  * the ledger refuses wait and are retried when a run finishes and by the cron
- * sweep. A job whose needs did not pass is skipped.
+ * sweep. A job whose needs did not pass is skipped. A job with an environment
+ * (issue #50) first passes that environment's gate and approval.
  */
 const WAIT_LIMIT_MS = 60 * 60_000;
 const FAILED = ['failed', 'cancelled', 'timed_out', 'skipped'];
@@ -30,6 +33,7 @@ interface RunRow {
   created_at: number;
   cancelled_at: number | null;
   finished_at: number | null;
+  context: string | null;
 }
 
 interface JobRow {
@@ -43,6 +47,8 @@ interface JobRow {
   run_state: string | null;
   run_error: string | null;
   run_finished_at: number | null;
+  approval_id: string | null;
+  approval_state: string | null;
 }
 
 export interface StartInput {
@@ -54,6 +60,8 @@ export interface StartInput {
   event: PipelineRun['event'];
   ref: string | null;
   actor: string;
+  /** Trigger for secrets, environments and OIDC claims of every job. */
+  context: RunContext;
 }
 
 /** Record a pipeline run (failed at once when its spec is invalid) and start its first jobs. */
@@ -67,8 +75,8 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
   const name = p?.name ?? input.path.slice(input.path.lastIndexOf('/') + 1);
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO ci_pipeline_runs (id, repo_id, head_cs, pipeline, name, event, ref, concurrency_group, errors, requested_by, created_at, finished_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO ci_pipeline_runs (id, repo_id, head_cs, pipeline, name, event, ref, concurrency_group, errors, requested_by, created_at, finished_at, context)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       id,
       input.repoId,
@@ -82,6 +90,7 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
       input.actor,
       now,
       p ? null : now,
+      JSON.stringify(input.context),
     ),
     ...(p?.jobs ?? []).map((job, position) =>
       env.DB.prepare(
@@ -101,6 +110,10 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
           dockerfile: 'Dockerfile',
           image: null,
           services: job.services,
+          environment: job.environment,
+          secrets: job.secrets,
+          permissions: job.permissions,
+          aws: job.aws,
         }),
         position,
       ),
@@ -125,8 +138,10 @@ async function jobRows(env: Env, ids: string[]): Promise<JobRow[]> {
   if (ids.length === 0) return [];
   return q<JobRow>(
     env,
-    `SELECT j.*, r.id AS run_id, r.state AS run_state, r.error AS run_error, r.finished_at AS run_finished_at
+    `SELECT j.*, r.id AS run_id, r.state AS run_state, r.error AS run_error, r.finished_at AS run_finished_at,
+      a.id AS approval_id, a.state AS approval_state
     FROM ci_jobs j LEFT JOIN ci_runs r ON r.pipeline_run_id = j.pipeline_run_id AND r.job_key = j.key
+    LEFT JOIN environment_approvals a ON a.pipeline_run_id = j.pipeline_run_id AND a.job_key = j.key
     WHERE j.pipeline_run_id IN (${ids.map(() => '?').join(',')}) ORDER BY j.position`,
     ids,
   );
@@ -140,6 +155,10 @@ function jobView(row: JobRow): PipelineJob {
     state: row.run_state ?? (row.skipped ? 'skipped' : 'waiting'),
     run_id: row.run_id,
     error: row.run_error ?? row.skipped,
+    environment: parsePolicy(JSON.parse(row.config)).environment,
+    approval: row.approval_id
+      ? { id: row.approval_id, state: row.approval_state! }
+      : null,
   };
 }
 
@@ -165,6 +184,7 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
       [row.repo_id, row.concurrency_group, row.created_at, row.created_at, row.id],
     )) !== null;
   let full = blocked;
+  const context = parseContext(row.context);
   for (let changed = true; changed;) {
     changed = false;
     const rows = await jobRows(env, [id]);
@@ -175,18 +195,40 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
       let skip: string | null = null;
       if (needs.some((j) => FAILED.includes(j.state))) skip = 'A needed job did not pass';
       else if (!needs.every((j) => j.state === 'passed')) continue;
-      else if (full) {
-        // The wait counts from when the job became ready, not from the pipeline start.
+      const config = rows[i]!.config;
+      const environment = skip ? null : job.environment;
+      // The environment gate comes first, so reviewers are asked while runners are busy.
+      const gate = environment
+        ? await jobGate(env, row, job.key, environment, context)
+        : { approval: null };
+      if ('wait' in gate) continue;
+      if ('skip' in gate) skip = gate.skip;
+      if (!skip && full) {
+        // The wait counts from when the job became ready (or approved), not from the pipeline start.
         const ready = Math.max(
           row.created_at,
+          ('approval' in gate && gate.approval?.decided_at) || 0,
+          ('approval' in gate && gate.approval?.not_before) || 0,
           ...rows
             .filter((r) => job.needs.includes(r.job))
             .map((r) => r.run_finished_at ?? 0),
         );
         if (Date.now() - ready > WAIT_LIMIT_MS)
           skip = 'Waited over an hour for runner capacity or budget';
-      } else {
-        const config = rows[i]!.config;
+      } else if (!skip) {
+        const approval = 'approval' in gate ? gate.approval : null;
+        // single use: the approval is claimed before its run exists
+        if (
+          approval &&
+          !(
+            await env.DB.prepare(
+              "UPDATE environment_approvals SET state = 'dispatched' WHERE id = ? AND state IN ('approved','dispatched') AND run_id IS NULL",
+            )
+              .bind(approval.id)
+              .run()
+          ).meta.changes
+        )
+          continue;
         try {
           const started = await admitRun(
             env,
@@ -200,6 +242,7 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
               reserved: reservation(parsePolicy(JSON.parse(config))),
               pipelineRunId: id,
               jobKey: job.key,
+              context: context && { ...context, approval_id: approval?.id ?? null },
             },
             {
               sql: `NOT EXISTS (SELECT 1 FROM ci_runs WHERE pipeline_run_id = ? AND job_key = ?)
@@ -207,11 +250,25 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
               binds: [id, job.key, id, job.key],
             },
           );
+          if (approval)
+            await run(
+              env,
+              started
+                ? 'UPDATE environment_approvals SET run_id = ? WHERE id = ?'
+                : "UPDATE environment_approvals SET state = 'approved' WHERE id = ? AND run_id IS NULL",
+              started ? [started, approval.id] : [approval.id],
+            );
           if (started) changed = true;
           else full = true;
         } catch (err) {
           // admitRun marked the run failed; its dependants are skipped next pass.
           if (!(err instanceof ApiError)) throw err;
+          if (approval)
+            await run(
+              env,
+              "UPDATE environment_approvals SET state = 'failed' WHERE id = ?",
+              [approval.id],
+            );
           changed = true;
         }
       }
@@ -252,6 +309,11 @@ export async function cancelPipeline(
     env,
     'UPDATE ci_pipeline_runs SET cancelled_at = ? WHERE id = ? AND cancelled_at IS NULL',
     [Date.now(), id],
+  );
+  await run(
+    env,
+    "UPDATE environment_approvals SET state = 'expired' WHERE pipeline_run_id = ? AND state IN ('pending','approved')",
+    [id],
   );
   await run(
     env,

@@ -89,6 +89,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/secrets/rewrap': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Re-wrap secret data keys under the current KEK (`SECRETS_ADMIN_USER_IDS`) */
+    post: operations['rewrapSecretKeys'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/agents': {
     parameters: {
       query?: never;
@@ -521,6 +538,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/orgs/{org}/secrets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Org secret names; values are write-only */
+    get: operations['listOrgSecrets'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/secrets/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set an org secret `{value}` */
+    put: operations['putOrgSecret'];
+    post?: never;
+    /** Delete an org secret */
+    delete: operations['deleteOrgSecret'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orgs/{org}/sso': {
     parameters: {
       query?: never;
@@ -638,6 +690,41 @@ export interface paths {
     post?: never;
     /** Remove a team repo grant */
     delete: operations['deleteTeamRepo'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Org variables with values */
+    get: operations['listOrgVariables'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/variables/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set an org variable `{value}` */
+    put: operations['putOrgVariable'];
+    post?: never;
+    /** Delete an org variable */
+    delete: operations['deleteOrgVariable'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1023,6 +1110,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/ci/runs/{id}/retry': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Run a CI run again with its original trigger */
+    post: operations['retryCiRun'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/connect': {
     parameters: {
       query?: never;
@@ -1052,6 +1156,75 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/environment-approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runs waiting on environments (`?state=`) */
+    get: operations['listEnvironmentApprovals'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/environment-approvals/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve or reject a waiting run (listed reviewers, not the requester) */
+    post: operations['decideEnvironmentApproval'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/environments': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Deployment environments and protection rules */
+    get: operations['listEnvironments'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/environments/{env}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Create or update an environment */
+    put: operations['putEnvironment'];
+    post?: never;
+    /** Delete an environment and its secrets and variables */
+    delete: operations['deleteEnvironment'];
     options?: never;
     head?: never;
     patch?: never;
@@ -1749,6 +1922,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/secrets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Secret names (`?environment=`); values are write-only */
+    get: operations['listRepoSecrets'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/secrets/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set a secret `{value}` (`?environment=`) */
+    put: operations['putRepoSecret'];
+    post?: never;
+    /** Delete a secret (`?environment=`) */
+    delete: operations['deleteRepoSecret'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/tags': {
     parameters: {
       query?: never;
@@ -1779,6 +1987,41 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/variables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Variables with values (`?environment=`) */
+    get: operations['listRepoVariables'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/variables/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Set a variable `{value}` (`?environment=`) */
+    put: operations['putRepoVariable'];
+    post?: never;
+    /** Delete a variable (`?environment=`) */
+    delete: operations['deleteRepoVariable'];
     options?: never;
     head?: never;
     patch?: never;
@@ -2058,6 +2301,58 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/ci/oidc/.well-known/openid-configuration': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** CI OIDC discovery document (public) */
+    get: operations['getCiOidcConfiguration'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/ci/oidc/jwks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** CI OIDC signing keys, current and previous (public) */
+    get: operations['getCiOidcJwks'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/ci/oidc/token': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** ID token for a running job (`?audience=`), GitHub-style GET */
+    get: operations['getCiIdToken'];
+    put?: never;
+    /** ID token for a running job (`?audience=&lifetime=`) */
+    post: operations['createCiIdToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/healthz': {
     parameters: {
       query?: never;
@@ -2321,6 +2616,28 @@ export interface operations {
         component?: string;
         window?: number;
       };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  rewrapSecretKeys: {
+    parameters: {
+      query?: never;
       header?: never;
       path?: never;
       cookie?: never;
@@ -3222,6 +3539,82 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listOrgSecrets: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putOrgSecret: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          value: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteOrgSecret: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getOrgSso: {
     parameters: {
       query?: never;
@@ -3499,6 +3892,82 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listOrgVariables: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putOrgVariable: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          value: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteOrgVariable: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -4157,6 +4626,28 @@ export interface operations {
           dockerfile?: string;
           /** @default null */
           image?: string | null;
+          /** @default null */
+          environment?: string | null;
+          /** @default [] */
+          secrets?: string[];
+          /**
+           * @default {
+           *       "id_token": "none"
+           *     }
+           */
+          permissions?: {
+            /**
+             * @default none
+             * @enum {string}
+             */
+            id_token?: 'none' | 'write';
+          };
+          /** @default null */
+          aws?: {
+            role_arn: string;
+            region: string;
+            session_name?: string;
+          } | null;
         };
       };
     };
@@ -4367,6 +4858,32 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  retryCiRun: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   connectGithub: {
     parameters: {
       query?: never;
@@ -4412,6 +4929,162 @@ export interface operations {
       path: {
         owner: string;
         repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listEnvironmentApprovals: {
+    parameters: {
+      query?: {
+        state?: 'pending' | 'approved' | 'rejected' | 'dispatched' | 'expired' | 'failed';
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  decideEnvironmentApproval: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {string} */
+          decision: 'approve' | 'reject';
+          /** @default  */
+          comment?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listEnvironments: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putEnvironment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        env: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @default [] */
+          reviewers?: {
+            /** @enum {string} */
+            type: 'user' | 'team';
+            name: string;
+          }[];
+          /** @default 0 */
+          wait_timer_minutes?: number;
+          /** @default [] */
+          allowed_branches?: string[];
+          /** @default false */
+          humans_only?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteEnvironment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        env: string;
       };
       cookie?: never;
     };
@@ -6034,6 +6707,91 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listRepoSecrets: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putRepoSecret: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          value: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteRepoSecret: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listTags: {
     parameters: {
       query?: {
@@ -6120,6 +6878,91 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listRepoVariables: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putRepoVariable: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          value: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteRepoVariable: {
+    parameters: {
+      query?: {
+        environment?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -6574,6 +7417,98 @@ export interface operations {
           'application/json': unknown;
         };
       };
+    };
+  };
+  getCiOidcConfiguration: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getCiOidcJwks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getCiIdToken: {
+    parameters: {
+      query?: {
+        audience?: string;
+        lifetime?: number;
+        run_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createCiIdToken: {
+    parameters: {
+      query?: {
+        audience?: string;
+        lifetime?: number;
+        run_id?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
     };
   };
   getHealth: {

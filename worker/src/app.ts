@@ -14,6 +14,7 @@ import { agentIdentityRoutes } from './auth/agents';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
+import { oidcRoutes } from './ci/oidc';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -53,6 +54,10 @@ app.get('/healthz', (c) => c.json({ ok: true }));
 // Git clients (issues #31, #32): `/:owner/:repo.git/…`, before the SPA fallback.
 app.route('/', gitRoutes);
 
+// CI workload identity (issue #50): public discovery + JWKS for cloud IAM,
+// and the token endpoint, which authenticates with a per-run request token.
+app.route('/', oidcRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, token management and
 // agent identities with their token exchange.
@@ -77,6 +82,7 @@ app.notFound((c) => {
     path.startsWith('/webhooks/') ||
     path.startsWith('/scim/') ||
     path.startsWith('/healthz') ||
+    path.startsWith('/ci/oidc/') ||
     /^\/[^/]+\/[^/]+\.git\//.test(path);
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);

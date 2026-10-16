@@ -1,8 +1,9 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { can } from '../auth/rbac';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
+import type { RepoWithCreator } from '../auth/rbac';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { q, q1, run } from '../db/client';
 import { getRef } from '../db/repos';
@@ -20,8 +21,9 @@ import {
   settings,
   type CiRun,
 } from '../ci/config';
-import { enqueueRun } from '../ci/runs';
 import { pullPipelines, pushPipelines } from '../ci/triggers';
+import { requestRun } from '../ci/environments';
+import { actorKindOf, contextFor, parseContext, runRef, triggerOf } from '../ci/context';
 import { recordAudit } from '../audit/record';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
@@ -113,7 +115,7 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
     });
     const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
     await linkReferences(c, loaded.repo, source, pull.body);
-    const ci = await autoCheck(c.env, pull, c.get('principal')!.userId);
+    const ci = await autoCheck(c, loaded.repo, pull);
     return c.json({ pull, ci }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -181,7 +183,7 @@ for (const action of ['update', 'review', 'merge'] as const) {
         // A merge moves the target branch like a push does, so it starts `on: push` pipelines.
         const merged = await getPull(c.env, loaded.repo.id, pull.id);
         try {
-          await pushPipelines(c.env, loaded.repo.id, c.get('principal')!.userId, [
+          await pushPipelines(c.env, loaded.repo.id, triggerOf(c), [
             { name: merged.base_ref, from: merged.base_cs, to: merged.head_cs },
           ]);
         } catch (err) {
@@ -209,7 +211,7 @@ for (const action of ['update', 'review', 'merge'] as const) {
         const ci =
           data.pull.head_cs !== pull.head_cs ||
           (pull.state === 'draft' && data.pull.state === 'open')
-            ? await autoCheck(c.env, data.pull, c.get('principal')!.userId)
+            ? await autoCheck(c, loaded.repo, data.pull)
             : { status: 'unchanged' };
         return c.json({ ...data, ci });
       }
@@ -324,6 +326,10 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
         require_checks: config.require_checks,
         protect_default: config.protect_default,
         image: config.image,
+        environment: config.environment,
+        secrets: config.secrets,
+        id_token: config.permissions.id_token,
+        aws_role_arn: config.aws?.role_arn ?? null,
       },
     });
     return c.json({ config, max_run_usd: reservation(config) / 1e6 });
@@ -346,24 +352,117 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
     if (!loaded.ok) return loaded.response;
     const scoped = requireAgentScope(c, 'ci:run');
     if (scoped) return scoped;
-    const cs = await resolveRevision(
+    const rev = input.head ?? `ref:${loaded.repo.default_branch}`;
+    const cs = await resolveRevision(c.env, loaded.repo.id, rev);
+    const started = await requestRun(
       c.env,
-      loaded.repo.id,
-      input.head ?? `ref:${loaded.repo.default_branch}`,
-    );
-    const job = await enqueueRun(
-      c.env,
-      loaded.repo.id,
+      loaded.repo,
       cs.id,
       c.get('principal')!.userId,
       input.publish,
+      {
+        event: 'workflow_dispatch',
+        ref: await runRef(c.env, loaded.repo.id, rev, cs.id),
+        pull_id: null,
+        fork: false,
+        actor_kind: actorKindOf(c.get('principal')),
+        origin: new URL(c.req.url).origin,
+        approval_id: null,
+      },
     );
+    if (started.approval) {
+      // the run waits for its environment's reviewers or wait timer
+      await recordAudit(c, {
+        action: 'environment.approval.request',
+        repo: loaded.repo,
+        target: {
+          approval_id: started.approval.id,
+          environment: started.approval.environment,
+          head_cs: cs.id,
+          publish: input.publish,
+        },
+      });
+      return c.json({ approval: started.approval }, 202);
+    }
     await recordAudit(c, {
       action: 'ci.run.create',
       repo: loaded.repo,
-      target: { run_id: job.id, head_cs: cs.id, publish: input.publish },
+      target: { run_id: started.run.id, head_cs: cs.id, publish: input.publish },
     });
-    return c.json({ run: job }, 202);
+    return c.json({ run: started.run }, 202);
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+/**
+ * Run a finished settings run again with its original trigger (event, ref,
+ * pull request), so branch rules, environment approval and OIDC subjects
+ * apply as they did the first time. The caller becomes the new actor.
+ */
+collaborationRoutes.post(`${base}/ci/runs/:id/retry`, async (c) => {
+  try {
+    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'ci:run');
+    if (scoped) return scoped;
+    const job = await q1<CiRun>(
+      c.env,
+      'SELECT * FROM ci_runs WHERE id = ? AND repo_id = ? AND pipeline_run_id IS NULL',
+      [c.req.param('id'), loaded.repo.id],
+    );
+    if (!job) return apiError(c, 404, 'run_not_found', 'Run not found');
+    if (job.publish) {
+      // publishing needs admin, as when the run was first started
+      const admin = await loadWholeRepo(c, 'admin', c.req.param('repo'));
+      if (!admin.ok) return admin.response;
+    }
+    const trigger = triggerOf(c);
+    const previous = parseContext(job.context);
+    // runs from before trigger contexts count as a dispatch of the default branch tip
+    const context = previous
+      ? {
+          ...previous,
+          actor_kind: trigger.actor_kind,
+          origin: trigger.origin,
+          approval_id: null,
+        }
+      : contextFor(
+          trigger,
+          'workflow_dispatch',
+          await runRef(
+            c.env,
+            loaded.repo.id,
+            `ref:${loaded.repo.default_branch}`,
+            job.head_cs,
+          ),
+        );
+    const started = await requestRun(
+      c.env,
+      loaded.repo,
+      job.head_cs,
+      trigger.actor,
+      Boolean(job.publish),
+      context,
+    );
+    if (started.approval) {
+      await recordAudit(c, {
+        action: 'environment.approval.request',
+        repo: loaded.repo,
+        target: {
+          approval_id: started.approval.id,
+          environment: started.approval.environment,
+          head_cs: job.head_cs,
+          retry_of: job.id,
+        },
+      });
+      return c.json({ approval: started.approval }, 202);
+    }
+    await recordAudit(c, {
+      action: 'ci.run.create',
+      repo: loaded.repo,
+      target: { run_id: started.run.id, head_cs: job.head_cs, retry_of: job.id },
+    });
+    return c.json({ run: started.run }, 202);
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -445,19 +544,33 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
 });
 
 async function autoCheck(
-  env: AppEnv['Bindings'],
+  c: Context<AppEnv>,
+  repo: RepoWithCreator,
   pull: Pull,
-  actor: string,
 ): Promise<{ status: string; message?: string }> {
+  const env = c.env;
   if (pull.state !== 'open' || env.CI_ENABLED !== 'true')
     return { status: 'not_started' };
   try {
     // Pipeline files in the proposed revision run as well as the settings
     // pipeline: the author writes them, so they never replace the CI policy.
+    const trigger = triggerOf(c);
     const config = await settings(env, pull.repo_id);
-    if (config) await enqueueRun(env, pull.repo_id, pull.head_cs, actor);
-    const pipelines = await pullPipelines(env, pull, actor);
-    return config ? { status: 'queued' } : (pipelines ?? { status: 'not_started' });
+    const started = config
+      ? await requestRun(env, repo, pull.head_cs, trigger.actor, false, {
+          event: 'pull_request',
+          ref: `refs/pull/${pull.id}/merge`,
+          pull_id: pull.id,
+          // pull requests always come from this repository; forks do not exist yet
+          fork: false,
+          actor_kind: trigger.actor_kind,
+          origin: trigger.origin,
+          approval_id: null,
+        })
+      : null;
+    const pipelines = await pullPipelines(env, pull, trigger);
+    if (started) return { status: started.approval ? 'waiting_for_approval' : 'queued' };
+    return pipelines ?? { status: 'not_started' };
   } catch (err) {
     return {
       status: 'not_started',

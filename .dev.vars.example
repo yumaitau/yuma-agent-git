@@ -17,3 +17,9 @@ GITHUB_WEBHOOK_SECRET=
 
 # HMAC key for signed cache tokens (issue #21). Any long random string.
 CACHE_SIGNING_KEY=
+
+# CI secrets and OIDC (issue #50). Generate with scripts/ci-keys.mjs; see docs/ci-oidc-aws.md.
+SECRETS_KEK=
+CI_OIDC_SIGNING_KEYS=
+CI_OIDC_ISSUER=
+SECRETS_ADMIN_USER_IDS=

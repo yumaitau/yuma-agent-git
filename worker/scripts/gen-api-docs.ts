@@ -133,11 +133,40 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:repo/ci/detect': 'Suggest CI commands from the default branch',
   'POST /api/v1/repos/:repo/ci/runs': 'Queue a CI run',
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': 'Cancel a CI run',
+  'POST /api/v1/repos/:repo/ci/runs/:id/retry':
+    'Run a CI run again with its original trigger',
   'GET /api/v1/repos/:repo/ci/runs/:id/log': 'CI run log (`text/plain`)',
   'GET /api/v1/repos/:repo/ci/pipelines':
     'Pipeline runs with their jobs and spec errors (`?head=`)',
   'POST /api/v1/repos/:repo/ci/pipelines/runs': 'Start a pipeline with a manual trigger',
   'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': 'Cancel a pipeline run',
+  'GET /ci/oidc/.well-known/openid-configuration': 'CI OIDC discovery document (public)',
+  'GET /ci/oidc/jwks': 'CI OIDC signing keys, current and previous (public)',
+  'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
+  'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
+  'GET /api/v1/repos/:repo/secrets':
+    'Secret names (`?environment=`); values are write-only',
+  'PUT /api/v1/repos/:repo/secrets/:name': 'Set a secret `{value}` (`?environment=`)',
+  'DELETE /api/v1/repos/:repo/secrets/:name': 'Delete a secret (`?environment=`)',
+  'GET /api/v1/repos/:repo/variables': 'Variables with values (`?environment=`)',
+  'PUT /api/v1/repos/:repo/variables/:name': 'Set a variable `{value}` (`?environment=`)',
+  'DELETE /api/v1/repos/:repo/variables/:name': 'Delete a variable (`?environment=`)',
+  'GET /api/v1/repos/:repo/environments': 'Deployment environments and protection rules',
+  'PUT /api/v1/repos/:repo/environments/:env': 'Create or update an environment',
+  'DELETE /api/v1/repos/:repo/environments/:env':
+    'Delete an environment and its secrets and variables',
+  'GET /api/v1/repos/:repo/environment-approvals':
+    'Runs waiting on environments (`?state=`)',
+  'POST /api/v1/repos/:repo/environment-approvals/:id':
+    'Approve or reject a waiting run (listed reviewers, not the requester)',
+  'GET /api/v1/orgs/:org/secrets': 'Org secret names; values are write-only',
+  'PUT /api/v1/orgs/:org/secrets/:name': 'Set an org secret `{value}`',
+  'DELETE /api/v1/orgs/:org/secrets/:name': 'Delete an org secret',
+  'GET /api/v1/orgs/:org/variables': 'Org variables with values',
+  'PUT /api/v1/orgs/:org/variables/:name': 'Set an org variable `{value}`',
+  'DELETE /api/v1/orgs/:org/variables/:name': 'Delete an org variable',
+  'POST /api/v1/admin/secrets/rewrap':
+    'Re-wrap secret data keys under the current KEK (`SECRETS_ADMIN_USER_IDS`)',
   'POST /api/v1/repos/:repo/connect': 'Link the repo to a GitHub repo via the App',
   'GET /api/v1/repos/:repo/diff': 'Server-side diff between two revisions',
   'POST /api/v1/repos/:repo/export/github': 'Queue a push of a revision to GitHub',
@@ -278,6 +307,7 @@ function samplePath(path: string): string {
 function classify(path: string, src: string): { auth: string; perm: string | null } {
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
+  if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',
@@ -466,6 +496,7 @@ const SECURITY: Record<string, Record<string, string[]>[]> = {
   none: [],
   HMAC: [{ githubSignature: [] }],
   'SCIM token': [{ scimBearer: [] }],
+  'CI request token': [{ ciJobBearer: [] }],
   'token (Basic or Bearer)': [{ gitBasic: [] }, { bearer: [] }],
 };
 
@@ -562,6 +593,12 @@ function openapi(mod: WorkerModule, rows: Row[]): JsonObject {
           type: 'http',
           scheme: 'bearer',
           description: 'SCIM token from `POST /api/v1/scim/tokens`',
+        },
+        ciJobBearer: {
+          type: 'http',
+          scheme: 'bearer',
+          description:
+            'Per-run CI request token (`yagjob_…`) from `YAG_ID_TOKEN_REQUEST_TOKEN` in the job',
         },
         githubSignature: {
           type: 'apiKey',

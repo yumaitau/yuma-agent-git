@@ -3,6 +3,7 @@ import { q } from '../db/client';
 import { diffRevisions } from '../core/diff';
 import { TAG_PREFIX } from '../core/refs';
 import type { Pull } from '../../shared/collaboration';
+import { contextFor, type RunContext, type Trigger } from './context';
 import { advancePipelines, startPipeline } from './planner';
 import { globMatch, loadPipelines, nextRun, type PipelineFile } from './spec';
 
@@ -33,7 +34,13 @@ async function changedPaths(
 async function startFiles(
   env: Env,
   files: PipelineFile[],
-  base: { repoId: string; head: string; ref: string | null; actor: string },
+  base: {
+    repoId: string;
+    head: string;
+    ref: string | null;
+    actor: string;
+    context: RunContext;
+  },
   event: 'push' | 'pull_request',
   wanted: (file: PipelineFile) => Promise<boolean>,
 ): Promise<string[]> {
@@ -54,7 +61,7 @@ async function startFiles(
 export async function pushPipelines(
   env: Env,
   repoId: string,
-  actor: string,
+  trigger: Trigger,
   moves: { name: string; from: string | null; to: string | null }[],
 ): Promise<string[]> {
   if (!ciReady(env)) return [];
@@ -69,7 +76,13 @@ export async function pushPipelines(
     const lines = await startFiles(
       env,
       files,
-      { repoId, head: move.to, ref: move.name, actor },
+      {
+        repoId,
+        head: move.to,
+        ref: move.name,
+        actor: trigger.actor,
+        context: contextFor(trigger, 'push', tag ? move.name : `refs/heads/${move.name}`),
+      },
       'push',
       async (file) => {
         const on = file.pipeline!.on.push;
@@ -92,7 +105,7 @@ export async function pushPipelines(
 export async function pullPipelines(
   env: Env,
   pull: Pull,
-  actor: string,
+  trigger: Trigger,
 ): Promise<{ status: string } | null> {
   const files = await loadPipelines(env, pull.repo_id, pull.head_cs);
   if (files.length === 0) return null;
@@ -101,7 +114,13 @@ export async function pullPipelines(
   const started = await startFiles(
     env,
     files,
-    { repoId: pull.repo_id, head: pull.head_cs, ref: `pull/${pull.id}`, actor },
+    {
+      repoId: pull.repo_id,
+      head: pull.head_cs,
+      ref: `pull/${pull.id}`,
+      actor: trigger.actor,
+      context: contextFor(trigger, 'pull_request', `refs/pull/${pull.id}/merge`, pull.id),
+    },
     'pull_request',
     async (file) => {
       const on = file.pipeline!.on.pull_request;
@@ -216,6 +235,11 @@ export async function sweepPipelines(env: Env): Promise<void> {
       event: 'schedule',
       ref: s.default_branch,
       actor: 'schedule',
+      context: contextFor(
+        { actor: 'schedule', actor_kind: 'system', origin: null },
+        'schedule',
+        `refs/heads/${s.default_branch}`,
+      ),
     });
   }
   await advancePipelines(env);

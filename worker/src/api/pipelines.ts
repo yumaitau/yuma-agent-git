@@ -9,6 +9,7 @@ import { ApiError } from '../core/errors';
 import { cancelPipeline, listPipelineRuns, startPipeline } from '../ci/planner';
 import { loadPipelines } from '../ci/spec';
 import { ciReady } from '../ci/triggers';
+import { contextFor, runRef, triggerOf } from '../ci/context';
 import { errorResponse, readJsonBody } from './errors';
 
 /** Pipeline spec v2 runs (issue #47). Runs read the whole tree, so every route needs the whole repo. */
@@ -49,7 +50,8 @@ pipelineRoutes.post(`${base}/runs`, async (c) => {
         'CI execution is not enabled. Your administrator can enable the Cloudflare runner after deployment.',
       );
     const ref = input.head ?? loaded.repo.default_branch;
-    const cs = await resolveRevision(c.env, loaded.repo.id, input.head ?? `ref:${ref}`);
+    const rev = input.head ?? `ref:${ref}`;
+    const cs = await resolveRevision(c.env, loaded.repo.id, rev);
     const file = (await loadPipelines(c.env, loaded.repo.id, cs.id)).find(
       (f) => f.path === input.pipeline,
     );
@@ -73,6 +75,11 @@ pipelineRoutes.post(`${base}/runs`, async (c) => {
       event: 'manual',
       ref,
       actor: c.get('principal')!.userId,
+      context: contextFor(
+        triggerOf(c),
+        'workflow_dispatch',
+        await runRef(c.env, loaded.repo.id, rev, cs.id),
+      ),
     });
     await recordAudit(c, {
       action: 'ci.run.create',

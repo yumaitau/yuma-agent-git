@@ -7,6 +7,7 @@ import { recordAgentProvenance } from '../auth/agents';
 import { pathDecider, restrictingDecision } from '../auth/rbac';
 import { actorOf, recordAudit } from '../audit/record';
 import { ciReady, pushPipelines } from '../ci/triggers';
+import { triggerOf } from '../ci/context';
 import { linkLanded, linkPushed } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
 import { listRefs, getRef } from '../db/repos';
@@ -596,7 +597,7 @@ export async function receivePack(
           ...(await pushPipelines(
             env,
             repo.id,
-            principal.userId,
+            triggerOf(c),
             moved.map((u) => ({
               name: u.name,
               from: u.from,

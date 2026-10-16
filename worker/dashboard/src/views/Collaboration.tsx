@@ -527,6 +527,14 @@ export function PipelineRuns({
                         <span className="small muted">needs {j.needs.join(', ')}</span>
                       )}
                       {j.error && <span className="small">{j.error}</span>}
+                      {j.state === 'waiting' &&
+                        ['pending', 'approved'].includes(j.approval?.state ?? '') && (
+                          <span className="small">
+                            {j.approval!.state === 'pending'
+                              ? `Waiting for approval to deploy to ${j.environment}`
+                              : `Approved for ${j.environment}; waiting for its timer or a runner`}
+                          </span>
+                        )}
                       {onLog && j.run_id && (
                         <button onClick={() => onLog(j.run_id!)}>Log</button>
                       )}
@@ -542,6 +550,8 @@ export function PipelineRuns({
   );
 }
 
+const WAITING =
+  'This run is waiting for environment approval. Reviewers can approve it under Secrets and environments.';
 export function CiView(): ReactElement {
   const slug = useSlug();
   const path = `/repos/${slug}/ci`;
@@ -555,6 +565,11 @@ export function CiView(): ReactElement {
   const [protectDefault, setProtectDefault] = useState(true);
   const [image, setImage] = useState('');
   const [dockerfile, setDockerfile] = useState('Dockerfile');
+  const [environment, setEnvironment] = useState('');
+  const [secretNames, setSecretNames] = useState('');
+  const [idToken, setIdToken] = useState(false);
+  const [awsRole, setAwsRole] = useState('');
+  const [awsRegion, setAwsRegion] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | null>(null);
   const [log, setLog] = useState<string | null>(null);
@@ -572,6 +587,11 @@ export function CiView(): ReactElement {
       setProtectDefault(config.protect_default);
       setImage(config.image ?? '');
       setDockerfile(config.dockerfile);
+      setEnvironment(config.environment ?? '');
+      setSecretNames((config.secrets ?? []).join(', '));
+      setIdToken(config.permissions?.id_token === 'write');
+      setAwsRole(config.aws?.role_arn ?? '');
+      setAwsRegion(config.aws?.region ?? '');
     } else if (data.can_admin)
       void call<Detection>(`${path}/detect`)
         .then((d) => {
@@ -618,13 +638,29 @@ export function CiView(): ReactElement {
         protect_default: protectDefault,
         dockerfile,
         image: image.trim() || null,
+        environment: environment.trim() || null,
+        secrets: secretNames
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        permissions: { id_token: idToken ? 'write' : 'none' },
+        aws:
+          idToken && awsRole.trim()
+            ? {
+                role_arn: awsRole.trim(),
+                region: awsRegion.trim(),
+                ...(config?.aws?.session_name
+                  ? { session_name: config.aws.session_name }
+                  : {}),
+              }
+            : null,
       });
       setEdit(false);
       setNotice('CI configuration saved.');
       refresh();
       if (start) {
-        await call(`${path}/runs`, 'POST', {});
-        setNotice('Your first run is queued.');
+        const started = await call<{ approval?: unknown }>(`${path}/runs`, 'POST', {});
+        setNotice(started.approval ? WAITING : 'Your first run is queued.');
         refresh();
       }
     });
@@ -633,11 +669,14 @@ export function CiView(): ReactElement {
       <RepoNav active="CI" />
       <div className="row between">
         <h1>Continuous integration</h1>
-        {config && data?.can_admin && (
-          <button onClick={() => setEdit(!edit)}>
-            {edit ? 'Close setup' : 'Edit pipeline'}
-          </button>
-        )}
+        <div className="row">
+          <Link to={`/r/${slug}/ci/access`}>Secrets and environments</Link>
+          {config && data?.can_admin && (
+            <button onClick={() => setEdit(!edit)}>
+              {edit ? 'Close setup' : 'Edit pipeline'}
+            </button>
+          )}
+        </div>
       </div>
       {(failure || error) && <ErrorNotice error={(failure || error)!} />}{' '}
       {notice && <p role="status">{notice}</p>}
@@ -707,7 +746,59 @@ export function CiView(): ReactElement {
               />
             </Field>
           )}
-          <div className="step-label">3 / Cost and review limits</div>
+          <div className="step-label">3 / Deployment access</div>
+          <p className="small muted">
+            Jobs get no credentials unless you ask. Secrets and OIDC tokens are never
+            given to pull requests from forks or from authors without write access.{' '}
+            <Link to={`/r/${slug}/ci/access`}>Manage secrets and environments</Link>.
+          </p>
+          <div className="row">
+            <Field label="Environment">
+              <input
+                type="text"
+                placeholder="production"
+                value={environment}
+                onChange={(e) => setEnvironment(e.target.value)}
+              />
+            </Field>
+            <Field label="Secrets (names, comma separated)">
+              <input
+                type="text"
+                placeholder="NPM_TOKEN"
+                value={secretNames}
+                onChange={(e) => setSecretNames(e.target.value)}
+              />
+            </Field>
+          </div>
+          <label>
+            <input
+              type="checkbox"
+              checked={idToken}
+              onChange={(e) => setIdToken(e.target.checked)}
+            />{' '}
+            Allow OIDC ID tokens (cloud access without stored keys)
+          </label>
+          {idToken && (
+            <div className="row">
+              <Field label="AWS role ARN (optional)">
+                <input
+                  type="text"
+                  placeholder="arn:aws:iam::123456789012:role/deploy"
+                  value={awsRole}
+                  onChange={(e) => setAwsRole(e.target.value)}
+                />
+              </Field>
+              <Field label="AWS region">
+                <input
+                  type="text"
+                  placeholder="ap-southeast-2"
+                  value={awsRegion}
+                  onChange={(e) => setAwsRegion(e.target.value)}
+                />
+              </Field>
+            </div>
+          )}
+          <div className="step-label">4 / Cost and review limits</div>
           <div className="row">
             <Field label="Maximum run time (minutes)">
               <input
@@ -783,7 +874,12 @@ export function CiView(): ReactElement {
                 disabled={busy || !data.enabled || !data.can_write}
                 onClick={() =>
                   void task(async () => {
-                    await call(`${path}/runs`, 'POST', {});
+                    const started = await call<{ approval?: unknown }>(
+                      `${path}/runs`,
+                      'POST',
+                      {},
+                    );
+                    if (started.approval) setNotice(WAITING);
                     refresh();
                   })
                 }
@@ -861,10 +957,13 @@ export function CiView(): ReactElement {
                               disabled={busy || !data.enabled || !data.can_write}
                               onClick={() =>
                                 void task(async () => {
-                                  await call(`${path}/runs`, 'POST', {
-                                    head: job.head_cs,
-                                    publish: Boolean(job.publish),
-                                  });
+                                  // the server reuses the run's trigger (ref, event, pull)
+                                  const started = await call<{ approval?: unknown }>(
+                                    `${path}/runs/${job.id}/retry`,
+                                    'POST',
+                                    {},
+                                  );
+                                  if (started.approval) setNotice(WAITING);
                                   refresh();
                                 })
                               }

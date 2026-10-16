@@ -11,6 +11,7 @@ import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
 import { expireAgentRefs } from './core/refs';
+import { dispatchApprovals } from './ci/environments';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -31,6 +32,10 @@ export default {
     await expireAgentRefs(env);
     await run(env, 'DELETE FROM agent_tokens WHERE expires_at < ?', [Date.now()]);
     await kickAuditStream(env);
+    // Environment approvals whose reviewers approved and wait timer elapsed.
+    await dispatchApprovals(env).catch(() =>
+      console.warn('Environment approval dispatch will be retried by the next sweep'),
+    );
     const expired = await q<{ id: string; log_key: string }>(
       env,
       'SELECT id, log_key FROM ci_runs WHERE log_key IS NOT NULL AND finished_at < ? LIMIT 50',

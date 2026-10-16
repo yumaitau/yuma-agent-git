@@ -5,12 +5,17 @@ import type { Env } from '../env';
 import { getBlob } from '../core/blobs';
 import { getChangeset } from '../core/changesets';
 import { getTree, resolvePath } from '../core/trees';
-import type { SpecError } from '../../shared/collaboration';
+import type { CiPolicy, SpecError } from '../../shared/collaboration';
+import { accessFields, AWS_NEEDS_ID_TOKEN } from './config';
 
 /**
  * Pipeline spec v2 (issue #47): `.yuma/pipelines/*.yml` in the repository.
- * The only expressions are `${{ matrix.<axis> }}` in steps and `${{ ref }}` in
- * a concurrency group; they are plain text substitution, never evaluated.
+ * The only expressions are `${{ matrix.<axis> }}`, `${{ secrets.<NAME> }}` and
+ * `${{ vars.<NAME> }}` in steps and `${{ ref }}` in a concurrency group; they
+ * are plain text substitution, never evaluated. Secrets and variables become
+ * `${NAME}` shell references, so their values never enter command text.
+ * A job's `environment`, `secrets`, `permissions` and `aws` are the issue #50
+ * access fields of the settings pipeline, gated per job.
  * Limits match the settings pipeline so one job reserves what one run did.
  */
 const PIPELINE_DIR = ['.yuma', 'pipelines'];
@@ -74,6 +79,8 @@ const triggers = z.preprocess(
     .refine((o) => Object.keys(o).length > 0, 'Add at least one trigger'),
 );
 
+const REFERENCE = /^(secrets|vars)\.([A-Za-z_][A-Za-z0-9_]{0,99})$/;
+
 const service = z.strictObject({
   image: z
     .string()
@@ -131,6 +138,7 @@ const job = z.strictObject({
     )
     .min(1)
     .max(8),
+  ...accessFields,
 });
 
 const EXPRESSION = /\$\{\{\s*(.*?)\s*\}\}/g;
@@ -177,15 +185,28 @@ const specSchema = z
         });
       for (const [i, step] of j.steps.entries()) {
         for (const [, expr] of step.run.matchAll(EXPRESSION)) {
+          if (REFERENCE.test(expr)) continue;
           const axis = /^matrix\.([A-Za-z0-9_-]+)$/.exec(expr)?.[1];
           if (!axis || !j.matrix?.[axis])
             ctx.addIssue({
               code: 'custom',
               path: ['jobs', name, 'steps', i, 'run'],
-              message: `Unsupported expression "${expr}". Only matrix values of this job can be used`,
+              message: `Unsupported expression "${expr}". Use matrix values of this job, secrets.<NAME> or vars.<NAME>`,
             });
         }
       }
+      if (j.aws && j.permissions.id_token !== 'write')
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jobs', name, 'aws'],
+          message: AWS_NEEDS_ID_TOKEN,
+        });
+      if (jobSecrets(j).length > 50)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jobs', name, 'secrets'],
+          message: 'A job may use 50 secrets at most',
+        });
     }
     if (total > MAX_JOBS)
       ctx.addIssue({
@@ -223,7 +244,21 @@ const specSchema = z
 type Spec = z.infer<typeof specSchema>;
 type Triggers = Spec['on'];
 
-export interface PlannedJob {
+/** Secrets a job lists or references in its steps, by stored (upper-case) name. */
+function jobSecrets(j: z.infer<typeof job>): string[] {
+  const names = j.secrets.map((n) => n.toUpperCase());
+  for (const step of j.steps)
+    for (const [, expr] of step.run.matchAll(EXPRESSION)) {
+      const ref = REFERENCE.exec(expr);
+      if (ref?.[1] === 'secrets') names.push(ref[2]!.toUpperCase());
+    }
+  return [...new Set(names)];
+}
+
+export interface PlannedJob extends Pick<
+  CiPolicy,
+  'environment' | 'secrets' | 'permissions' | 'aws'
+> {
   key: string;
   job: string;
   needs: string[];
@@ -305,10 +340,11 @@ export function parseSpec(path: string, text: string): PipelineFile {
         job: name,
         needs: j.needs ?? [],
         commands: j.steps.map((s) =>
-          s.run.replace(
-            EXPRESSION,
-            (_, expr: string) => values.get(expr.slice('matrix.'.length)) ?? '',
-          ),
+          s.run.replace(EXPRESSION, (_, expr: string) => {
+            const ref = REFERENCE.exec(expr);
+            if (ref) return `\${${ref[2]!.toUpperCase()}}`;
+            return values.get(expr.slice('matrix.'.length)) ?? '';
+          }),
         ),
         timeout_seconds: j.timeout_seconds,
         services: Object.entries(j.services ?? {}).map(([n, s]) => ({
@@ -316,6 +352,10 @@ export function parseSpec(path: string, text: string): PipelineFile {
           image: s.image,
           env: s.env ?? {},
         })),
+        environment: j.environment,
+        secrets: jobSecrets(j),
+        permissions: j.permissions,
+        aws: j.aws,
       });
     }
   }

@@ -15,6 +15,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- CI secrets, variables, environments and OIDC workload identity (#50).
+  Org, repo and environment secrets are envelope-encrypted, write-only and
+  masked in logs (including base64, URL-encoded and line-split forms).
+  Environments add required reviewers, wait timers, branch globs and a
+  people-only flag, with approvals in the audit log. Jobs that opt in with
+  `permissions.id_token: write` get GitHub-compatible OIDC ID tokens from
+  `/ci/oidc` (public discovery and JWKS, RS256, rotating keys), and an `aws`
+  block sets up `AWS_WEB_IDENTITY_TOKEN_FILE` for the AWS CLI and SDKs. The
+  runner image adds pinned AWS CLI v2, Helm 3 and kubectl.
+  `scripts/ci-keys.mjs` generates and rotates the keys without printing them.
+  See `docs/ci-oidc-aws.md`.
+- YAML pipeline jobs (#47) take the #50 fields per job: `permissions`,
+  `aws`, `secrets`, `environment`, and `${{ secrets.NAME }}` and
+  `${{ vars.NAME }}` step references (passed as shell variables). A job with
+  an environment waits at its gate (approval request, wait timer, branch and
+  people-only rules) before it starts, and each job gets its own OIDC `sub`
+  and `job` claims. Agent-started pipelines run as `actor_kind: agent`.
+  **Retry** on a CI run now reuses its trigger (`POST …/ci/runs/:id/retry`),
+  so retried runs keep their ref, approval gate and ID tokens. Org secret
+  routes honour org SSO.
 - End-to-end suites (golden path, concurrent landing, route authorization matrix,
   migrations), a deterministic commit-graph fuzzer, and a generated API reference
   (`docs/api.md`) checked against the router in CI.

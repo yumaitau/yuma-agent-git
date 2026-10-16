@@ -187,3 +187,59 @@ it('draws the pipeline job graph by stage and shows line-numbered spec errors', 
   expect(screen.getByText('.yuma/pipelines/bad.yml:4:13')).toBeTruthy();
   expect(screen.getByText(/Unknown job "x"/)).toBeTruthy();
 });
+
+it('retries a run through its retry endpoint and shows deploy jobs waiting for approval', async () => {
+  const failed = {
+    id: 'r1',
+    repo_id: 'repo',
+    head_cs: 'd'.repeat(64),
+    state: 'failed',
+    publish: 0,
+    error: 'A command failed',
+    created_at: Date.now(),
+  };
+  const pipeline = {
+    id: 'p1',
+    pipeline: '.yuma/pipelines/deploy.yml',
+    name: 'deploy',
+    event: 'push',
+    ref: 'main',
+    head_cs: 'd'.repeat(64),
+    concurrency_group: null,
+    state: 'running',
+    errors: null,
+    requested_by: 'u1',
+    created_at: Date.now(),
+    finished_at: null,
+    jobs: [
+      {
+        key: 'deploy',
+        job: 'deploy',
+        needs: [],
+        state: 'waiting',
+        run_id: null,
+        error: null,
+        environment: 'production',
+        approval: { id: 'a1', state: 'pending' },
+      },
+    ],
+  };
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method === 'POST')
+      return Response.json({ approval: { id: 'a2' } }, { status: 202 });
+    return Response.json(
+      path.includes('/ci/pipelines')
+        ? { runs: [pipeline] }
+        : { ...overview, enabled: true, version: 1, config: policy, runs: [failed] },
+    );
+  });
+  vi.stubGlobal('fetch', fetcher);
+  mount(<CiView />);
+  expect(
+    await screen.findByText('Waiting for approval to deploy to production'),
+  ).toBeTruthy();
+  fireEvent.click(await screen.findByText('Retry'));
+  await screen.findByText(/waiting for environment approval/);
+  const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(post![0]).toMatch(/\/ci\/runs\/r1\/retry$/);
+});

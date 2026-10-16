@@ -135,6 +135,12 @@ const PUBLIC = new Set([
   'GET /:owner/:repo{[^/]+\\.git}/info/refs',
   'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack',
+  // CI workload identity (#50): cloud IAM fetches discovery and keys
+  // anonymously; the token endpoint demands a per-run request token
+  'GET /ci/oidc/.well-known/openid-configuration',
+  'GET /ci/oidc/jwks',
+  'GET /ci/oidc/token',
+  'POST /ci/oidc/token',
 ]);
 
 /**
@@ -162,6 +168,7 @@ const EXEMPT: Record<string, string> = {
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'collaboration.test.ts',
   'GET /api/v1/repos/:repo{.+}/ci/runs/:id/log': 'collaboration.test.ts',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'collaboration.test.ts',
+  'POST /api/v1/repos/:repo{.+}/ci/runs/:id/retry': 'ci-pipeline-deploy.test.ts',
   'GET /api/v1/repos/:repo{.+}/ci/pipelines': 'ci-planner.test.ts',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci-planner.test.ts',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci-planner.test.ts',
@@ -199,6 +206,17 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/milestones': 'issues.test.ts',
   'POST /api/v1/repos/:repo{.+}/milestones': 'issues.test.ts',
   'PATCH /api/v1/repos/:repo{.+}/milestones/:id': 'issues.test.ts',
+  'GET /api/v1/repos/:repo{.+}/secrets': 'secrets.test.ts',
+  'PUT /api/v1/repos/:repo{.+}/secrets/:name': 'secrets.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/secrets/:name': 'secrets.test.ts',
+  'GET /api/v1/repos/:repo{.+}/variables': 'secrets.test.ts',
+  'PUT /api/v1/repos/:repo{.+}/variables/:name': 'secrets.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/variables/:name': 'secrets.test.ts',
+  'GET /api/v1/repos/:repo{.+}/environments': 'secrets.test.ts',
+  'PUT /api/v1/repos/:repo{.+}/environments/:env': 'secrets.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/environments/:env': 'secrets.test.ts',
+  'GET /api/v1/repos/:repo{.+}/environment-approvals': 'secrets.test.ts',
+  'POST /api/v1/repos/:repo{.+}/environment-approvals/:id': 'secrets.test.ts',
 };
 
 /**
