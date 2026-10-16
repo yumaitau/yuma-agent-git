@@ -636,6 +636,13 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /api/v1/installations/:id': 'app.uninstall',
   'POST /api/v1/repos/:repo{.+}/hooks': 'webhook.create',
   'POST /api/v1/orgs/:org/hooks': 'webhook.create',
+  // package registry (#53)
+  'PUT /v2/:name{.+}/manifests/:reference': 'package.publish',
+  'DELETE /v2/:name{.+}/manifests/:reference': 'package.delete',
+  'PUT /npm/:pkg': 'package.publish',
+  'PUT /npm/-/package/:pkg/dist-tags/:tag': 'package.tag',
+  'DELETE /npm/-/package/:pkg/dist-tags/:tag': 'package.tag',
+  'PATCH /api/v1/repos/:repo{.+}/packages/:id': 'package.settings.update',
   'PATCH /api/v1/hooks/:id': 'webhook.update',
   'DELETE /api/v1/hooks/:id': 'webhook.delete',
   'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'webhook.redeliver',
@@ -649,6 +656,14 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/orgs/:org/release-settings': 'org.release_settings.set',
 };
 const EXEMPT: Record<string, string> = {
+  'POST /v2/token':
+    "short-lived registry token for the presented credential; its grant is the caller's current access",
+  'POST /v2/:name{.+}/blobs/uploads/':
+    'content-addressed blob upload or mount; served only through an audited manifest publish',
+  'PATCH /v2/:name{.+}/blobs/uploads/:uuid': 'upload chunk; same as starting the upload',
+  'PUT /v2/:name{.+}/blobs/uploads/:uuid': 'finishes a content-addressed blob upload',
+  'DELETE /v2/:name{.+}/blobs/uploads/:uuid':
+    "cancels the caller's own unfinished upload",
   'POST /webhooks/github':
     'GitHub-signed delivery with no principal; deduped in webhook_deliveries',
   'POST /api/v1/repos/:repo{.+}/changesets':

@@ -103,6 +103,8 @@ import {
   workListQuery,
 } from './work';
 import { createRepoSchema, updateRepoSchema } from './repos';
+import { patchPackageSchema } from './packages';
+import { publishSchema as npmPublishSchema } from '../registry/npm';
 import { patchRunnerBody, registrationTokenBody } from './runners';
 import { completeSchema, registerSchema, stepSchema } from '../ci/runners';
 
@@ -296,6 +298,65 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'gitReceivePack',
     rawBody: 'application/x-git-receive-pack-request',
   },
+  // package registry (#53): OCI distribution v1.1 and an npm subset
+  'GET /v2/': { id: 'ociPing' },
+  'GET /v2/token': {
+    id: 'getRegistryToken',
+    query: z.object({
+      service: z.string().optional(),
+      scope: z.string().optional().describe('`repository:<name>:pull,push`; repeatable'),
+    }),
+  },
+  'POST /v2/token': {
+    id: 'createRegistryToken',
+    rawBody: 'application/x-www-form-urlencoded',
+  },
+  'GET /v2/:name/blobs/:digest': { id: 'getOciBlob' },
+  'POST /v2/:name/blobs/uploads/': {
+    id: 'startOciBlobUpload',
+    query: z.object({
+      digest: z.string().optional().describe('Monolithic upload of the body'),
+      mount: z.string().optional().describe('Digest to mount from `from`'),
+      from: z.string().optional(),
+    }),
+    rawBody: 'application/octet-stream',
+  },
+  'GET /v2/:name/blobs/uploads/:uuid': { id: 'getOciBlobUpload' },
+  'PATCH /v2/:name/blobs/uploads/:uuid': {
+    id: 'appendOciBlobUpload',
+    rawBody: 'application/octet-stream',
+  },
+  'PUT /v2/:name/blobs/uploads/:uuid': {
+    id: 'finishOciBlobUpload',
+    query: z.object({ digest: z.string() }),
+    rawBody: 'application/octet-stream',
+  },
+  'DELETE /v2/:name/blobs/uploads/:uuid': { id: 'cancelOciBlobUpload' },
+  'GET /v2/:name/manifests/:reference': { id: 'getOciManifest' },
+  'PUT /v2/:name/manifests/:reference': {
+    id: 'putOciManifest',
+    rawBody: 'application/vnd.oci.image.manifest.v1+json',
+  },
+  'DELETE /v2/:name/manifests/:reference': { id: 'deleteOciManifest' },
+  'GET /v2/:name/tags/list': {
+    id: 'listOciTags',
+    query: z.object({ n: z.int().min(1).optional(), last: z.string().optional() }),
+  },
+  'GET /v2/:name/referrers/:digest': {
+    id: 'listOciReferrers',
+    query: z.object({ artifactType: z.string().optional() }),
+  },
+  'GET /npm/-/whoami': { id: 'npmWhoami' },
+  'GET /npm/-/package/:pkg/dist-tags': { id: 'listNpmDistTags' },
+  'PUT /npm/-/package/:pkg/dist-tags/:tag': {
+    id: 'setNpmDistTag',
+    body: z.string().describe('The version, as a JSON string'),
+  },
+  'DELETE /npm/-/package/:pkg/dist-tags/:tag': { id: 'deleteNpmDistTag' },
+  'GET /npm/:scope/:name/-/:file': { id: 'getNpmTarball' },
+  'GET /npm/:scope/:name': { id: 'getNpmPackage' },
+  'GET /npm/:pkg': { id: 'getNpmPackageEncoded' },
+  'PUT /npm/:pkg': { id: 'publishNpmPackage', body: npmPublishSchema },
 
   'GET /api/v1': { id: 'getApiRoot' },
   'GET /api/v1/openapi.json': { id: 'getOpenApi' },
@@ -603,6 +664,11 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/import': { id: 'startImport', body: importRequestSchema },
   'GET /api/v1/repos/:repo/issue-templates': { id: 'listIssueTemplates' },
   'GET /api/v1/repos/:repo/hooks': { id: 'listRepoHooks' },
+  'GET /api/v1/repos/:repo/packages': { id: 'listRepoPackages' },
+  'PATCH /api/v1/repos/:repo/packages/:id': {
+    id: 'updateRepoPackage',
+    body: patchPackageSchema,
+  },
   'POST /api/v1/repos/:repo/hooks': { id: 'createRepoHook', body: hookInputSchema },
   'GET /api/v1/repos/:repo/issues': { id: 'listIssues', query: issueListQuery },
   'POST /api/v1/repos/:repo/issues': { id: 'createIssue', body: createIssue },

@@ -48,6 +48,8 @@ export const AGENT_SCOPES = [
   'queue:claim',
   'queue:approve',
   'issues:write',
+  // package registry (#53): push images and npm packages (pull is contents:read)
+  'packages:write',
 ] as const;
 export type AgentScope = (typeof AGENT_SCOPES)[number];
 const DEFAULT_SCOPES: AgentScope[] = [

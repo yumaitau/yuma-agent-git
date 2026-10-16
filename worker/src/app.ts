@@ -20,6 +20,8 @@ import { oidcRoutes } from './ci/oidc';
 import { runnerRoutes } from './ci/runners';
 import { mcpOAuthRoutes } from './mcp/oauth';
 import { mcpServerRoutes } from './mcp/server';
+import { npmRoutes } from './registry/npm';
+import { ociRoutes } from './registry/oci';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -67,6 +69,11 @@ app.route('/', oidcRoutes);
 // runner's own credential. Outside /api: runners are not users.
 app.route('/', runnerRoutes);
 
+// Package registry (issue #53): OCI images at /v2/ and npm at /npm/, each
+// with its own credential handling (registry/auth.ts).
+app.route('/', ociRoutes);
+app.route('/', npmRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, token management,
 // agent identities with their token exchange, and apps and OAuth apps (#75).
@@ -101,6 +108,8 @@ app.notFound((c) => {
     path.startsWith('/healthz') ||
     path.startsWith('/ci/oidc/') ||
     path.startsWith('/runner/') ||
+    path.startsWith('/v2/') ||
+    path.startsWith('/npm/') ||
     path === '/mcp' ||
     path.startsWith('/oauth/') ||
     path.startsWith('/.well-known/oauth-') ||

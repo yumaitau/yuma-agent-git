@@ -145,7 +145,11 @@ export type AuditAction =
   | 'oauth.token.issue'
   | 'secret_scanning.bypass'
   | 'secret_scanning.alert.update'
-  | 'secret_scanning.scan.start';
+  | 'secret_scanning.scan.start'
+  | 'package.publish'
+  | 'package.tag'
+  | 'package.delete'
+  | 'package.settings.update';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

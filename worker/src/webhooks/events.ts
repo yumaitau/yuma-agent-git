@@ -25,6 +25,8 @@ export const WEBHOOK_EVENTS = [
   'secret_scanning_alert',
   'merge_group',
   'release',
+  // package registry (#53): published, tagged, deleted
+  'package',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

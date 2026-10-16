@@ -17,6 +17,9 @@
       "/*.git/*",
       "/ci/oidc/*",
       "/runner/*",
+      // package registry (#53)
+      "/v2/*",
+      "/npm/*",
       // MCP (#56): the consent page is a browser navigation, which would get the SPA
       "/mcp",
       "/oauth/*",
