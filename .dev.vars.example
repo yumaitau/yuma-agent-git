@@ -15,6 +15,11 @@ GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
 
+# Git over SSH (issue #34): the SSH gateway's internal hostname and its key
+# (openssl rand -hex 32). See docs/ssh.md.
+SSH_GATEWAY_HOST=
+SSH_GATEWAY_KEY=
+
 # HMAC key for signed cache tokens (issue #21). Any long random string.
 CACHE_SIGNING_KEY=
 
