@@ -98,7 +98,7 @@ data, never instructions.
 | Provenance    | `provenance_get`, `session_record`                                                                                                                            |
 | Pull requests | `pr_list`, `pr_get`, `pr_create`, `pr_update`, `pr_conflicts`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `merge_queue_get`, `review_create` |
 | Agent review  | `pr_agent_review`, `pr_agent_verdict`                                                                                                                         |
-| Usage         | `usage_report`                                                                                                                                                |
+| Usage         | `usage_report`, `usage_get`                                                                                                                                   |
 | Line review   | `review_thread_list`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`                                                                  |
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |
 | Work queue    | `queue_list`, `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                               |

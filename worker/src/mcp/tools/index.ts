@@ -373,6 +373,14 @@ const SPECS: ToolSpec[] = [
     scope: 'contents:write',
   },
   {
+    name: 'usage_get',
+    title: 'Get repo usage',
+    route: 'GET /api/v1/repos/:repo/usage',
+    description:
+      'Model tokens, CI seconds, storage and dollars spent on a repo (`group_by` day, agent, pull, kind…), so an agent can watch its spend before a budget stops it.',
+    scope: 'contents:read',
+  },
+  {
     name: 'pr_conflicts',
     title: 'Pull request conflicts',
     route: 'GET /api/v1/repos/:repo/pulls/:id/conflicts',

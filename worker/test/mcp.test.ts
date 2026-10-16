@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
 import { cleanDb, loginAs, makeApp, seedSchema, type TestEnv } from './helpers';
-import { createRepo, setRef } from '../src/db/repos';
+import { createRepo, getRepo, setRef } from '../src/db/repos';
+import { recordUsage } from '../src/usage/record';
 import { commitChanges } from '../src/core/commit';
 import { createApiToken } from '../src/auth/tokens';
 import { AGENT_SCOPES } from '../src/auth/agents';
@@ -618,6 +619,31 @@ describe('MCP Streamable HTTP (#56)', () => {
         head,
       ]),
     ).toBeTruthy();
+  });
+
+  it('usage_get reads the repo usage an agent can watch its spend with (#61)', async () => {
+    const repo = (await getRepo(
+      dbEnv,
+      (await q1<{ id: string }>(dbEnv, "SELECT id FROM repos WHERE slug = 'acme/app'"))!
+        .id,
+    ))!;
+    await recordUsage(dbEnv, [
+      {
+        repo,
+        kind: 'tokens',
+        source: 'reported',
+        model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        input_tokens: 1_000_000,
+      },
+    ]);
+    const { access } = await oauthToken(['contents:read']);
+    const mcp = await connect(access);
+    const usage = await mcp.call('usage_get', { repo: 'acme/app', group_by: 'model' });
+    expect(usage.isError, usage.text).toBe(false);
+    expect(usage.structured).toMatchObject({
+      group_by: 'model',
+      totals: { input_tokens: 1_000_000, usd_micros: 293_000 },
+    });
   });
 
   it('code_search and file_find search as the caller (#45)', async () => {
