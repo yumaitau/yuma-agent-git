@@ -19,6 +19,7 @@ import {
   type ReviewThread,
 } from '../collaboration';
 import { NewThread, ThreadCard, type Draft, type ThreadActions } from './ReviewThreads';
+import { AgentReviewPanel } from './AgentReview';
 import { useSlug } from '../slug';
 import {
   ErrorNotice,
@@ -90,6 +91,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
           ['CI', '/ci'],
           ['Security', '/secret-scanning'],
           ['Releases', '/releases'],
+          ['Usage', '/usage'],
         ].map(([name, tail]) => (
           <Link
             key={name}
@@ -539,6 +541,7 @@ export function PullView(): ReactElement {
             )}
           </section>
           {owners.data && <CodeownersView owned={owners.data} />}
+          <AgentReviewPanel slug={slug} id={id ?? ''} revision={data.pull.revision} />
           {tip && <PipelineRuns slug={slug} head={tip} />}
           <h2>Changes</h2>
           {diff ? (
