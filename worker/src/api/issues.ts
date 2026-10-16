@@ -522,8 +522,9 @@ issuesRoutes.post(`${base}/issues`, async (c) => {
       ),
     ]);
     let issue = (await getIssueRow(c.env, repo.id, number)) as IssueRow;
+    let labelled: Label[] = [];
     if (triage) {
-      await setLabels(c, repo, issue, input.labels);
+      labelled = (await setLabels(c, repo, issue, input.labels)).added;
       await setAssignees(c, repo, issue, input.assignees);
       if (parent) await addSubIssue(c, repo, parent, issue);
       issue = (await getIssueRow(c.env, repo.id, number)) as IssueRow;
@@ -536,6 +537,9 @@ issuesRoutes.post(`${base}/issues`, async (c) => {
     );
     const [hydrated] = await hydrateIssues(c.env, [issue]);
     await emitIssue(c, repo, 'opened', hydrated!);
+    // GitHub follows `opened` with one `labeled` per label applied at creation
+    for (const label of labelled)
+      await emitIssue(c, repo, 'labeled', hydrated!, { label });
     return c.json({ issue: hydrated }, 201);
   } catch (err) {
     return errorResponse(c, err);

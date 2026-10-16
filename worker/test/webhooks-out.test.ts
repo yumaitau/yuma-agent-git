@@ -581,6 +581,43 @@ describe('repository webhooks', () => {
     ]);
   });
 
+  it('opening an issue with labels sends opened then one labeled per label', async () => {
+    await createHook({ url: 'https://hooks.example.com/yag', events: ['issues'] });
+    await createHook({
+      url: 'https://hooks.example.com/github',
+      events: ['issues'],
+      format: 'github',
+    });
+    for (const name of ['yuma:ready', 'yuma:risk:low'])
+      expect(
+        (await api(`${repoPath}/labels`, 'POST', { name, color: '0e8a16' })).status,
+      ).toBe(201);
+    expect(
+      (
+        await api(`${repoPath}/issues`, 'POST', {
+          title: 'Ticket',
+          labels: ['yuma:ready', 'yuma:risk:low'],
+        })
+      ).status,
+    ).toBe(201);
+    await drain();
+    const bodies = await Promise.all(
+      received.map(async (r) => ({
+        url: r.url,
+        body: JSON.parse(await r.text()) as { action: string; label?: { name: string } },
+      })),
+    );
+    for (const url of [
+      'https://hooks.example.com/yag',
+      'https://hooks.example.com/github',
+    ])
+      expect(
+        bodies
+          .filter((b) => b.url === url)
+          .map((b) => `${b.body.action}:${b.body.label?.name ?? ''}`),
+      ).toEqual(['opened:', 'labeled:yuma:ready', 'labeled:yuma:risk:low']);
+  });
+
   it('a closing keyword that lands sends issues closed (#63)', async () => {
     await createHook({ url: 'https://hooks.example.com/yag', events: ['issues'] });
     await api(`${repoPath}/issues`, 'POST', { title: 'Ticket' });
