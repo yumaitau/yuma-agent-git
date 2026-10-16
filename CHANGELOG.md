@@ -23,6 +23,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- CI capacity per org (#52): a CI admin (`CI_ADMIN_USER_IDS`) gives an org its
+  own admission ledger with `PUT /api/v1/orgs/:org/ci/limits` (job slots,
+  monthly budget, longest job, allowed instance types, cache quota), replacing
+  the global two-slot cap for that org; everyone else keeps the shared pool.
+  `runs-on: [cloudflare, standard-4]` picks a container instance type, priced
+  per type in the reservation. Self-hosted jobs may run up to 6 hours within
+  the org's limit. `matrix: { shard: N }` splits a job and sets
+  `YAG_SHARD_INDEX` and `YAG_SHARD_TOTAL`. Freed slots go to the repo with the
+  fewest active jobs. Budget alerts at 50%, 80% and 100% are audited once a
+  month. The `ci-runs` consumer runs up to 20 jobs at once. Migration 0040.
+- CI artifacts and caches (#51): jobs upload and download run artifacts
+  (kept 14 days, listed and downloadable on the CI page) and save and restore
+  dependency caches through `YAG_RUNTIME_URL` with `YAG_RUNTIME_TOKEN`, in the
+  built-in pool and on self-hosted runners. A cache entry belongs to its job's
+  branch, tag or pull request scope; jobs read their own scope, then the
+  default branch's, so a pull request cannot poison `main`. Idle caches are
+  swept after 7 days and each repo is kept under its quota (10 GiB shared) by
+  evicting the least recently used.
+
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

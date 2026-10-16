@@ -73,7 +73,10 @@ export function cacheScopes(
   return { write: own, read: own === base ? [own] : [own, base] };
 }
 
-async function scopesOf(env: Env, job: CiRun): Promise<{ write: string; read: string[] }> {
+async function scopesOf(
+  env: Env,
+  job: CiRun,
+): Promise<{ write: string; read: string[] }> {
   const repo = await getRepo(env, job.repo_id);
   if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
   return cacheScopes(job, repo.default_branch);
@@ -118,7 +121,11 @@ export async function reserveCache(env: Env, job: CiRun, key: string): Promise<C
     ],
   );
   if (!row)
-    throw new ApiError(409, 'cache_exists', 'This cache key already exists in this scope.');
+    throw new ApiError(
+      409,
+      'cache_exists',
+      'This cache key already exists in this scope.',
+    );
   return row;
 }
 
@@ -135,7 +142,11 @@ export async function uploadCache(
     [id, job.id],
   );
   if (!row)
-    throw new ApiError(404, 'cache_not_found', 'No reservation of this job with this id.');
+    throw new ApiError(
+      404,
+      'cache_not_found',
+      'No reservation of this job with this id.',
+    );
   let size: number;
   try {
     size = await storeArtifact(env.OBJECTS, row.object_key, body, MAX_CACHE_BYTES);

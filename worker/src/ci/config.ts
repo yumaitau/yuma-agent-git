@@ -64,27 +64,27 @@ export const accessFields = {
 };
 export const AWS_NEEDS_ID_TOKEN = 'aws needs permissions.id_token: write';
 const policyObject = z.object({
-    preset: z.enum(['node', 'docker', 'custom']).default('node'),
-    commands: z.array(z.string().trim().min(1).max(2000)).min(1).max(8),
-    timeout_seconds: z.number().int().min(30).max(600).default(300),
-    required_approvals: z.number().int().min(0).max(5).default(1),
-    require_checks: z.boolean().default(true),
-    protect_default: z.boolean().default(true),
-    dockerfile: z
-      .string()
-      .regex(/^[a-zA-Z0-9_./-]+$/)
-      .default('Dockerfile')
-      .refine(
-        (v) => !v.startsWith('/') && !v.split('/').some((s) => s === '..' || s === ''),
-        'Use a relative Dockerfile path',
-      ),
-    image: z
-      .string()
-      .regex(/^[a-z0-9][a-z0-9.-]+(?::[0-9]+)?\/[a-z0-9][a-z0-9._/-]+$/)
-      .nullable()
-      .default(null),
-    ...accessFields,
-  });
+  preset: z.enum(['node', 'docker', 'custom']).default('node'),
+  commands: z.array(z.string().trim().min(1).max(2000)).min(1).max(8),
+  timeout_seconds: z.number().int().min(30).max(600).default(300),
+  required_approvals: z.number().int().min(0).max(5).default(1),
+  require_checks: z.boolean().default(true),
+  protect_default: z.boolean().default(true),
+  dockerfile: z
+    .string()
+    .regex(/^[a-zA-Z0-9_./-]+$/)
+    .default('Dockerfile')
+    .refine(
+      (v) => !v.startsWith('/') && !v.split('/').some((s) => s === '..' || s === ''),
+      'Use a relative Dockerfile path',
+    ),
+  image: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9.-]+(?::[0-9]+)?\/[a-z0-9][a-z0-9._/-]+$/)
+    .nullable()
+    .default(null),
+  ...accessFields,
+});
 const awsNeedsIdToken = (p: { aws: unknown; permissions: { id_token: string } }) =>
   !p.aws || p.permissions.id_token === 'write';
 /** The settings pipeline, which always runs on the built-in pool. */

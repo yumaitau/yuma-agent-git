@@ -247,7 +247,8 @@ const PURPOSES: Record<string, string> = {
   'GET /runner/v1/jobs/:id/caches':
     'Restore a cache: exact key, then restore-key prefixes, own scope then default branch (204 on a miss)',
   'POST /runner/v1/jobs/:id/caches': "Reserve a cache key in the job's own scope",
-  'PUT /runner/v1/jobs/:id/caches/:cache': 'Upload a reserved cache entry once (500 MiB at most)',
+  'PUT /runner/v1/jobs/:id/caches/:cache':
+    'Upload a reserved cache entry once (500 MiB at most)',
   'POST /runner/v1/jobs/:id/complete': 'Report the job result and release the runner',
   'POST /api/v1/orgs/:org/runners/registration-token':
     'One-time org runner registration token (1 hour, recent MFA)',

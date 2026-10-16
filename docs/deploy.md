@@ -186,7 +186,11 @@ workflow greps for key material and fails on any hit.
 The base configuration keeps `CI_ENABLED=false`; Yuma's `env.prod` sets it to
 `true` with a $5 monthly compute admission budget. It defines the `ci-runs`
 Queue, `CiRunnerDO` SQLite migration and a production container image. Atomic D1 admission allows at most
-two queued/running jobs; native container mode has no `max_instances` configuration. The new D1 migration is `0009_reviews_ci.sql`; apply migrations
+two queued/running jobs in the shared pool; orgs given limits (`PUT
+/api/v1/orgs/:org/ci/limits` by a user in `CI_ADMIN_USER_IDS`, docs/pipelines.md)
+admit up to their own `max_concurrent`. The `ci-runs` consumer runs up to 20
+jobs at once, the container default `max_instances`; keep the sum of org slots
+plus two at or below that, or raise both. The new D1 migration is `0009_reviews_ci.sql`; apply migrations
 before deploying the Worker that reads these tables. The native Container API and
 Wrangler version in the lockfile are required; older Sandbox tutorials use a
 different API/configuration shape.
@@ -256,6 +260,15 @@ Queue delivery is at-most-once at the script level; jobs interrupted before clai
 are failed, and claimed jobs have a deadline alarm plus a cron recovery sweep. The minute cron expires
 undelivered queued jobs and removes completed logs older than seven days. Keep
 `ci_runs` rows to preserve reservation accounting and the audit history.
+
+CI artifacts live under `ci/artifacts/<run>/` and dependency caches under
+`ci/cache/<repo>/<scope>/`. The minute cron deletes artifacts 14 days after
+upload and caches unused for 7 days, and evicts least recently used caches past
+a repository's quota on every upload. Back the artifact sweep with an R2
+lifecycle rule deleting `ci/artifacts/` objects after 15 days. Do not put an
+age rule on `ci/cache/`: an entry restored every day can be older than any age,
+and the cron sweep already removes idle ones. A cache object lost anyway is a
+miss, and its row is removed so the key can be saved again.
 
 Configure an R2 lifecycle rule for the `ci/images/` prefix to delete abandoned
 temporary exports after one day, and retain R2's incomplete multipart upload

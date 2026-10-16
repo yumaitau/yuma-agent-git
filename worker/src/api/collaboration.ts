@@ -344,7 +344,8 @@ collaborationRoutes.get(`${base}/ci`, async (c) => {
       can_admin: await can(c.env, loaded.repo, c.get('principal'), 'admin'),
       can_write: await can(c.env, loaded.repo, c.get('principal'), 'write'),
       // the repo's pool (#52): its org's, or the shared deployment budget
-      monthly_budget_usd: (await poolFor(c.env, loaded.repo.id)).limits.monthly_budget_usd,
+      monthly_budget_usd: (await poolFor(c.env, loaded.repo.id)).limits
+        .monthly_budget_usd,
       reserved_usd: (usage?.reserved ?? 0) / 1e6,
       max_run_usd: config ? reservation(config.policy) / 1e6 : null,
       registry: c.env.CI_REGISTRY_HOST ?? null,

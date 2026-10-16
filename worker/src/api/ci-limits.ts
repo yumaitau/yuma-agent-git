@@ -24,7 +24,8 @@ const path = '/orgs/:org/ci/limits';
 async function ciAdminOrg(c: Context<AppEnv>) {
   const user = c.get('user')!;
   const admins = (c.env.CI_ADMIN_USER_IDS ?? '').split(',').map((s) => s.trim());
-  if (!admins.includes(user.id)) throw new ApiError(403, 'forbidden', 'CI admin required');
+  if (!admins.includes(user.id))
+    throw new ApiError(403, 'forbidden', 'CI admin required');
   const org = await getOrgBySlug(c.env, c.req.param('org') ?? '');
   if (!org) throw new ApiError(404, 'org_not_found', 'Organisation not found');
   return org;
@@ -34,9 +35,11 @@ ciLimitsRoutes.get(path, async (c) => {
   try {
     const { org } = await loadOrg(c, 'manage');
     await requireOrgSso(c, org.id);
-    const row = await q1<LimitsRow>(c.env, 'SELECT * FROM org_ci_limits WHERE org_id = ?', [
-      org.id,
-    ]);
+    const row = await q1<LimitsRow>(
+      c.env,
+      'SELECT * FROM org_ci_limits WHERE org_id = ?',
+      [org.id],
+    );
     const month = new Date().toISOString().slice(0, 7);
     // the org's own runs only: the shared pool's total belongs to the operator
     const usage = await q1<{ reserved: number; active: number }>(
@@ -81,7 +84,11 @@ ciLimitsRoutes.put(path, async (c) => {
     const limits = parsed.data;
     await recordAudit(
       c,
-      { action: 'ci.limits.update', orgId: org.slug, target: { org_id: org.id, ...limits } },
+      {
+        action: 'ci.limits.update',
+        orgId: org.slug,
+        target: { org_id: org.id, ...limits },
+      },
       [
         c.env.DB.prepare(
           `INSERT INTO org_ci_limits (org_id, max_concurrent, monthly_budget_usd, max_timeout_s, instance_types, cache_quota_bytes, updated_by, updated_at)
@@ -114,7 +121,11 @@ ciLimitsRoutes.delete(path, async (c) => {
     const org = await ciAdminOrg(c);
     await recordAudit(
       c,
-      { action: 'ci.limits.update', orgId: org.slug, target: { org_id: org.id, shared: true } },
+      {
+        action: 'ci.limits.update',
+        orgId: org.slug,
+        target: { org_id: org.id, shared: true },
+      },
       [c.env.DB.prepare('DELETE FROM org_ci_limits WHERE org_id = ?').bind(org.id)],
     );
     return c.json({ ok: true });

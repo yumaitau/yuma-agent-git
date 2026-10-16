@@ -73,14 +73,23 @@ Every later call sends `Authorization: Bearer yagrun_…`.
 
 ## Jobs
 
-| Call                                      | Purpose                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------- |
-| `POST /runner/v1/jobs/claim?wait=30`      | Long-poll up to `wait` seconds (30 at most). `200 {job}` or `204`.   |
-| `POST /runner/v1/jobs/:id/heartbeat`      | Extends the 90 second lease. `{cancel}` says whether to stop.        |
-| `POST /runner/v1/jobs/:id/logs?step=N`    | Appends a `text/plain` chunk (64 KiB at most) to step N. `{cancel}`. |
-| `POST /runner/v1/jobs/:id/steps/N`        | `{state: running\|passed\|failed\|skipped, exit_code?}`.             |
-| `PUT /runner/v1/jobs/:id/artifacts/:name` | Uploads one artifact (100 MiB at most, 20 per job), stored in R2.    |
-| `POST /runner/v1/jobs/:id/complete`       | `{result: passed\|failed}`. Returns the run's final `{state}`.       |
+| Call                                                | Purpose                                                              |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| `POST /runner/v1/jobs/claim?wait=30`                | Long-poll up to `wait` seconds (30 at most). `200 {job}` or `204`.   |
+| `POST /runner/v1/jobs/:id/heartbeat`                | Extends the 90 second lease. `{cancel}` says whether to stop.        |
+| `POST /runner/v1/jobs/:id/logs?step=N`              | Appends a `text/plain` chunk (64 KiB at most) to step N. `{cancel}`. |
+| `POST /runner/v1/jobs/:id/steps/N`                  | `{state: running\|passed\|failed\|skipped, exit_code?}`.             |
+| `PUT /runner/v1/jobs/:id/artifacts/:name`           | Uploads one artifact (100 MiB at most, 20 per job), stored in R2.    |
+| `GET /runner/v1/jobs/:id/artifacts[/:name]`         | Lists or downloads the run's artifacts, from any of its jobs.        |
+| `GET /runner/v1/jobs/:id/caches?key=&restore_keys=` | Restores a cache entry (`204` on a miss).                            |
+| `POST /runner/v1/jobs/:id/caches`                   | `{key}` reserves a cache key in the job's own scope.                 |
+| `PUT /runner/v1/jobs/:id/caches/:cache`             | Uploads a reserved entry once (500 MiB at most).                     |
+
+The artifact and cache calls also take the job's own token instead of the
+runner credential. Steps get it as `YAG_RUNTIME_TOKEN`, with `YAG_RUNTIME_URL`
+set to `<origin>/runner/v1/jobs/<id>`; it is the clone token, valid while the
+job runs. Isolation rules are in `docs/pipelines.md`.
+| `POST /runner/v1/jobs/:id/complete` | `{result: passed\|failed}`. Returns the run's final `{state}`. |
 
 A claimed job carries:
 
@@ -209,6 +218,6 @@ Linux arm64 machines register the same way with `--labels linux,arm64`.
 - Docker, Podman and Tart executors inside the agent (today: the host, or one
   ephemeral runner per VM or container).
 - `services` on self-hosted runners.
-- Listing and downloading artifacts (#51).
-- Per-org concurrency for the built-in pool and longer timeouts (#52).
+- The GitHub `actions/upload-artifact` v4 and `actions/cache` protocols
+  (Twirp and signed blob URLs); jobs use the routes above (#49, #51).
 - Several jobs at once on one runner.

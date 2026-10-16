@@ -322,7 +322,7 @@ it('draws the pipeline job graph by stage and shows line-numbered spec errors', 
   expect(screen.getByText(/Unknown job "x"/)).toBeTruthy();
 });
 
-it('lists a pipeline run\'s artifacts with download links when asked', async () => {
+it("lists a pipeline run's artifacts with download links when asked", async () => {
   const runs = [
     {
       id: 'p1',
@@ -337,7 +337,16 @@ it('lists a pipeline run\'s artifacts with download links when asked', async () 
       requested_by: 'u1',
       created_at: Date.now(),
       finished_at: Date.now(),
-      jobs: [{ key: 'build', job: 'build', needs: [], state: 'passed', run_id: 'r1', error: null }],
+      jobs: [
+        {
+          key: 'build',
+          job: 'build',
+          needs: [],
+          state: 'passed',
+          run_id: 'r1',
+          error: null,
+        },
+      ],
     },
   ];
   const artifact = {

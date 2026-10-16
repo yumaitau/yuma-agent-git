@@ -245,7 +245,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'uploadRunnerArtifact',
     rawBody: 'application/octet-stream',
   },
-  'GET /runner/v1/jobs/:id/caches': { id: 'restoreRunnerCache', query: restoreCacheQuery },
+  'GET /runner/v1/jobs/:id/caches': {
+    id: 'restoreRunnerCache',
+    query: restoreCacheQuery,
+  },
   'POST /runner/v1/jobs/:id/caches': { id: 'reserveRunnerCache', body: reserveCacheBody },
   'PUT /runner/v1/jobs/:id/caches/:cache': {
     id: 'uploadRunnerCache',

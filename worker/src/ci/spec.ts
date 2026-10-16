@@ -449,10 +449,8 @@ export function parseSpec(path: string, text: string): PipelineFile {
         })),
         runs_on: builtin ? null : runsOn,
         instance_type:
-          ((builtin &&
-            runsOn?.find((l) => (INSTANCE_NAMES as string[]).includes(l))) as
-            | InstanceType
-            | undefined) || DEFAULT_INSTANCE,
+          ((builtin && runsOn?.find((l) => (INSTANCE_NAMES as string[]).includes(l))) as
+            InstanceType | undefined) || DEFAULT_INSTANCE,
         env: shard ? { YAG_SHARD_INDEX: shard, YAG_SHARD_TOTAL: String(shards) } : {},
         environment: j.environment,
         secrets: jobSecrets(j),

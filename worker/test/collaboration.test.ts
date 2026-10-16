@@ -307,7 +307,9 @@ describe('bounded CI admission', () => {
     ).rejects.toMatchObject({ code: 'registry_not_configured' });
     expect(() => parsePolicy({ ...policy, dockerfile: '../Dockerfile' })).toThrow();
     // settings runs stay within one queue consumer; pipeline jobs may run longer (#52)
-    expect(() => parsePolicy({ ...policy, timeout_seconds: 601 }, policySchema)).toThrow();
+    expect(() =>
+      parsePolicy({ ...policy, timeout_seconds: 601 }, policySchema),
+    ).toThrow();
     expect(parsePolicy({ ...policy, timeout_seconds: 601 }).timeout_seconds).toBe(601);
   });
   it('detects project defaults and paginates history without repeating a commit', async () => {

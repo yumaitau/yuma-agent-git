@@ -23,7 +23,11 @@ const testEnv = env as unknown as TestEnv;
 let repoId = '';
 let orgId = '';
 
-function context(event: RunContext['event'], ref: string | null, pull: number | null = null) {
+function context(
+  event: RunContext['event'],
+  ref: string | null,
+  pull: number | null = null,
+) {
   return JSON.stringify({
     event,
     ref,
@@ -79,7 +83,8 @@ beforeEach(async () => {
 
 describe('cache scopes', () => {
   it('maps each trigger to its own write scope and reads the default branch after it', async () => {
-    const scopes = (ctx: string) => cacheScopes({ context: ctx, head_cs: 'abc' } as CiRun, 'main');
+    const scopes = (ctx: string) =>
+      cacheScopes({ context: ctx, head_cs: 'abc' } as CiRun, 'main');
     expect(scopes(context('push', 'refs/heads/main'))).toEqual({
       write: 'refs/heads/main',
       read: ['refs/heads/main'],
@@ -88,9 +93,13 @@ describe('cache scopes', () => {
       write: 'refs/heads/feature',
       read: ['refs/heads/feature', 'refs/heads/main'],
     });
-    expect(scopes(context('pull_request', 'refs/pull/7/merge', 7)).write).toBe('refs/pull/7');
+    expect(scopes(context('pull_request', 'refs/pull/7/merge', 7)).write).toBe(
+      'refs/pull/7',
+    );
     // a pull request job never writes a branch scope, whatever ref it carries
-    expect(scopes(context('pull_request', 'refs/heads/main', 7)).write).toBe('refs/pull/7');
+    expect(scopes(context('pull_request', 'refs/heads/main', 7)).write).toBe(
+      'refs/pull/7',
+    );
     expect(scopes(context('merge_group', 'refs/merge-queue/main/g1')).write).toBe(
       'refs/merge-queue/main/g1',
     );
@@ -134,9 +143,11 @@ describe('cache isolation', () => {
       code: 'cache_exists',
     });
     await uploadCache(testEnv, m, reserved.id, stream('a'));
-    await expect(uploadCache(testEnv, m, reserved.id, stream('b'))).rejects.toMatchObject({
-      code: 'cache_not_found',
-    });
+    await expect(uploadCache(testEnv, m, reserved.id, stream('b'))).rejects.toMatchObject(
+      {
+        code: 'cache_not_found',
+      },
+    );
     // another job cannot upload into someone else's reservation
     const other = await main();
     const pending = await reserveCache(testEnv, other, 'k2');
@@ -164,9 +175,11 @@ describe('cache quota and retention', () => {
     const a = await save(m, 'a', '1234');
     const b = await save(m, 'b', '1234');
     // using `a` makes `b` the least recently used
-    await run(testEnv, 'UPDATE ci_caches SET last_used_at = last_used_at - 1000 WHERE id = ?', [
-      b.id,
-    ]);
+    await run(
+      testEnv,
+      'UPDATE ci_caches SET last_used_at = last_used_at - 1000 WHERE id = ?',
+      [b.id],
+    );
     await restoreCache(testEnv, m, 'a', []);
     await save(m, 'c', '1234');
     const left = await q<{ key: string }>(

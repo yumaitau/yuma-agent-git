@@ -14,7 +14,13 @@ import {
   uploadArtifact,
   type ArtifactRow,
 } from './artifacts';
-import { cacheView, reserveCache, restoreCache, uploadCache } from './cache';
+import {
+  cacheView,
+  deleteCaches,
+  reserveCache,
+  restoreCache,
+  uploadCache,
+} from './cache';
 
 /**
  * Artifacts and caches for running jobs (issue #51), docs/runner-protocol.md.
@@ -95,12 +101,16 @@ jobStorageRoutes.get(`${base}/caches`, async (c) => {
       key: c.req.query('key'),
       restore_keys: c.req.query('restore_keys'),
     });
-    if (!parsed.success)
-      throw new ApiError(400, 'invalid_request', 'Give the cache key');
+    if (!parsed.success) throw new ApiError(400, 'invalid_request', 'Give the cache key');
     const prefixes = (parsed.data.restore_keys ?? '').split(',').filter(Boolean);
     const row = await restoreCache(c.env, job, parsed.data.key, prefixes.slice(0, 10));
     const object = row && (await c.env.OBJECTS.get(row.object_key));
-    if (!row || !object) return c.body(null, 204);
+    if (!row) return c.body(null, 204);
+    // a lost object is a miss; drop its row so the key can be saved again
+    if (!object) {
+      await deleteCaches(c.env, [row]);
+      return c.body(null, 204);
+    }
     return new Response(object.body, {
       headers: {
         'content-type': 'application/octet-stream',
@@ -117,8 +127,7 @@ jobStorageRoutes.post(`${base}/caches`, async (c) => {
   try {
     const job = await running(c);
     const parsed = reserveCacheBody.safeParse(await readJsonBody(c));
-    if (!parsed.success)
-      throw new ApiError(400, 'invalid_request', 'Give the cache key');
+    if (!parsed.success) throw new ApiError(400, 'invalid_request', 'Give the cache key');
     const row = await reserveCache(c.env, job, parsed.data.key);
     return c.json({ cache: cacheView(row) }, 201);
   } catch (err) {

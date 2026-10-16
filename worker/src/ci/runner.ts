@@ -291,7 +291,11 @@ export class CiRunnerDO extends DurableObject<Env> {
     await this.advance();
   }
 
-  private async start(id: string, deadline: number, instance: InstanceType): Promise<void> {
+  private async start(
+    id: string,
+    deadline: number,
+    instance: InstanceType,
+  ): Promise<void> {
     this.append('\nStarting a fresh runner…\n');
     // Check and start under the same gate as cancellation and the deadline alarm.
     await this.ctx.blockConcurrencyWhile(async () => {

@@ -113,8 +113,10 @@ beforeEach(async () => {
   expect(
     (await api('/api/v1/repos', 'POST', { slug: 'yuma/app', org: 'yuma' })).status,
   ).toBe(201);
-  repoId = (await q1<{ id: string }>(testEnv, "SELECT id FROM repos WHERE slug = 'yuma/app'"))!
-    .id;
+  repoId = (await q1<{ id: string }>(
+    testEnv,
+    "SELECT id FROM repos WHERE slug = 'yuma/app'",
+  ))!.id;
   const cs = await commitChanges(testEnv, repoId, {
     first_parent: null,
     message: 'pipeline',
@@ -172,7 +174,9 @@ describe('run artifacts', () => {
     expect((await step(test, '/artifacts/missing.txt')).status).toBe(404);
 
     // the run page
-    const page = await api(`/api/v1/repos/yuma/app/ci/pipelines/runs/${pipeline.id}/artifacts`);
+    const page = await api(
+      `/api/v1/repos/yuma/app/ci/pipelines/runs/${pipeline.id}/artifacts`,
+    );
     expect(page.status).toBe(200);
     const { artifacts } = (await page.json()) as { artifacts: { id: string }[] };
     expect(artifacts).toHaveLength(1);
@@ -186,12 +190,23 @@ describe('run artifacts', () => {
     expect(perJob.artifacts).toHaveLength(1);
     // unreadable repo: 404, anonymous: 401
     expect(
-      (await api(`/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`, 'GET', undefined, stranger))
-        .status,
+      (
+        await api(
+          `/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`,
+          'GET',
+          undefined,
+          stranger,
+        )
+      ).status,
     ).toBe(404);
     expect(
-      (await request(`/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`, 'GET', {}))
-        .status,
+      (
+        await request(
+          `/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`,
+          'GET',
+          {},
+        )
+      ).status,
     ).toBe(401);
 
     // after 14 days the artifact is gone, from the API and then from R2
@@ -201,9 +216,9 @@ describe('run artifacts', () => {
       [artifacts[0]!.id],
     ))!;
     await run(testEnv, 'UPDATE ci_artifacts SET expires_at = ?', [Date.now() - 1]);
-    expect((await api(`/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`)).status).toBe(
-      404,
-    );
+    expect(
+      (await api(`/api/v1/repos/yuma/app/ci/artifacts/${artifacts[0]!.id}`)).status,
+    ).toBe(404);
     await sweepArtifacts(testEnv);
     expect(await testEnv.OBJECTS.head(row.object_key)).toBeNull();
     expect(await q1(testEnv, 'SELECT id FROM ci_artifacts')).toBeNull();
@@ -223,7 +238,9 @@ describe('run artifacts', () => {
     expect(reserved.status).toBe(201);
     const { cache } = (await reserved.json()) as { cache: { id: string; scope: string } };
     expect(cache.scope).toBe('refs/heads/main');
-    expect((await step(build, `/caches/${cache.id}`, 'PUT', 'node_modules')).status).toBe(201);
+    expect((await step(build, `/caches/${cache.id}`, 'PUT', 'node_modules')).status).toBe(
+      201,
+    );
     // entries are immutable
     expect((await step(build, `/caches/${cache.id}`, 'PUT', 'other')).status).toBe(404);
     const hit = await step(build, '/caches?key=deps-2&restore_keys=deps-');
@@ -248,5 +265,29 @@ describe('run artifacts', () => {
       await q1(testEnv, "SELECT id FROM audit_events WHERE action = 'ci.cache.delete'"),
     ).not.toBeNull();
     expect((await step(build, '/caches?key=deps-1')).status).toBe(204);
+
+    // an object lost from R2 is a miss, and the key can be saved again
+    const again = await request(
+      `/runner/v1/jobs/${build.id}/caches`,
+      'POST',
+      { ...bearer(build.clone.token), 'content-type': 'application/json' },
+      JSON.stringify({ key: 'deps-3' }),
+    );
+    const id = ((await again.json()) as { cache: { id: string } }).cache.id;
+    expect((await step(build, `/caches/${id}`, 'PUT', 'x')).status).toBe(201);
+    const key = (await q1<{ object_key: string }>(
+      testEnv,
+      'SELECT object_key FROM ci_caches WHERE id = ?',
+      [id],
+    ))!.object_key;
+    await testEnv.OBJECTS.delete(key);
+    expect((await step(build, '/caches?key=deps-3')).status).toBe(204);
+    const resaved = await request(
+      `/runner/v1/jobs/${build.id}/caches`,
+      'POST',
+      { ...bearer(build.clone.token), 'content-type': 'application/json' },
+      JSON.stringify({ key: 'deps-3' }),
+    );
+    expect(resaved.status).toBe(201);
   });
 });

@@ -111,15 +111,19 @@ beforeEach(async () => {
   for (const slug of ['yuma/app', 'yuma/web', 'other/app']) {
     const [org] = slug.split('/');
     expect((await api('/api/v1/repos', 'POST', { slug, org })).status).toBe(201);
-    repos[slug] = (await q1<{ id: string }>(testEnv, 'SELECT id FROM repos WHERE slug = ?', [
-      slug,
-    ]))!.id;
+    repos[slug] = (await q1<{ id: string }>(
+      testEnv,
+      'SELECT id FROM repos WHERE slug = ?',
+      [slug],
+    ))!.id;
   }
 });
 
 describe('org CI limits API', () => {
   it('CI admins set an org pool; org admins read it; everyone else is refused', async () => {
-    expect((await api('/api/v1/orgs/yuma/ci/limits', 'GET', undefined, {})).status).toBe(401);
+    expect((await api('/api/v1/orgs/yuma/ci/limits', 'GET', undefined, {})).status).toBe(
+      401,
+    );
     expect(
       (await api('/api/v1/orgs/yuma/ci/limits', 'GET', undefined, member.headers)).status,
     ).toBe(403);
@@ -130,15 +134,25 @@ describe('org CI limits API', () => {
     // an org owner is not a CI admin: the budget is the deployment's
     const denied = await api('/api/v1/orgs/yuma/ci/limits', 'PUT', LIMITS);
     expect(denied.status).toBe(403);
-    expect((await api('/api/v1/orgs/yuma/ci/limits', 'PUT', LIMITS, {})).status).toBe(401);
+    expect((await api('/api/v1/orgs/yuma/ci/limits', 'PUT', LIMITS, {})).status).toBe(
+      401,
+    );
     ciAdmins = owner.userId;
     expect(
-      (await api('/api/v1/orgs/yuma/ci/limits', 'PUT', { ...LIMITS, max_timeout_s: 99_999 }))
-        .status,
+      (
+        await api('/api/v1/orgs/yuma/ci/limits', 'PUT', {
+          ...LIMITS,
+          max_timeout_s: 99_999,
+        })
+      ).status,
     ).toBe(400);
     expect(
-      (await api('/api/v1/orgs/yuma/ci/limits', 'PUT', { ...LIMITS, instance_types: ['gpu'] }))
-        .status,
+      (
+        await api('/api/v1/orgs/yuma/ci/limits', 'PUT', {
+          ...LIMITS,
+          instance_types: ['gpu'],
+        })
+      ).status,
     ).toBe(400);
     expect((await api('/api/v1/orgs/nope/ci/limits', 'PUT', LIMITS)).status).toBe(404);
     expect((await api('/api/v1/orgs/yuma/ci/limits', 'PUT', LIMITS)).status).toBe(200);
@@ -180,8 +194,10 @@ describe('admission ledger per pool', () => {
       testEnv,
       'SELECT pool, COUNT(*) AS n FROM ci_runs GROUP BY pool ORDER BY pool',
     );
-    const yumaId = (await q1<{ id: string }>(testEnv, "SELECT id FROM orgs WHERE slug = 'yuma'"))!
-      .id;
+    const yumaId = (await q1<{ id: string }>(
+      testEnv,
+      "SELECT id FROM orgs WHERE slug = 'yuma'",
+    ))!.id;
     expect(pools).toEqual(
       [
         { pool: 'shared', n: 2 },
@@ -258,7 +274,11 @@ jobs:
 `,
     );
     expect(ok.errors).toBeNull();
-    const rows = await q<{ job_key: string; instance_type: string; reserved_micros: number }>(
+    const rows = await q<{
+      job_key: string;
+      instance_type: string;
+      reserved_micros: number;
+    }>(
       testEnv,
       'SELECT job_key, instance_type, reserved_micros FROM ci_runs WHERE pipeline_run_id = ? ORDER BY job_key',
       [ok.id],

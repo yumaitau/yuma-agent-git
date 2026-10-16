@@ -805,7 +805,8 @@ function RunArtifacts({ slug, runId }: { slug: string; runId: string }): ReactEl
   };
   if (failure) return <ErrorNotice error={failure} />;
   if (!items) return <button onClick={() => void load()}>Artifacts</button>;
-  if (!items.length) return <p className="small muted">No artifacts, or they have expired.</p>;
+  if (!items.length)
+    return <p className="small muted">No artifacts, or they have expired.</p>;
   return (
     <ul aria-label="Artifacts">
       {items.map((a) => (
