@@ -201,6 +201,7 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
         </Link>
         <nav>
           <Link to="/">Repos</Link>
+          <Link to="/search">Search</Link>
           <Link to="/orgs">Organisations</Link>
           <Link to="/settings">Settings</Link>
           <Link to="/security">Security</Link>
