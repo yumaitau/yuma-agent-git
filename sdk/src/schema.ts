@@ -89,6 +89,110 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/{owner}/{repo}.git/info/lfs/locks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List file locks (`?path=&id=&cursor=&limit=`) */
+    get: operations['lfsListLocks'];
+    put?: never;
+    /** Lock a file (`git lfs lock`) */
+    post: operations['lfsCreateLock'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{owner}/{repo}.git/info/lfs/locks/{id}/unlock': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Unlock a file; someone else's lock needs admin and `force` */
+    post: operations['lfsUnlock'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{owner}/{repo}.git/info/lfs/locks/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Locks split into the caller's and others' (`git lfs push`) */
+    post: operations['lfsVerifyLocks'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{owner}/{repo}.git/info/lfs/objects/{oid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Git LFS download from R2 */
+    get: operations['lfsDownloadObject'];
+    /** Git LFS upload into R2; a wrong SHA-256 or size stores and links nothing */
+    put: operations['lfsUploadObject'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{owner}/{repo}.git/info/lfs/objects/batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Git LFS batch API: signed 15 minute `basic` transfer actions, quotas on upload */
+    post: operations['lfsBatch'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/{owner}/{repo}.git/info/lfs/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Git LFS check that an upload was stored */
+    post: operations['lfsVerifyObject'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/{owner}/{repo}.git/info/refs': {
     parameters: {
       query?: never;
@@ -137,6 +241,24 @@ export interface paths {
     post: operations['pauseInstanceAgents'];
     /** Resume agents on the instance */
     delete: operations['resumeInstanceAgents'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/admin/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Recent backups and restores (`BACKUP_ADMIN_USER_IDS`) */
+    get: operations['listBackups'];
+    put?: never;
+    /** Start a backup now (`BACKUP_ADMIN_USER_IDS`) */
+    post: operations['startBackup'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -1775,6 +1897,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/export/bundle': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Git bundle of every branch and tag (`git clone x.bundle`, same commit SHAs) */
+    get: operations['exportBundle'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/export/fast-import': {
     parameters: {
       query?: never;
@@ -1803,6 +1942,23 @@ export interface paths {
     put?: never;
     /** Queue a push of a revision to GitHub */
     post: operations['exportToGithub'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/export/metadata': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Issues, pull requests, reviews, releases, labels and refs as JSON */
+    get: operations['exportMetadata'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1854,6 +2010,24 @@ export interface paths {
     get: operations['getFile'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/forks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Forks of the repo the caller can read */
+    get: operations['listForks'];
+    put?: never;
+    /** Fork into `slug` (default `<login>/<name>`): copies branches and tags, shares objects */
+    post: operations['createFork'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2150,6 +2324,40 @@ export interface paths {
     post?: never;
     /** Delete a label and remove it from issues */
     delete: operations['deleteLabel'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/lfs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Git LFS objects, bytes and quotas for the repo (and org) */
+    get: operations['getLfsUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/lfs/objects/{oid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Unlink an LFS object; storage is freed when no repo in the fork network links it */
+    delete: operations['deleteLfsObject'];
     options?: never;
     head?: never;
     patch?: never;
@@ -4281,6 +4489,250 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  lfsListLocks: {
+    parameters: {
+      query?: {
+        path?: string;
+        id?: string;
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsCreateLock: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          path: string;
+          ref?: {
+            name: string;
+          };
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsUnlock: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          force?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsVerifyLocks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          cursor?: string;
+          limit?: number;
+          ref?: {
+            name: string;
+          };
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsDownloadObject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        oid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsUploadObject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        oid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/octet-stream': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsBatch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {string} */
+          operation: 'download' | 'upload';
+          transfers?: string[];
+          ref?: {
+            name: string;
+          };
+          objects: {
+            oid: string;
+            size: number;
+          }[];
+          hash_algo?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  lfsVerifyObject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          oid: string;
+          size: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   gitInfoRefs: {
     parameters: {
       query: {
@@ -4394,6 +4846,50 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listBackups: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  startBackup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -4702,6 +5198,7 @@ export interface operations {
               | 'merge_group'
               | 'release'
               | 'package'
+              | 'fork'
             )[];
             /**
              * @default yag
@@ -4951,6 +5448,7 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'fork'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -5681,6 +6179,7 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'fork'
           )[];
           /**
            * @default yag
@@ -8130,6 +8629,29 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  exportBundle: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   exportFastImport: {
     parameters: {
       query: {
@@ -8176,6 +8698,31 @@ export interface operations {
         };
       };
     };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  exportMetadata: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Success */
       '2XX': {
@@ -8278,6 +8825,63 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listForks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createFork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          slug?: string;
+          org?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getHistory: {
     parameters: {
       query?: {
@@ -8359,6 +8963,7 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'fork'
           )[];
           /**
            * @default yag
@@ -8981,6 +9586,57 @@ export interface operations {
         owner: string;
         repo: string;
         name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getLfsUsage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteLfsObject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        oid: string;
       };
       cookie?: never;
     };
@@ -9698,6 +10354,7 @@ export interface operations {
           head_cs: string;
           /** @default false */
           draft?: boolean;
+          head_repo?: string;
         };
       };
     };

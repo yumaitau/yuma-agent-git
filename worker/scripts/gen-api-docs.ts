@@ -490,6 +490,31 @@ const PURPOSES: Record<string, string> = {
     'Git protocol v2 `ls-refs` and `fetch` (clone, fetch)',
   'POST /:owner/:repo.git/git-receive-pack':
     'Git push: pack, pre-receive checks, ref CAS',
+  'POST /:owner/:repo.git/info/lfs/objects/batch':
+    'Git LFS batch API: signed 15 minute `basic` transfer actions, quotas on upload',
+  'PUT /:owner/:repo.git/info/lfs/objects/:oid':
+    'Git LFS upload into R2; a wrong SHA-256 or size stores and links nothing',
+  'GET /:owner/:repo.git/info/lfs/objects/:oid': 'Git LFS download from R2',
+  'POST /:owner/:repo.git/info/lfs/verify': 'Git LFS check that an upload was stored',
+  'POST /:owner/:repo.git/info/lfs/locks': 'Lock a file (`git lfs lock`)',
+  'GET /:owner/:repo.git/info/lfs/locks': 'List file locks (`?path=&id=&cursor=&limit=`)',
+  'POST /:owner/:repo.git/info/lfs/locks/verify':
+    "Locks split into the caller's and others' (`git lfs push`)",
+  'POST /:owner/:repo.git/info/lfs/locks/:id/unlock':
+    "Unlock a file; someone else's lock needs admin and `force`",
+  'GET /api/v1/repos/:repo/lfs':
+    'Git LFS objects, bytes and quotas for the repo (and org)',
+  'DELETE /api/v1/repos/:repo/lfs/objects/:oid':
+    'Unlink an LFS object; storage is freed when no repo in the fork network links it',
+  'POST /api/v1/repos/:repo/forks':
+    'Fork into `slug` (default `<login>/<name>`): copies branches and tags, shares objects',
+  'GET /api/v1/repos/:repo/forks': 'Forks of the repo the caller can read',
+  'GET /api/v1/repos/:repo/export/bundle':
+    'Git bundle of every branch and tag (`git clone x.bundle`, same commit SHAs)',
+  'GET /api/v1/repos/:repo/export/metadata':
+    'Issues, pull requests, reviews, releases, labels and refs as JSON',
+  'GET /api/v1/admin/backups': 'Recent backups and restores (`BACKUP_ADMIN_USER_IDS`)',
+  'POST /api/v1/admin/backups': 'Start a backup now (`BACKUP_ADMIN_USER_IDS`)',
 };
 
 const METHOD_ORDER = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -524,6 +549,22 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
       return { auth, perm: 'write on the linked repo (whole repo); CI job: own repo' };
     return { auth, perm: 'read on the linked repo (whole repo)' };
   }
+  if (path.includes('.git/info/lfs/')) {
+    const auth = 'token (Basic or Bearer)';
+    if (
+      path.includes('/objects/:oid') ||
+      (path.endsWith('/verify') && !path.includes('locks'))
+    )
+      return { auth: 'signed batch action', perm: '—' };
+    if (path.endsWith('/objects/batch'))
+      return { auth, perm: 'read (whole repo); write for `upload`' };
+    if (path.endsWith('/unlock'))
+      return { auth, perm: 'write (whole repo); admin to force' };
+    return {
+      auth,
+      perm: /"write"/.test(src) ? 'write (whole repo)' : 'read (whole repo)',
+    };
+  }
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',
@@ -556,6 +597,8 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     if (literal) parts.push(`${literal[1]} (whole repo)`);
     else if (/publish \? "admin" : "write"/.test(arg)) {
       parts.push('write (whole repo); admin if `publish`');
+    } else if (/fromFork \? "read" : "write"/.test(arg)) {
+      parts.push('write (whole repo); read with a fork `head_repo`');
     } else parts.push(`? (${arg})`);
   } else if (/loadAdminRepo\d*\(/.test(src)) parts.push('admin');
   else if (/loadTriageRepo\d*\(/.test(src)) parts.push('triage');
@@ -722,6 +765,8 @@ const SECURITY: Record<string, Record<string, string[]>[]> = {
   'SCIM token': [{ scimBearer: [] }],
   'CI request token': [{ ciJobBearer: [] }],
   'registration token': [],
+  // Git LFS transfers (#35): the batch response's `RemoteAuth` header
+  'signed batch action': [],
   'runner credential': [{ runnerBearer: [] }],
   'token (Basic or Bearer)': [{ gitBasic: [] }, { bearer: [] }],
 };

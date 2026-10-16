@@ -1,5 +1,6 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import type { AppEnv } from '../auth/principal';
+import type { Env } from '../env';
 import { recordAudit } from '../audit/record';
 import { BackupConfigError, startBackup, type BackupRow } from '../backup/backup';
 import { q } from '../db/client';
@@ -14,13 +15,11 @@ import { apiError, errorResponse } from './errors';
  */
 export const backupsRoutes = new Hono<AppEnv>();
 
-function refuse(c: Context<AppEnv>): Response | null {
-  const user = c.get('user');
-  if (!user) return apiError(c, 401, 'unauthorized', 'session required');
-  const admins = (c.env.BACKUP_ADMIN_USER_IDS ?? '').split(',').map((s) => s.trim());
-  return admins.includes(user.id)
-    ? null
-    : apiError(c, 403, 'forbidden', 'backup admin required');
+function isBackupAdmin(env: Env, userId: string): boolean {
+  return (env.BACKUP_ADMIN_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .includes(userId);
 }
 
 function view(row: BackupRow) {
@@ -31,8 +30,10 @@ function view(row: BackupRow) {
 
 backupsRoutes.get('/admin/backups', async (c) => {
   try {
-    const refused = refuse(c);
-    if (refused) return refused;
+    const user = c.get('user');
+    if (!user) return apiError(c, 401, 'unauthorized', 'session required');
+    if (!isBackupAdmin(c.env, user.id))
+      return apiError(c, 403, 'forbidden', 'backup admin required');
     const rows = await q<BackupRow>(
       c.env,
       'SELECT * FROM backups ORDER BY started_at DESC LIMIT 50',
@@ -45,11 +46,13 @@ backupsRoutes.get('/admin/backups', async (c) => {
 
 backupsRoutes.post('/admin/backups', async (c) => {
   try {
-    const refused = refuse(c);
-    if (refused) return refused;
+    const user = c.get('user');
+    if (!user) return apiError(c, 401, 'unauthorized', 'session required');
+    if (!isBackupAdmin(c.env, user.id))
+      return apiError(c, 403, 'forbidden', 'backup admin required');
     let row: BackupRow | null;
     try {
-      row = await startBackup(c.env, 'manual', c.get('user')!.id);
+      row = await startBackup(c.env, 'manual', user.id);
     } catch (err) {
       if (err instanceof BackupConfigError)
         return apiError(c, 503, 'backups_unavailable', err.message);

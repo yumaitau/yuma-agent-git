@@ -56,6 +56,20 @@ export const lfsBatchSchema = z.object({
     .max(MAX_BATCH_OBJECTS),
   hash_algo: z.string().optional(),
 });
+export const lfsVerifySchema = z.object({
+  oid: oidSchema,
+  size: z.number().int().nonnegative(),
+});
+export const lockCreateSchema = z.object({
+  path: z.string().min(1).max(4096),
+  ref: z.object({ name: z.string().max(1024) }).optional(),
+});
+export const lockVerifySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.int().min(1).optional(),
+  ref: z.object({ name: z.string().max(1024) }).optional(),
+});
+export const unlockSchema = z.object({ force: z.boolean().optional() });
 
 function lfsJson(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -448,9 +462,7 @@ lfsRoutes.get(`${REPO}/info/lfs/objects/:oid`, async (c) => {
 
 lfsRoutes.post(`${REPO}/info/lfs/verify`, async (c) => {
   try {
-    const parsed = z
-      .object({ oid: oidSchema, size: z.number().int().nonnegative() })
-      .safeParse(await readJson(c));
+    const parsed = lfsVerifySchema.safeParse(await readJson(c));
     const repo = await repoOf(c);
     if (!parsed.success || !repo) return badAction();
     const size = await verifyAction(c, 'verify', repo.id, parsed.data.oid);
@@ -490,11 +502,6 @@ function lockOf(row: LockRow) {
     owner: { name: row.login ?? row.owner_id },
   };
 }
-
-const lockCreateSchema = z.object({
-  path: z.string().min(1).max(4096),
-  ref: z.object({ name: z.string().max(1024) }).optional(),
-});
 
 lfsRoutes.post(`${REPO}/info/lfs/locks`, async (c) => {
   try {
@@ -577,12 +584,14 @@ lfsRoutes.post(`${REPO}/info/lfs/locks/verify`, async (c) => {
   try {
     const loaded = await loadGitRepo(c, 'write', lfsRefuser);
     if (!loaded.ok) return loaded.response;
-    const body = (await readJson(c)) as { cursor?: unknown; limit?: unknown } | null;
-    const limit = pageOf(body?.limit);
+    const parsed = lockVerifySchema.safeParse((await readJson(c)) ?? {});
+    if (!parsed.success) return lfsError(422, 'invalid_request', 'invalid lock query');
+    const body = parsed.data;
+    const limit = pageOf(body.limit);
     const rows = await q<LockRow>(
       c.env,
       `${LOCK_SELECT} WHERE l.repo_id = ? AND l.id > ? ORDER BY l.id LIMIT ?`,
-      [loaded.repo.id, typeof body?.cursor === 'string' ? body.cursor : '', limit + 1],
+      [loaded.repo.id, body.cursor ?? '', limit + 1],
     );
     const page = rows.slice(0, limit);
     const me = loaded.principal.userId;
@@ -601,7 +610,9 @@ lfsRoutes.post(`${REPO}/info/lfs/locks/:id/unlock`, async (c) => {
     const loaded = await loadGitRepo(c, 'write', lfsRefuser);
     if (!loaded.ok) return loaded.response;
     const { repo, principal } = loaded;
-    const body = (await readJson(c)) as { force?: unknown } | null;
+    const parsed = unlockSchema.safeParse((await readJson(c)) ?? {});
+    if (!parsed.success)
+      return lfsError(422, 'invalid_request', 'force must be a boolean');
     const row = await q1<LockRow>(
       c.env,
       `${LOCK_SELECT} WHERE l.repo_id = ? AND l.id = ?`,
@@ -612,7 +623,7 @@ lfsRoutes.post(`${REPO}/info/lfs/locks/:id/unlock`, async (c) => {
     if (forced) {
       // someone else's lock: only an admin, and only when asked to force
       const admin = await decide(c.env, repo, principal, 'admin');
-      if (body?.force !== true || !admin.allowed)
+      if (parsed.data.force !== true || !admin.allowed)
         return lfsError(403, 'forbidden', 'the lock belongs to someone else', {
           ...(admin.deniedBy ? { denied_by: admin.deniedBy } : {}),
         });
