@@ -456,16 +456,21 @@ beforeEach(async () => {
 
 describe('Yuma Factory provider contract (#63)', () => {
   it('runs one low-risk ticket end to end: claim, push, PR, CI, review, merge, close, provenance', async () => {
-    // a person files the ticket with Factory's labels and imports them as work fields
+    // a person files the ticket, labels it for Factory (an `issues` `labeled`
+    // event each) and imports the labels as work fields
     const issue = await json<{ issue: { number: number } }>(
       await call('POST', repo('/issues'), operator.headers, {
         title: 'Fix add() for negative numbers',
         body: 'add(-1, 1) should be 0.',
-        labels: ['yuma:ready', 'yuma:risk:low'],
       }),
       201,
     );
     const number = issue.issue.number;
+    await json(
+      await call('PUT', repo(`/issues/${number}/labels`), operator.headers, {
+        labels: ['yuma:ready', 'yuma:risk:low'],
+      }),
+    );
     await json(
       await call('POST', repo('/work/import-labels'), operator.headers, {
         prefix: 'yuma',
@@ -779,6 +784,7 @@ describe('Yuma Factory provider contract (#63)', () => {
     expect(seen).toEqual(
       expect.arrayContaining([
         'issues:opened',
+        'issues:labeled',
         'work_item:claimed',
         'pull_request:opened',
         'work_item:released',
