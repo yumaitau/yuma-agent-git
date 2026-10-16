@@ -29,6 +29,27 @@ import { bulkImportSchema } from '../bridge/bulk-import';
 import { mintSchema } from '../middleware/cachetier';
 import { rpcSchema } from '../agents/mcp';
 import {
+  commentBody as ghCommentBody,
+  createIssueBody as ghCreateIssueBody,
+  createLabelBody as ghCreateLabelBody,
+  issueLabelsBody as ghIssueLabelsBody,
+  listIssuesQuery as ghListIssuesQuery,
+  updateIssueBody as ghUpdateIssueBody,
+} from '../compat/github/issues';
+import {
+  createPullBody as ghCreatePullBody,
+  createReviewBody as ghCreateReviewBody,
+  listPullsQuery as ghListPullsQuery,
+  mergePullBody as ghMergePullBody,
+  updatePullBody as ghUpdatePullBody,
+} from '../compat/github/pulls';
+import { createGitRefBody as ghCreateGitRefBody } from '../compat/github/contents';
+import {
+  createReleaseBody as ghCreateReleaseBody,
+  updateReleaseBody as ghUpdateReleaseBody,
+} from '../compat/github/releases';
+import { searchIssuesQuery as ghSearchIssuesQuery } from '../compat/github/search';
+import {
   authorizeQuery,
   codeGrantSchema as mcpCodeGrantSchema,
   refreshGrantSchema,
@@ -203,6 +224,16 @@ const reviewPullSchema = z.object({
 });
 
 const ancestryQuery = z.object({ a: rev, b: rev });
+const ghPageQuery = z.object({
+  per_page: z.int().min(1).max(100).optional(),
+  page: z.int().min(1).optional(),
+});
+const ghRefQuery = z.object({
+  ref: z
+    .string()
+    .optional()
+    .describe('Branch, tag or commit (default: the default branch)'),
+});
 const scimListQuery = {
   filter: z.string().optional(),
   startIndex: z.int().min(1).optional(),
@@ -1123,6 +1154,110 @@ export const API_CONTRACT: Record<string, RouteContract> = {
       path: z.string().optional(),
       recursive: flag.optional(),
     }),
+  },
+  // GitHub REST compatible subset (#74, docs/compat/github.md)
+  'GET /api/github/v3': { id: 'ghRoot' },
+  'GET /api/github/v3/user': { id: 'ghGetAuthenticatedUser' },
+  'GET /api/github/v3/user/repos': { id: 'ghListMyRepos', query: ghPageQuery },
+  'GET /api/github/v3/repos/:owner/:repo': { id: 'ghGetRepo' },
+  'GET /api/github/v3/repos/:owner/:repo/contents': {
+    id: 'ghGetRootContents',
+    query: ghRefQuery,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/contents/:path': {
+    id: 'ghGetContents',
+    query: ghRefQuery,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/git/ref/:ref': { id: 'ghGetGitRef' },
+  'POST /api/github/v3/repos/:owner/:repo/git/refs': {
+    id: 'ghCreateGitRef',
+    body: ghCreateGitRefBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref': { id: 'ghGetCommit' },
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/check-runs': {
+    id: 'ghListCheckRuns',
+  },
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/statuses': { id: 'ghListStatuses' },
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/status': {
+    id: 'ghGetCombinedStatus',
+  },
+  'GET /api/github/v3/repos/:owner/:repo/issues': {
+    id: 'ghListIssues',
+    query: ghListIssuesQuery,
+  },
+  'POST /api/github/v3/repos/:owner/:repo/issues': {
+    id: 'ghCreateIssue',
+    body: ghCreateIssueBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/issues/:number': { id: 'ghGetIssue' },
+  'PATCH /api/github/v3/repos/:owner/:repo/issues/:number': {
+    id: 'ghUpdateIssue',
+    body: ghUpdateIssueBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/issues/:number/comments': {
+    id: 'ghListIssueComments',
+  },
+  'POST /api/github/v3/repos/:owner/:repo/issues/:number/comments': {
+    id: 'ghCreateIssueComment',
+    body: ghCommentBody,
+  },
+  'POST /api/github/v3/repos/:owner/:repo/issues/:number/labels': {
+    id: 'ghAddLabels',
+    body: ghIssueLabelsBody,
+  },
+  'PUT /api/github/v3/repos/:owner/:repo/issues/:number/labels': {
+    id: 'ghSetLabels',
+    body: ghIssueLabelsBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/labels': { id: 'ghListLabels' },
+  'POST /api/github/v3/repos/:owner/:repo/labels': {
+    id: 'ghCreateLabel',
+    body: ghCreateLabelBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/pulls': {
+    id: 'ghListPulls',
+    query: ghListPullsQuery,
+  },
+  'POST /api/github/v3/repos/:owner/:repo/pulls': {
+    id: 'ghCreatePull',
+    body: ghCreatePullBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number': { id: 'ghGetPull' },
+  'PATCH /api/github/v3/repos/:owner/:repo/pulls/:number': {
+    id: 'ghUpdatePull',
+    body: ghUpdatePullBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number/merge': {
+    id: 'ghCheckPullMerged',
+  },
+  'PUT /api/github/v3/repos/:owner/:repo/pulls/:number/merge': {
+    id: 'ghMergePull',
+    body: ghMergePullBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number/reviews': { id: 'ghListReviews' },
+  'POST /api/github/v3/repos/:owner/:repo/pulls/:number/reviews': {
+    id: 'ghCreateReview',
+    body: ghCreateReviewBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/releases': {
+    id: 'ghListReleases',
+    query: ghPageQuery,
+  },
+  'POST /api/github/v3/repos/:owner/:repo/releases': {
+    id: 'ghCreateRelease',
+    body: ghCreateReleaseBody,
+  },
+  'GET /api/github/v3/repos/:owner/:repo/releases/latest': { id: 'ghGetLatestRelease' },
+  'GET /api/github/v3/repos/:owner/:repo/releases/tags/:tag': { id: 'ghGetReleaseByTag' },
+  'GET /api/github/v3/repos/:owner/:repo/releases/:id': { id: 'ghGetRelease' },
+  'PATCH /api/github/v3/repos/:owner/:repo/releases/:id': {
+    id: 'ghUpdateRelease',
+    body: ghUpdateReleaseBody,
+  },
+  'DELETE /api/github/v3/repos/:owner/:repo/releases/:id': { id: 'ghDeleteRelease' },
+  'GET /api/github/v3/search/issues': {
+    id: 'ghSearchIssues',
+    query: ghSearchIssuesQuery,
   },
 };
 

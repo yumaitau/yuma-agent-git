@@ -754,6 +754,32 @@ const EXEMPT: Record<string, string> = {
   'DELETE /mcp': 'ends a protocol session; no repository or credential change',
   'POST /api/v1/usage':
     'append-only usage ledger row naming its reporter; budget changes and alerts are audited',
+  // GitHub REST compatibility (#74): each write calls native /api/v1 routes
+  // as the caller, and those audit their own change
+  ...Object.fromEntries(
+    [
+      'POST /git/refs',
+      'POST /issues',
+      'PATCH /issues/:number',
+      'POST /issues/:number/comments',
+      'POST /issues/:number/labels',
+      'PUT /issues/:number/labels',
+      'POST /labels',
+      'POST /pulls',
+      'PATCH /pulls/:number',
+      'PUT /pulls/:number/merge',
+      'POST /pulls/:number/reviews',
+      'POST /releases',
+      'PATCH /releases/:id',
+      'DELETE /releases/:id',
+    ].map((route) => {
+      const [method, tail] = route.split(' ');
+      return [
+        `${method} /api/github/v3/repos/:owner/:repo${tail}`,
+        'translated onto native /api/v1 routes, which audit',
+      ];
+    }),
+  ),
 };
 
 describe('audit coverage', () => {

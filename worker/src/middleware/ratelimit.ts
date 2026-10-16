@@ -113,6 +113,8 @@ export function shardOf(key: string): number {
 
 export function bucketFor(method: string, path: string): Bucket | null {
   if (path.startsWith('/webhooks/')) return null; // HMAC is the gate
+  // GitHub REST compatibility (#74): every request calls native routes, which count
+  if (path.startsWith('/api/github/v3') || path.startsWith('/api/v3/')) return null;
   // before /auth/: an owner may be called `auth`
   if (/^\/[^/]+\/[^/]+\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.test(path)) {
     return 'git';

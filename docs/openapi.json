@@ -536,6 +536,1683 @@
         }
       }
     },
+    "/api/github/v3": {
+      "get": {
+        "operationId": "ghRoot",
+        "summary": "GitHub REST compatible root (docs/compat/github.md)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}": {
+      "get": {
+        "operationId": "ghGetRepo",
+        "summary": "GitHub compatible: get a repository",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/commits/{ref}": {
+      "get": {
+        "operationId": "ghGetCommit",
+        "summary": "GitHub compatible: get a commit",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/commits/{ref}/check-runs": {
+      "get": {
+        "operationId": "ghListCheckRuns",
+        "summary": "GitHub compatible: CI jobs for a commit as check runs",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/commits/{ref}/status": {
+      "get": {
+        "operationId": "ghGetCombinedStatus",
+        "summary": "GitHub compatible: combined status for a commit",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/commits/{ref}/statuses": {
+      "get": {
+        "operationId": "ghListStatuses",
+        "summary": "GitHub compatible: CI jobs for a commit as statuses",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/contents": {
+      "get": {
+        "operationId": "ghGetRootContents",
+        "summary": "GitHub compatible: list the root directory",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Branch, tag or commit (default: the default branch)",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/contents/{path}": {
+      "get": {
+        "operationId": "ghGetContents",
+        "summary": "GitHub compatible: a file (base64) or a directory listing",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Branch, tag or commit (default: the default branch)",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/git/ref/{ref}": {
+      "get": {
+        "operationId": "ghGetGitRef",
+        "summary": "GitHub compatible: get a branch or tag ref",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/git/refs": {
+      "post": {
+        "operationId": "ghCreateGitRef",
+        "summary": "GitHub compatible: create a branch or tag",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ref": { "type": "string", "pattern": "^refs\\/(heads|tags)\\/.+" },
+                  "sha": { "type": "string", "minLength": 1 }
+                },
+                "required": ["ref", "sha"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/issues": {
+      "get": {
+        "operationId": "ghListIssues",
+        "summary": "GitHub compatible: list issues",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "closed", "all"] }
+          },
+          {
+            "name": "labels",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Comma-separated label names (all must match)",
+              "type": "string"
+            }
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "required": false,
+            "schema": { "description": "A login, or `none`", "type": "string" }
+          },
+          {
+            "name": "milestone",
+            "in": "query",
+            "required": false,
+            "schema": { "description": "A milestone number, or `none`", "type": "string" }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreateIssue",
+        "summary": "GitHub compatible: open an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": ["string", "null"] },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "properties": { "name": { "type": "string" } },
+                          "required": ["name"]
+                        }
+                      ]
+                    }
+                  },
+                  "assignee": { "type": ["string", "null"] },
+                  "assignees": { "type": "array", "items": { "type": "string" } },
+                  "milestone": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/issues/{number}": {
+      "get": {
+        "operationId": "ghGetIssue",
+        "summary": "GitHub compatible: get an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "ghUpdateIssue",
+        "summary": "GitHub compatible: edit, close or reopen an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": ["string", "null"] },
+                  "state": { "type": "string", "enum": ["open", "closed"] },
+                  "state_reason": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["completed", "not_planned", "duplicate", "reopened"]
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "milestone": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "properties": { "name": { "type": "string" } },
+                          "required": ["name"]
+                        }
+                      ]
+                    }
+                  },
+                  "assignees": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/issues/{number}/comments": {
+      "get": {
+        "operationId": "ghListIssueComments",
+        "summary": "GitHub compatible: list issue comments",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreateIssueComment",
+        "summary": "GitHub compatible: comment on an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "body": { "type": "string" } },
+                "required": ["body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/issues/{number}/labels": {
+      "post": {
+        "operationId": "ghAddLabels",
+        "summary": "GitHub compatible: add labels to an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "properties": { "name": { "type": "string" } },
+                          "required": ["name"]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": ["labels"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "ghSetLabels",
+        "summary": "GitHub compatible: replace the labels on an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        { "type": "string" },
+                        {
+                          "type": "object",
+                          "properties": { "name": { "type": "string" } },
+                          "required": ["name"]
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": ["labels"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/labels": {
+      "get": {
+        "operationId": "ghListLabels",
+        "summary": "GitHub compatible: list labels",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreateLabel",
+        "summary": "GitHub compatible: create a label",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "color": { "type": "string" },
+                  "description": { "type": ["string", "null"] }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/pulls": {
+      "get": {
+        "operationId": "ghListPulls",
+        "summary": "GitHub compatible: list pull requests",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "closed", "all"] }
+          },
+          {
+            "name": "base",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreatePull",
+        "summary": "GitHub compatible: open a pull request from a branch",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "head": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Branch (or `owner:branch`) holding the changes"
+                  },
+                  "base": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Must be the default branch"
+                  },
+                  "body": { "type": ["string", "null"] },
+                  "draft": { "type": "boolean" },
+                  "maintainer_can_modify": { "type": "boolean" }
+                },
+                "required": ["title", "head", "base"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/pulls/{number}": {
+      "get": {
+        "operationId": "ghGetPull",
+        "summary": "GitHub compatible: get a pull request",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "ghUpdatePull",
+        "summary": "GitHub compatible: edit or close a pull request",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": ["string", "null"] },
+                  "state": { "type": "string", "enum": ["open", "closed"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/pulls/{number}/merge": {
+      "get": {
+        "operationId": "ghCheckPullMerged",
+        "summary": "GitHub compatible: 204 when merged, else 404",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "ghMergePull",
+        "summary": "GitHub compatible: merge a pull request",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit_title": { "type": "string" },
+                  "commit_message": { "type": "string" },
+                  "sha": {
+                    "description": "Merge only if the head is still this commit",
+                    "type": "string"
+                  },
+                  "merge_method": {
+                    "type": "string",
+                    "enum": ["merge", "squash", "rebase"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/pulls/{number}/reviews": {
+      "get": {
+        "operationId": "ghListReviews",
+        "summary": "GitHub compatible: list reviews",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreateReview",
+        "summary": "GitHub compatible: submit a review",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": { "type": "string" },
+                  "event": {
+                    "type": "string",
+                    "enum": ["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+                    "description": "Required: pending (draft) reviews are not supported"
+                  },
+                  "commit_id": {
+                    "description": "Must be the current head commit",
+                    "type": "string"
+                  },
+                  "comments": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": { "type": "string" },
+                        "body": { "type": "string" },
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "side": { "type": "string", "enum": ["LEFT", "RIGHT"] },
+                        "start_line": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["path", "body", "line"]
+                    }
+                  }
+                },
+                "required": ["event"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/releases": {
+      "get": {
+        "operationId": "ghListReleases",
+        "summary": "GitHub compatible: list releases",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "ghCreateRelease",
+        "summary": "GitHub compatible: create a release (and its tag)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tag_name": { "type": "string", "minLength": 1 },
+                  "target_commitish": {
+                    "description": "Branch or commit for a new tag (default: the default branch)",
+                    "type": "string"
+                  },
+                  "name": { "type": ["string", "null"] },
+                  "body": { "type": ["string", "null"] },
+                  "draft": { "type": "boolean" },
+                  "prerelease": { "type": "boolean" },
+                  "generate_release_notes": { "type": "boolean" }
+                },
+                "required": ["tag_name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/releases/{id}": {
+      "get": {
+        "operationId": "ghGetRelease",
+        "summary": "GitHub compatible: get a release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "ghUpdateRelease",
+        "summary": "GitHub compatible: edit or publish a release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": ["string", "null"] },
+                  "body": { "type": ["string", "null"] },
+                  "draft": { "type": "boolean" },
+                  "prerelease": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "ghDeleteRelease",
+        "summary": "GitHub compatible: delete a release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/releases/latest": {
+      "get": {
+        "operationId": "ghGetLatestRelease",
+        "summary": "GitHub compatible: the latest release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/repos/{owner}/{repo}/releases/tags/{tag}": {
+      "get": {
+        "operationId": "ghGetReleaseByTag",
+        "summary": "GitHub compatible: a release by tag",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tag",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/search/issues": {
+      "get": {
+        "operationId": "ghSearchIssues",
+        "summary": "GitHub compatible: search issues or pull requests in one repo",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Search terms and qualifiers; `repo:owner/name` required"
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/user": {
+      "get": {
+        "operationId": "ghGetAuthenticatedUser",
+        "summary": "GitHub compatible: the signed-in user",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/github/v3/user/repos": {
+      "get": {
+        "operationId": "ghListMyRepos",
+        "summary": "GitHub compatible: repositories the caller can read",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1": {
       "get": {
         "operationId": "getApiRoot",

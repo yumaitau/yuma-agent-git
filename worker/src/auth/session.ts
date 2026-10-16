@@ -256,8 +256,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next): Promise<vo
 
   if (principal === null) {
     const authorization = c.req.header('authorization');
-    if (authorization?.startsWith('Bearer ')) {
-      const resolved = await resolveTokenPrincipal(c.env, authorization.slice(7));
+    // `token <t>` is GitHub's scheme; gh and Octokit send it (#74).
+    const bearer = /^(?:Bearer|token) (.+)$/.exec(authorization ?? '')?.[1];
+    if (bearer !== undefined) {
+      const resolved = await resolveTokenPrincipal(c.env, bearer);
       if (resolved) {
         principal = resolved;
         // `user` denotes a browser session. A bearer must never gain access to

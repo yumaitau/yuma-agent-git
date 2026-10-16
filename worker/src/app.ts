@@ -14,6 +14,7 @@ import { agentIdentityRoutes } from './auth/agents';
 import { appsRoutes } from './auth/apps';
 import { oauthAppsRoutes } from './auth/oauth-apps';
 import { reposRoutes } from './api/repos';
+import { githubCompatRoutes } from './compat/github';
 import { webhooksRoutes } from './api/webhooks';
 import { unsubscribeRoutes } from './api/notifications';
 import { gitBasicAuth, gitRoutes } from './git/http';
@@ -111,6 +112,8 @@ app.route('/', adminRoutes);
 app.route('/', cacheTokenRoutes);
 app.route('/', reposRoutes);
 app.route('/api/v1', apiRouter);
+// GitHub REST compatible subset (issue #74): translates onto /api/v1 as the caller.
+app.route('/', githubCompatRoutes);
 
 // Unrouted API/worker paths follow the error envelope; anything else falls
 // through to the SPA (assets binding serves dashboard/dist, issue #20).
