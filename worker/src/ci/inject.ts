@@ -9,6 +9,7 @@ import { resolveForJob } from '../secrets/store';
 import type { CiPolicy, CiRun } from './config';
 import { parseContext, type RunContext } from './context';
 import { jobTrust } from './environments';
+import { jobEnv } from './spec';
 import { createRequestToken, issuerFor, MAX_LIFETIME_SECONDS, mintIdToken } from './oidc';
 
 export const AWS_TOKEN_FILE = '/run/yag/aws-web-identity-token';
@@ -85,7 +86,8 @@ export async function prepareJob(
   policy: CiPolicy,
   deadline: number,
 ): Promise<JobAccess> {
-  const none: JobAccess = { env: {}, mask: [], files: [], summary: '' };
+  // the shard variables (issue #52) carry no credentials; every job gets them
+  const none: JobAccess = { env: jobEnv(job.config), mask: [], files: [], summary: '' };
   const wants =
     policy.secrets.length > 0 ||
     policy.permissions.id_token === 'write' ||
@@ -109,7 +111,7 @@ export async function prepareJob(
     };
   const resolved = await resolveForJob(env, repo, policy.environment, policy.secrets);
   const access: JobAccess = {
-    env: { ...resolved.variables, ...resolved.secrets },
+    env: { ...none.env, ...resolved.variables, ...resolved.secrets },
     mask: Object.values(resolved.secrets),
     files: [],
     summary: '',

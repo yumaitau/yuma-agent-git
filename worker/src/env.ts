@@ -53,6 +53,8 @@ export interface Env {
   AUDIT_ADMIN_USER_IDS?: string;
   /** Comma-separated user ids allowed to pause every agent on the instance (#62). */
   AGENTS_ADMIN_USER_IDS?: string;
+  /** Comma-separated user ids allowed to set per-org CI capacity (#52). */
+  CI_ADMIN_USER_IDS?: string;
   /** Queue `forge-events` (issue #75): domain events and webhook delivery retries. */
   EVENTS_QUEUE?: Queue;
   /** Queue `mirror-sync` (issues #36, #73): pull and push mirror syncs. */

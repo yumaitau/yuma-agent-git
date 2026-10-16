@@ -6,7 +6,8 @@ import { parsePolicy, reservation } from './config';
 import { parseContext, type RunContext } from './context';
 import { jobGate } from './environments';
 import { admitRun } from './runs';
-import { runnerLabels, type Pipeline } from './spec';
+import { runnerInstance, runnerLabels, type Pipeline } from './spec';
+import { planErrors, poolFor } from './capacity';
 import { stopSelfHosted } from './runners';
 
 /**
@@ -69,11 +70,16 @@ export interface StartInput {
 export async function startPipeline(env: Env, input: StartInput): Promise<string> {
   const id = crypto.randomUUID();
   const now = Date.now();
-  const p = input.pipeline;
+  // instance types and timeouts the org's pool does not allow fail at plan time (#52)
+  const over = input.pipeline
+    ? planErrors(input.pipeline, (await poolFor(env, input.repoId)).limits)
+    : [];
+  const p = over.length ? undefined : input.pipeline;
+  const errors = over.length ? over : input.errors;
   const group = p?.concurrency
     ? p.concurrency.group.replace(/\$\{\{\s*ref\s*\}\}/g, input.ref ?? '')
     : null;
-  const name = p?.name ?? input.path.slice(input.path.lastIndexOf('/') + 1);
+  const name = input.pipeline?.name ?? input.path.slice(input.path.lastIndexOf('/') + 1);
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO ci_pipeline_runs (id, repo_id, head_cs, pipeline, name, event, ref, concurrency_group, errors, requested_by, created_at, finished_at, context)
@@ -87,7 +93,7 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
       input.event,
       input.ref,
       group,
-      input.errors ? JSON.stringify(input.errors) : null,
+      errors ? JSON.stringify(errors) : null,
       input.actor,
       now,
       p ? null : now,
@@ -112,6 +118,8 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
           image: null,
           services: job.services,
           runs_on: job.runs_on,
+          instance_type: job.instance_type,
+          env: job.env,
           environment: job.environment,
           secrets: job.secrets,
           permissions: job.permissions,
@@ -243,7 +251,9 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
               actor: row.requested_by,
               publish: false,
               // self-hosted runners cost the Cloudflare budget nothing
-              reserved: runsOn ? 0 : reservation(parsePolicy(JSON.parse(config))),
+              reserved: runsOn
+                ? 0
+                : reservation(parsePolicy(JSON.parse(config)), runnerInstance(config)),
               runsOn,
               pipelineRunId: id,
               jobKey: job.key,
@@ -295,11 +305,17 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
   }
 }
 
-/** Advance unfinished pipeline runs, oldest first: after any run ends and from cron. */
+/**
+ * Advance unfinished pipeline runs after any run ends and from cron. Fair
+ * share (issue #52): repos with the fewest queued or running jobs go first,
+ * then the oldest run, so one busy repo cannot hold the next free slot.
+ */
 export async function advancePipelines(env: Env): Promise<void> {
   const active = await q<{ id: string }>(
     env,
-    'SELECT id FROM ci_pipeline_runs WHERE finished_at IS NULL ORDER BY created_at LIMIT 20',
+    `SELECT p.id FROM ci_pipeline_runs p WHERE p.finished_at IS NULL
+    ORDER BY (SELECT COUNT(*) FROM ci_runs r WHERE r.repo_id = p.repo_id
+      AND r.state IN ('queued','running')), p.created_at LIMIT 20`,
   );
   for (const { id } of active) await advancePipeline(env, id);
 }

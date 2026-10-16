@@ -3,7 +3,9 @@ import { q1, run } from '../db/client';
 import { getChangeset } from '../core/changesets';
 import { getRepo, getRef } from '../db/repos';
 import { ApiError } from '../core/errors';
-import { monthlyBudget, reservation, settings, type CiRun } from './config';
+import { DEFAULT_INSTANCE, reservation, settings, type CiRun } from './config';
+import { budgetAlerts, budgetMicros, jobLimitError, poolFor } from './capacity';
+import { runnerInstance } from './spec';
 import { parseContext, type RunContext } from './context';
 import { emitEvent } from '../webhooks/events';
 
@@ -27,6 +29,15 @@ export async function enqueueRun(
     throw new ApiError(409, 'ci_not_configured', 'Set up CI for this repository first.');
   if (!(await getChangeset(env, repoId, head)))
     throw new ApiError(404, 'changeset_not_found', 'Revision not found');
+  const limit = jobLimitError(
+    {
+      instance_type: DEFAULT_INSTANCE,
+      timeout_seconds: config.policy.timeout_seconds,
+      builtin: true,
+    },
+    (await poolFor(env, repoId)).limits,
+  );
+  if (limit) throw new ApiError(409, 'ci_limit_exceeded', limit);
   if (publish) {
     const repo = await getRepo(env, repoId);
     const ref = repo && (await getRef(env, repoId, repo.default_branch));
@@ -145,10 +156,11 @@ export interface Admission {
 }
 
 /**
- * Queue one run inside the shared ledger: the monthly budget, two runner slots
- * and the caller's duplicate `guard`. Returns null when it is not admitted.
- * Self-hosted runs (issue #48) skip the budget and the built-in slots and wait
- * for a runner to claim them instead of a queue message.
+ * Queue one run inside its pool's ledger (issue #52): the pool's monthly
+ * budget and job slots, and the caller's duplicate `guard`. Returns null when
+ * it is not admitted. Pools are separate, so one org's queue never holds back
+ * another's. Self-hosted runs (issue #48) skip the budget and the built-in
+ * slots and wait for a runner to claim them instead of a queue message.
  */
 export async function admitRun(
   env: Env,
@@ -159,15 +171,16 @@ export async function admitRun(
   const id = crypto.randomUUID();
   const month = new Date(now).toISOString().slice(0, 7);
   const runsOn = a.runsOn ? JSON.stringify(a.runsOn) : null;
+  const pool = await poolFor(env, a.repoId);
   // Single SQLite statement serializes admission across concurrent requests.
   // Never refund reservations: retries, failures and cancellations cannot hide spend.
   const inserted = await env.DB.prepare(
     `INSERT INTO ci_runs
-    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key, context, runs_on)
-    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?
+    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key, context, runs_on, pool, instance_type)
+    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     WHERE (? IS NOT NULL OR (
-      (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE month = ?) + ? <= ?
-      AND (SELECT COUNT(*) FROM ci_runs WHERE state IN ('queued','running') AND runs_on IS NULL) < 2))
+      (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE pool = ? AND month = ?) + ? <= ?
+      AND (SELECT COUNT(*) FROM ci_runs WHERE pool = ? AND state IN ('queued','running') AND runs_on IS NULL) < ?))
       AND ${guard.sql}`,
   )
     .bind(
@@ -185,15 +198,25 @@ export async function admitRun(
       a.jobKey ?? null,
       a.context ? JSON.stringify(a.context) : null,
       runsOn,
+      pool.id,
+      runsOn ? null : runnerInstance(a.config),
       runsOn,
+      pool.id,
       month,
       a.reserved,
-      monthlyBudget(env),
+      budgetMicros(pool.limits),
+      pool.id,
+      pool.limits.max_concurrent,
       ...guard.binds,
     )
     .run();
   if (!inserted.meta.changes) return null;
   if (runsOn) return id;
+  try {
+    await budgetAlerts(env, pool, month);
+  } catch (err) {
+    console.warn('CI budget alert failed', err instanceof Error ? err.message : err);
+  }
   try {
     await env.CI_QUEUE!.send({ run_id: id });
   } catch {

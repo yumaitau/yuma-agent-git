@@ -543,6 +543,16 @@ const SPECS: ToolSpec[] = [
     untrusted: true,
   },
   {
+    name: 'pipeline_artifacts',
+    title: 'List pipeline artifacts',
+    route: 'GET /api/v1/repos/:repo/ci/pipelines/runs/:id/artifacts',
+    description:
+      'Artifacts every job of a pipeline run uploaded (kept 14 days); download each from GET /api/v1/repos/:repo/ci/artifacts/:id.',
+    scope: 'contents:read',
+    untrusted: true,
+    params: { id: z.string().min(1).describe('Pipeline run id') },
+  },
+  {
     name: 'pipeline_run',
     title: 'Start pipeline',
     route: 'POST /api/v1/repos/:repo/ci/pipelines/runs',

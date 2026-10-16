@@ -8,6 +8,8 @@ import { agentJobsQueue } from './queues/agentJobs';
 import { ciQueue } from './ci/runs';
 import { sweepPipelines } from './ci/triggers';
 import { sweepRunners } from './ci/runners';
+import { sweepArtifacts } from './ci/artifacts';
+import { sweepCaches } from './ci/cache';
 import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
@@ -57,6 +59,10 @@ export default {
     // Package registry (#53): retention, unused blobs, stale uploads and tokens.
     await registryCleanup(env).catch((err: unknown) =>
       console.warn('Registry cleanup will be retried by the next sweep', err),
+    );
+    // CI artifacts past 14 days and caches unused for 7 (#51).
+    await Promise.all([sweepArtifacts(env), sweepCaches(env)]).catch((err: unknown) =>
+      console.warn('CI storage cleanup will be retried by the next sweep', err),
     );
     const expired = await q<{ id: string; log_key: string }>(
       env,

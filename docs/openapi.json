@@ -1651,6 +1651,117 @@
         }
       }
     },
+    "/api/v1/orgs/{org}/ci/limits": {
+      "get": {
+        "operationId": "getOrgCiLimits",
+        "summary": "Org CI limits (null: shared pool), this month's reservations and budget alerts",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "putOrgCiLimits",
+        "summary": "CI admins: give the org its own CI pool",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "max_concurrent": { "type": "integer", "minimum": 0, "maximum": 100 },
+                  "monthly_budget_usd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  },
+                  "max_timeout_s": { "type": "integer", "minimum": 30, "maximum": 21600 },
+                  "instance_types": {
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": ["standard-1", "standard-2", "standard-3", "standard-4"]
+                    }
+                  },
+                  "cache_quota_bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1099511627776
+                  }
+                },
+                "required": [
+                  "max_concurrent",
+                  "monthly_budget_usd",
+                  "max_timeout_s",
+                  "instance_types",
+                  "cache_quota_bytes"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrgCiLimits",
+        "summary": "CI admins: move the org back to the shared pool",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/orgs/{org}/hooks": {
       "get": {
         "operationId": "listOrgHooks",
@@ -4589,6 +4700,98 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/ci/artifacts/{id}": {
+      "get": {
+        "operationId": "downloadCiArtifact",
+        "summary": "Download a CI artifact (kept 14 days)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/ci/caches": {
+      "get": {
+        "operationId": "listCiCaches",
+        "summary": "CI cache entries, bytes used and the quota",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/ci/caches/{id}": {
+      "delete": {
+        "operationId": "deleteCiCache",
+        "summary": "Delete a CI cache entry",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/ci/detect": {
       "get": {
         "operationId": "detectCi",
@@ -4706,6 +4909,38 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/ci/pipelines/runs/{id}/artifacts": {
+      "get": {
+        "operationId": "listPipelineRunArtifacts",
+        "summary": "Every job's live artifacts for a pipeline run",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/ci/pipelines/runs/{id}/cancel": {
       "post": {
         "operationId": "cancelPipelineRun",
@@ -4773,6 +5008,38 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/ci/runs/{id}/artifacts": {
+      "get": {
+        "operationId": "listCiRunArtifacts",
+        "summary": "One CI job's live artifacts",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
           "2XX": {
             "description": "Success",
@@ -12096,12 +12363,58 @@
         }
       }
     },
+    "/runner/v1/jobs/{id}/artifacts": {
+      "get": {
+        "operationId": "listRunnerArtifacts",
+        "summary": "Artifacts of the job's run, from every job",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/runner/v1/jobs/{id}/artifacts/{name}": {
+      "get": {
+        "operationId": "downloadRunnerArtifact",
+        "summary": "Download an artifact of the job's run",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
       "put": {
         "operationId": "uploadRunnerArtifact",
         "summary": "Upload a job artifact (100 MiB at most)",
-        "security": [{ "runnerBearer": [] }],
-        "x-yag-permission": "own jobs",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
         "x-yag-rate-bucket": "api_write",
         "parameters": [
           {
@@ -12112,6 +12425,111 @@
           },
           {
             "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/caches": {
+      "get": {
+        "operationId": "restoreRunnerCache",
+        "summary": "Restore a cache: exact key, then restore-key prefixes, own scope then default branch (204 on a miss)",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 512 }
+          },
+          {
+            "name": "restore_keys",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Comma-separated key prefixes, tried in order",
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "reserveRunnerCache",
+        "summary": "Reserve a cache key in the job's own scope",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": { "type": "string", "minLength": 1, "maxLength": 512 }
+                },
+                "required": ["key"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/caches/{cache}": {
+      "put": {
+        "operationId": "uploadRunnerCache",
+        "summary": "Upload a reserved cache entry once (500 MiB at most)",
+        "security": [{ "runnerBearer": [] }, { "runtimeBearer": [] }],
+        "x-yag-permission": "own running job",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cache",
             "in": "path",
             "required": true,
             "schema": { "type": "string" }
@@ -13018,6 +13436,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Per-run CI request token (`yagjob_…`) from `YAG_ID_TOKEN_REQUEST_TOKEN` in the job"
+      },
+      "runtimeBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Per-run job token (`yagclone_…`) from `YAG_RUNTIME_TOKEN` in the job, valid while it runs"
       },
       "runnerBearer": {
         "type": "http",

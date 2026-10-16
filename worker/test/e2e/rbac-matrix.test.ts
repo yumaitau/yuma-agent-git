@@ -164,7 +164,12 @@ const PUBLIC = new Set([
   'POST /runner/v1/jobs/:id/heartbeat',
   'POST /runner/v1/jobs/:id/logs',
   'POST /runner/v1/jobs/:id/steps/:step',
+  'GET /runner/v1/jobs/:id/artifacts',
+  'GET /runner/v1/jobs/:id/artifacts/:name',
   'PUT /runner/v1/jobs/:id/artifacts/:name',
+  'GET /runner/v1/jobs/:id/caches',
+  'POST /runner/v1/jobs/:id/caches',
+  'PUT /runner/v1/jobs/:id/caches/:cache',
   'POST /runner/v1/jobs/:id/complete',
   // package registry (#53): Authorization header only (registry or forge
   // token), 401 + WWW-Authenticate when absent, 404 for unreadable repos

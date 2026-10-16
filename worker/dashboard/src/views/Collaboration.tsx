@@ -27,6 +27,8 @@ import {
   Empty,
   shortId,
   formatRelative,
+  formatBytes,
+  formatTime,
   authorLabel,
 } from '../ui';
 import { DiffView } from '../DiffView';
@@ -779,6 +781,49 @@ function stages(jobs: PipelineJob[]): PipelineJob[][] {
   return out;
 }
 
+interface CiArtifact {
+  id: string;
+  name: string;
+  size: number;
+  job_key: string | null;
+  expires_at: number;
+}
+
+/** A run's artifacts (issue #51), loaded when asked for; kept 14 days. */
+function RunArtifacts({ slug, runId }: { slug: string; runId: string }): ReactElement {
+  const [items, setItems] = useState<CiArtifact[] | null>(null);
+  const [failure, setFailure] = useState<ApiError | null>(null);
+  const load = async (): Promise<void> => {
+    try {
+      const res = await call<{ artifacts: CiArtifact[] }>(
+        `/repos/${slug}/ci/pipelines/runs/${runId}/artifacts`,
+      );
+      setItems(res.artifacts);
+    } catch (err) {
+      setFailure(asApiError(err));
+    }
+  };
+  if (failure) return <ErrorNotice error={failure} />;
+  if (!items) return <button onClick={() => void load()}>Artifacts</button>;
+  if (!items.length)
+    return <p className="small muted">No artifacts, or they have expired.</p>;
+  return (
+    <ul aria-label="Artifacts">
+      {items.map((a) => (
+        <li key={a.id}>
+          <a href={`/api/v1/repos/${slug}/ci/artifacts/${a.id}`} download>
+            {a.name}
+          </a>{' '}
+          <span className="small muted">
+            {formatBytes(a.size)} · {a.job_key ?? 'run'} · kept until{' '}
+            {formatTime(a.expires_at)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Pipeline spec v2 runs with their job graph; nothing when there are none. */
 export function PipelineRuns({
   slug,
@@ -866,6 +911,7 @@ export function PipelineRuns({
               ))}
             </div>
           )}
+          {!r.errors && <RunArtifacts slug={slug} runId={r.id} />}
         </article>
       ))}
     </section>

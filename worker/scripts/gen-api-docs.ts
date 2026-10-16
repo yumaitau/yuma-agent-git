@@ -217,6 +217,12 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/ci/runs/:id/retry':
     'Run a CI run again with its original trigger',
   'GET /api/v1/repos/:repo/ci/runs/:id/log': 'CI run log (`text/plain`)',
+  'GET /api/v1/repos/:repo/ci/runs/:id/artifacts': "One CI job's live artifacts",
+  'GET /api/v1/repos/:repo/ci/pipelines/runs/:id/artifacts':
+    "Every job's live artifacts for a pipeline run",
+  'GET /api/v1/repos/:repo/ci/artifacts/:id': 'Download a CI artifact (kept 14 days)',
+  'GET /api/v1/repos/:repo/ci/caches': 'CI cache entries, bytes used and the quota',
+  'DELETE /api/v1/repos/:repo/ci/caches/:id': 'Delete a CI cache entry',
   'GET /api/v1/repos/:repo/codeowners':
     'CODEOWNERS at a revision: rules, resolved owners, errors and the owners of a path',
   'GET /api/v1/repos/:repo/ci/pipelines':
@@ -237,7 +243,14 @@ const PURPOSES: Record<string, string> = {
     'Extend the job lease; says whether it was cancelled',
   'POST /runner/v1/jobs/:id/logs': 'Append a masked log chunk to a step (`?step=`)',
   'POST /runner/v1/jobs/:id/steps/:step': 'Report a step state and exit code',
+  'GET /runner/v1/jobs/:id/artifacts': "Artifacts of the job's run, from every job",
+  'GET /runner/v1/jobs/:id/artifacts/:name': "Download an artifact of the job's run",
   'PUT /runner/v1/jobs/:id/artifacts/:name': 'Upload a job artifact (100 MiB at most)',
+  'GET /runner/v1/jobs/:id/caches':
+    'Restore a cache: exact key, then restore-key prefixes, own scope then default branch (204 on a miss)',
+  'POST /runner/v1/jobs/:id/caches': "Reserve a cache key in the job's own scope",
+  'PUT /runner/v1/jobs/:id/caches/:cache':
+    'Upload a reserved cache entry once (500 MiB at most)',
   'POST /runner/v1/jobs/:id/complete': 'Report the job result and release the runner',
   'POST /api/v1/orgs/:org/runners/registration-token':
     'One-time org runner registration token (1 hour, recent MFA)',
@@ -271,6 +284,10 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/orgs/:org/secrets/:name': 'Set an org secret `{value}`',
   'DELETE /api/v1/orgs/:org/secrets/:name': 'Delete an org secret',
   'GET /api/v1/orgs/:org/variables': 'Org variables with values',
+  'GET /api/v1/orgs/:org/ci/limits':
+    "Org CI limits (null: shared pool), this month's reservations and budget alerts",
+  'PUT /api/v1/orgs/:org/ci/limits': 'CI admins: give the org its own CI pool',
+  'DELETE /api/v1/orgs/:org/ci/limits': 'CI admins: move the org back to the shared pool',
   'PUT /api/v1/orgs/:org/variables/:name': 'Set an org variable `{value}`',
   'DELETE /api/v1/orgs/:org/variables/:name': 'Delete an org variable',
   'POST /api/v1/admin/secrets/rewrap':
@@ -519,6 +536,8 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
   if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
   if (path === '/runner/v1/register') return { auth: 'registration token', perm: '—' };
+  if (/^\/runner\/v1\/jobs\/:id\/(artifacts|caches)/.test(path))
+    return { auth: 'runner credential or job token', perm: 'own running job' };
   if (path.startsWith('/runner/')) return { auth: 'runner credential', perm: 'own jobs' };
   if (path === '/mcp') {
     return { auth: 'token', perm: 'per tool: the API route it calls' };
@@ -734,6 +753,7 @@ const SECURITY: Record<string, Record<string, string[]>[]> = {
   'CI request token': [{ ciJobBearer: [] }],
   'registration token': [],
   'runner credential': [{ runnerBearer: [] }],
+  'runner credential or job token': [{ runnerBearer: [] }, { runtimeBearer: [] }],
   'token (Basic or Bearer)': [{ gitBasic: [] }, { bearer: [] }],
 };
 
@@ -837,6 +857,12 @@ function openapi(mod: WorkerModule, rows: Row[]): JsonObject {
           scheme: 'bearer',
           description:
             'Per-run CI request token (`yagjob_…`) from `YAG_ID_TOKEN_REQUEST_TOKEN` in the job',
+        },
+        runtimeBearer: {
+          type: 'http',
+          scheme: 'bearer',
+          description:
+            'Per-run job token (`yagclone_…`) from `YAG_RUNTIME_TOKEN` in the job, valid while it runs',
         },
         runnerBearer: {
           type: 'http',

@@ -312,9 +312,11 @@ describe('self-hosted runner protocol', () => {
       'r',
     );
     expect(artifact.status).toBe(201);
-    expect(
-      await testEnv.OBJECTS.head(`ci/artifacts/${repoId}/${job.id}/report.txt`),
-    ).not.toBeNull();
+    const stored = (await artifact.json()) as { artifact: { id: string } };
+    const download = await call(
+      `/api/v1/repos/yuma/app/ci/artifacts/${stored.artifact.id}`,
+    );
+    expect(await download.text()).toBe('r');
     const done = await runner(credential, `/jobs/${job.id}/complete`, 'POST', {
       result: 'passed',
     });

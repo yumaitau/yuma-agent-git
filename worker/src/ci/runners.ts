@@ -10,7 +10,6 @@ import { randomB64url } from '../auth/encoding';
 import { errorResponse, readJsonBody } from '../api/errors';
 import { appendAudit, type AuditInput } from '../audit/record';
 import { commitShas } from '../git/upload-pack';
-import { storeArtifact } from './artifacts';
 import { parsePolicy, type CiRun } from './config';
 import { parseContext } from './context';
 import { guardAgentJob, prepareJob } from './inject';
@@ -26,7 +25,7 @@ import { labelsSchema, runnerServices } from './spec';
  *   POST /runner/v1/jobs/:id/heartbeat             keep the lease; learn of cancellation
  *   POST /runner/v1/jobs/:id/logs?step=<n>         append a log chunk (text/plain)
  *   POST /runner/v1/jobs/:id/steps/:step           report a step result
- *   PUT  /runner/v1/jobs/:id/artifacts/:name       upload an artifact
+ *   (artifacts and caches: ci/job-routes.ts)
  *   POST /runner/v1/jobs/:id/complete              report the job result
  *
  * Everything but `register` authenticates with the runner's own credential.
@@ -50,8 +49,6 @@ const QUEUE_LIMIT_MS = 60 * 60_000;
 export const MAX_STEP_LOG_BYTES = 512 * 1024;
 export const MAX_RUN_LOG_BYTES = 4 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 64 * 1024;
-const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
-const MAX_ARTIFACTS = 20;
 const LOG_LIMIT_NOTE = '\n[Log limit reached: further output is dropped.]\n';
 
 export interface RunnerRow {
@@ -271,7 +268,6 @@ export const stepSchema = z.object({
 export const completeSchema = z.object({ result: z.enum(['passed', 'failed']) });
 const waitSchema = z.coerce.number().int().min(0).max(MAX_WAIT_S).default(MAX_WAIT_S);
 const stepIndex = z.coerce.number().int().min(0).max(63);
-const ARTIFACT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
@@ -309,6 +305,36 @@ async function authRunner(c: Context<AppEnv>, claiming = false): Promise<RunnerR
     row.id,
   ]);
   return row;
+}
+
+/**
+ * The job a storage request (issue #51) acts for: the claiming runner's
+ * credential, or the job's own token, which the job's steps get as
+ * YAG_RUNTIME_TOKEN in either pool. The token works only while the job runs.
+ */
+export async function authJob(c: Context<AppEnv>, id: string): Promise<CiRun> {
+  const header = c.req.header('authorization') ?? '';
+  const raw = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!raw.startsWith(CLONE_PREFIX)) return runnerJob(c.env, await authRunner(c), id);
+  const job = await q1<CiRun>(
+    c.env,
+    "SELECT * FROM ci_runs WHERE id = ? AND job_token_hash = ? AND state = 'running'",
+    [id, await hash(raw)],
+  );
+  if (!job?.deadline || job.deadline <= Date.now())
+    throw new ApiError(401, 'invalid_job_token', 'Unknown or expired job token.');
+  return job;
+}
+
+/** A job token for a built-in run: storage, and repository read like a clone token. */
+export async function issueJobToken(env: Env, id: string): Promise<string> {
+  const token = `${CLONE_PREFIX}${randomB64url(32)}`;
+  await run(
+    env,
+    "UPDATE ci_runs SET job_token_hash = ? WHERE id = ? AND state = 'running'",
+    [await hash(token), id],
+  );
+  return token;
 }
 
 async function runnerJob(env: Env, runner: RunnerRow, id: string): Promise<CiRun> {
@@ -416,7 +442,12 @@ async function claim(env: Env, runner: RunnerRow, job: CiRun, origin: string) {
     steps: policy.commands,
     services: runnerServices(job.config),
     deadline,
-    env: access.env,
+    // steps reach artifacts and caches with the job token (issue #51)
+    env: {
+      ...access.env,
+      YAG_RUNTIME_URL: `${origin}/runner/v1/jobs/${job.id}`,
+      YAG_RUNTIME_TOKEN: token,
+    },
     files: access.files,
     mask: [...access.mask, token],
     summary: access.summary,
@@ -596,43 +627,6 @@ runnerRoutes.post('/runner/v1/jobs/:id/steps/:step', async (c) => {
       ],
     );
     return c.json({ cancel: false });
-  } catch (err) {
-    return errorResponse(c, err);
-  }
-});
-
-runnerRoutes.put('/runner/v1/jobs/:id/artifacts/:name', async (c) => {
-  try {
-    const job = await runnerJob(c.env, await authRunner(c), c.req.param('id'));
-    const name = c.req.param('name');
-    if (!ARTIFACT_NAME.test(name))
-      throw new ApiError(400, 'invalid_artifact_name', 'Use letters, digits, ., _ or -.');
-    if (job.state !== 'running')
-      throw new ApiError(409, 'job_not_running', 'The job has ended.');
-    const prefix = `ci/artifacts/${job.repo_id}/${job.id}/`;
-    const existing = await c.env.OBJECTS.list({ prefix, limit: MAX_ARTIFACTS });
-    if (
-      existing.objects.length >= MAX_ARTIFACTS &&
-      !existing.objects.some((o) => o.key === prefix + name)
-    )
-      throw new ApiError(
-        409,
-        'too_many_artifacts',
-        `A job keeps ${MAX_ARTIFACTS} artifacts at most.`,
-      );
-    const body = c.req.raw.body;
-    if (!body)
-      throw new ApiError(400, 'empty_artifact', 'Send the artifact as the body.');
-    try {
-      await storeArtifact(c.env.OBJECTS, prefix + name, body, MAX_ARTIFACT_BYTES);
-    } catch {
-      throw new ApiError(
-        413,
-        'artifact_rejected',
-        'Artifacts must be non-empty and 100 MiB at most.',
-      );
-    }
-    return c.json({ artifact: { name } }, 201);
   } catch (err) {
     return errorResponse(c, err);
   }

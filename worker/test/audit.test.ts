@@ -538,6 +538,10 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',
   // also environment.approval.request
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/retry': 'ci.run.create',
+  'DELETE /api/v1/repos/:repo{.+}/ci/caches/:id': 'ci.cache.delete',
+  // DELETE goes back to the shared pool
+  'PUT /api/v1/orgs/:org/ci/limits': 'ci.limits.update',
+  'DELETE /api/v1/orgs/:org/ci/limits': 'ci.limits.update',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci.run.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent.task.create',
@@ -702,6 +706,9 @@ const EXEMPT: Record<string, string> = {
   'POST /runner/v1/jobs/:id/logs': 'job lifecycle on the run row',
   'POST /runner/v1/jobs/:id/steps/:step': 'job lifecycle on the run row',
   'PUT /runner/v1/jobs/:id/artifacts/:name': 'job lifecycle on the run row',
+  // job storage (#51): rows carry the uploading run; only the job's own scope
+  'POST /runner/v1/jobs/:id/caches': 'job storage keyed to the run row',
+  'PUT /runner/v1/jobs/:id/caches/:cache': 'job storage keyed to the run row',
   'POST /runner/v1/jobs/:id/complete': 'job lifecycle on the run row',
   'POST /api/v1/repos/:repo{.+}/work/:number/heartbeat':
     'extends a lease the caller already holds; the claim and its expiry are audited',

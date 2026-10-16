@@ -7,7 +7,10 @@ import { getTree } from '../core/trees';
 import { tarEntry, tarEnd } from '../bridge/tar';
 import { storeArtifact } from './artifacts';
 import { advancePipelines } from './planner';
-import { runnerServices } from './spec';
+import { runnerInstance, runnerServices } from './spec';
+import { issueJobToken } from './runners';
+import { parseContext } from './context';
+import type { InstanceType } from './config';
 import { createMasker, type Masker } from './mask';
 import { ApiError } from '../core/errors';
 import { prepareJob } from './inject';
@@ -71,7 +74,8 @@ export class CiRunnerDO extends DurableObject<Env> {
       );
       this.append('Preparing runner…\n');
       await this.checkpoint(job);
-      await this.start(id, deadline);
+      const instance = runnerInstance(job.config);
+      await this.start(id, deadline, instance);
       this.append('Reading repository source…\n');
       await this.checkpoint(job);
       await this.command(['mkdir', '-p', '/workspace']);
@@ -109,6 +113,14 @@ export class CiRunnerDO extends DurableObject<Env> {
           throw err;
         },
       );
+      // artifacts and caches (issue #51) through the forge, with a token for this run only
+      const origin = parseContext(job.context)?.origin;
+      if (origin) {
+        const token = await issueJobToken(this.env, id);
+        access.env.YAG_RUNTIME_URL = `${origin}/runner/v1/jobs/${id}`;
+        access.env.YAG_RUNTIME_TOKEN = token;
+        access.mask.push(token);
+      }
       this.masker = createMasker(access.mask);
       if (access.summary) this.append(`\n${access.summary}\n`);
       for (const file of access.files) {
@@ -164,7 +176,7 @@ export class CiRunnerDO extends DurableObject<Env> {
         // Destroy every process and filesystem from the untrusted build before credentials exist.
         await this.ctx.container.destroy();
         await this.assertRunning(id, deadline);
-        await this.start(id, deadline);
+        await this.start(id, deadline, instance);
         const artifact = await this.env.OBJECTS.get(imageKey);
         if (!artifact) throw new Error('Image export missing');
         await this.command(
@@ -227,7 +239,7 @@ export class CiRunnerDO extends DurableObject<Env> {
       await run(
         this.env,
         `UPDATE ci_runs SET state = CASE WHEN state = 'running' THEN ? ELSE state END,
-        finished_at = COALESCE(finished_at, ?), log_key = ?, image = CASE WHEN state = 'running' THEN ? ELSE image END, error = COALESCE(error, ?)
+        job_token_hash = NULL, finished_at = COALESCE(finished_at, ?), log_key = ?, image = CASE WHEN state = 'running' THEN ? ELSE image END, error = COALESCE(error, ?)
         WHERE id = ?`,
         [state, Date.now(), logKey, state === 'passed' ? published : null, error, id],
       );
@@ -279,7 +291,11 @@ export class CiRunnerDO extends DurableObject<Env> {
     await this.advance();
   }
 
-  private async start(id: string, deadline: number): Promise<void> {
+  private async start(
+    id: string,
+    deadline: number,
+    instance: InstanceType,
+  ): Promise<void> {
     this.append('\nStarting a fresh runner…\n');
     // Check and start under the same gate as cancellation and the deadline alarm.
     await this.ctx.blockConcurrencyWhile(async () => {
@@ -288,7 +304,7 @@ export class CiRunnerDO extends DurableObject<Env> {
       if (container.running) await container.destroy();
       container.start({
         image: container.images.ci,
-        instance: 'standard-2',
+        instance,
         enableInternet: true,
       });
       await container.setInactivityTimeout(10_000);

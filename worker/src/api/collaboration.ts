@@ -14,9 +14,10 @@ import { getBlob } from '../core/blobs';
 import { resolvePath } from '../core/trees';
 import { ApiError } from '../core/errors';
 import { getPull, pullGate, type Pull, type Review } from '../reviews/pulls';
+import { poolFor } from '../ci/capacity';
 import {
-  monthlyBudget,
   parsePolicy,
+  policySchema,
   PRESETS,
   reservation,
   settings,
@@ -342,7 +343,9 @@ collaborationRoutes.get(`${base}/ci`, async (c) => {
       enabled: c.env.CI_ENABLED === 'true',
       can_admin: await can(c.env, loaded.repo, c.get('principal'), 'admin'),
       can_write: await can(c.env, loaded.repo, c.get('principal'), 'write'),
-      monthly_budget_usd: monthlyBudget(c.env) / 1e6,
+      // the repo's pool (#52): its org's, or the shared deployment budget
+      monthly_budget_usd: (await poolFor(c.env, loaded.repo.id)).limits
+        .monthly_budget_usd,
       reserved_usd: (usage?.reserved ?? 0) / 1e6,
       max_run_usd: config ? reservation(config.policy) / 1e6 : null,
       registry: c.env.CI_REGISTRY_HOST ?? null,
@@ -404,7 +407,7 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'admin', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
-    const config = parsePolicy(await readJsonBody(c));
+    const config = parsePolicy(await readJsonBody(c), policySchema);
     const lock = c.env.REF_LOCK.get(
       c.env.REF_LOCK.idFromName(`${loaded.repo.id}:${loaded.repo.default_branch}`),
     );
