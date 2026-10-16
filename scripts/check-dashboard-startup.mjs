@@ -2,6 +2,7 @@
 // Execute the shipped bundle, not Vitest's separately transformed components.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { build } from 'esbuild';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const dist = new URL('../worker/dashboard/dist/', import.meta.url);
@@ -13,6 +14,34 @@ async function asset(path) {
   const response = await fetch(url);
   assert.equal(response.status, 200, `Asset ${path}`);
   return response.text();
+}
+// jsdom runs classic scripts only, so link the shipped entry and its lazy
+// route chunks (#80) into one script without changing their code.
+async function linked(entry) {
+  const result = await build({
+    entryPoints: [entry],
+    bundle: true,
+    format: 'iife',
+    write: false,
+    logLevel: 'silent',
+    plugins: [
+      {
+        name: 'dist',
+        setup(b) {
+          b.onResolve({ filter: /.*/ }, (args) => ({
+            path: new URL(args.path, new URL(args.importer || '/', 'https://dist.test'))
+              .pathname,
+            namespace: 'dist',
+          }));
+          b.onLoad({ filter: /.*/, namespace: 'dist' }, async (args) => ({
+            contents: await asset(args.path),
+            loader: 'js',
+          }));
+        },
+      },
+    ],
+  });
+  return result.outputFiles[0].text;
 }
 const html = await asset('index.html');
 for (const route of ['/', '/login']) {
@@ -38,8 +67,7 @@ for (const route of ['/', '/login']) {
     const scripts = dom.window.document.querySelectorAll('script[type="module"][src]');
     assert.ok(scripts.length, 'Missing dashboard entrypoint');
     for (const script of scripts) {
-      // Vite currently emits a single self-contained entry bundle.
-      dom.window.eval(await asset(script.getAttribute('src')));
+      dom.window.eval(await linked(script.getAttribute('src')));
     }
     const deadline = Date.now() + 3000;
     while (

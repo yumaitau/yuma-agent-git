@@ -42,12 +42,12 @@ export function authorLabel(author: Author | undefined): string {
 // ---------------------------------------------------------------------------
 
 export function Spinner(): ReactElement {
-  return <span className="spinner" aria-label="loading" />;
+  return <span className="spinner" aria-hidden="true" />;
 }
 
 export function Loading({ label = 'Loading…' }: { label?: string }): ReactElement {
   return (
-    <div className="row muted" style={{ padding: '18px 4px' }}>
+    <div className="row muted" role="status" style={{ padding: '18px 4px' }}>
       <Spinner /> {label}
     </div>
   );

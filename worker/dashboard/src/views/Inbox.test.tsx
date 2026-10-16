@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InboxView } from './Inbox';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -66,6 +67,7 @@ it('lists notifications with their reason and marks one done', async () => {
   const fetcher = stub();
   mount();
   expect(await screen.findByText('Fix the parser')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getAllByText('Review requested')).toHaveLength(2); // the chip and the setting
   expect(screen.getByText('1 unread')).toBeTruthy();
   expect(screen.getByText(/ada ·/)).toBeTruthy();
@@ -89,6 +91,7 @@ it('switches email to a daily digest in Australia/Sydney time', async () => {
   const fetcher = stub();
   mount();
   const select = await screen.findByLabelText('Notification email');
+  await expectAccessible(document.body);
   fireEvent.change(select, { target: { value: 'digest' } });
   expect(await screen.findByText('Saved.')).toBeTruthy();
   const put = fetcher.mock.calls.find(([, init]) => init?.method === 'PUT');

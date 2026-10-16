@@ -15,10 +15,13 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "docs:openapi": "npm run docs:api -w worker && npm run generate -w @yuma/agent-git-sdk",
-    "test": "npm test -w worker"
+    "test": "npm test -w worker",
+    "test:e2e": "npm run build -w worker && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@playwright/test": "^1.64.1",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.0",
     "globals": "^16.5.0",
     "prettier": "^3.6.2",

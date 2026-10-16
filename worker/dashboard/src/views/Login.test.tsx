@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ApiError } from '../api';
 import { ErrorNotice } from '../ui';
 import { LoginView } from './Login';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -32,6 +33,7 @@ it('explains incomplete setup instead of sending visitors to a broken OAuth endp
     'textContent',
     expect.stringContaining('Sign-in setup is incomplete'),
   );
+  await expectAccessible(document.body);
   expect(screen.queryByRole('link', { name: 'Sign in with GitHub' })).toBeNull();
 });
 
@@ -65,6 +67,7 @@ it('offers GitHub sign-in when credentials are configured', async () => {
       'href',
     ),
   ).toBe('/auth/github');
+  await expectAccessible(document.body);
 });
 
 it('lists configured identity providers ahead of GitHub', async () => {
@@ -83,6 +86,7 @@ it('lists configured identity providers ahead of GitHub', async () => {
     </MemoryRouter>,
   );
   const google = await screen.findByRole('link', { name: 'Sign in with Google' });
+  await expectAccessible(document.body);
   expect(google.getAttribute('href')).toBe('/auth/oidc/google');
   expect(screen.getByRole('link', { name: 'Sign in with GitHub' })).toBeTruthy();
   expect(screen.queryByRole('alert')).toBeNull();
@@ -104,6 +108,7 @@ it('does not call setup incomplete when only an OIDC provider is configured', as
     </MemoryRouter>,
   );
   await screen.findByRole('link', { name: 'Sign in with Microsoft' });
+  await expectAccessible(document.body);
   expect(screen.queryByText('Sign-in setup is incomplete')).toBeNull();
   expect(screen.queryByRole('link', { name: 'Sign in with GitHub' })).toBeNull();
 });

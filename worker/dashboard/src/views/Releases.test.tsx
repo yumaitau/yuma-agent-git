@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ReleasesView } from './Releases';
 import type { Release } from '../../../shared/releases';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -82,6 +83,7 @@ it('lists releases with checksummed assets and publishes a draft', async () => {
   const fetcher = stub();
   mount();
   expect(await screen.findByText('First')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('draft')).toBeTruthy();
   expect(screen.getByText('provenance')).toBeTruthy();
   expect(screen.getByText(`sha256:${sha.slice(0, 16)}`)).toBeTruthy();
@@ -100,6 +102,7 @@ it('creates a release from a tag with generated notes and two assets', async () 
   const fetcher = stub();
   mount();
   await screen.findByText('First');
+  await expectAccessible(document.body);
   await waitFor(() =>
     expect((screen.getByLabelText('Tag') as HTMLSelectElement).value).toBe('v1.0.0'),
   );

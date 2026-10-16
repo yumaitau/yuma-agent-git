@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SecurityAlertsView } from './SecurityAlerts';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -69,6 +70,7 @@ it('lists dependency and code scanning alerts with the OSV attribution', async (
   stub();
   mount();
   expect(await screen.findByText('lodash')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('GHSA-35jh-r3h4-6jhm')).toBeTruthy();
   expect(screen.getByText('SQL injection')).toBeTruthy();
   expect(screen.getByText('src/db.ts:12')).toBeTruthy();
@@ -80,6 +82,7 @@ it('files update work and dismisses an alert with a reason', async () => {
   const fetcher = stub();
   mount();
   fireEvent.click(await screen.findByText('File update work'));
+  await expectAccessible(document.body);
   expect(await screen.findByText('Update work filed.')).toBeTruthy();
   expect(fetcher).toHaveBeenCalledWith(
     expect.stringContaining('/api/v1/repos/acme/shop/dependency-alerts/3/work'),

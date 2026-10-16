@@ -29,7 +29,7 @@ interface Approval {
   created_at: number;
   not_before: number;
 }
-interface Entry {
+export interface Entry {
   name: string;
   value?: string;
   updated_at: number;
@@ -304,7 +304,7 @@ function EnvironmentsPanel({
   );
 }
 
-function EntryList({
+export function EntryList({
   kind,
   entries,
   onSave,
@@ -334,7 +334,12 @@ function EntryList({
                   updated {formatRelative(entry.updated_at)}
                 </span>
               </span>
-              <button onClick={() => void onDelete(entry.name)}>Delete</button>
+              <button
+                aria-label={`Delete ${entry.name}`}
+                onClick={() => void onDelete(entry.name)}
+              >
+                Delete
+              </button>
             </li>
           ))}
         </ul>

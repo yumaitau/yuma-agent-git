@@ -143,10 +143,13 @@ export function NewThread({
         }).then((ok) => ok && onClose());
       }}
     >
+      {/* keyboard users land in the box they just opened; Escape cancels it */}
       <textarea
         aria-label={`Comment on line ${draft.line}`}
+        autoFocus
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && onClose()}
       />
       <div className="row">
         <button className="primary" disabled={busy || !body.trim()}>

@@ -19,6 +19,17 @@ Tests are hermetic: they run in miniflare (`@cloudflare/vitest-pool-workers`) wi
 in-memory D1 / R2 / Durable Object / Queue bindings from `worker/wrangler.jsonc`. No
 network, ever.
 
+Dashboard component tests run in jsdom with `npm run test:ui -w worker`. Each view test
+also runs axe-core and fails on serious or critical WCAG 2.2 AA problems
+(`worker/dashboard/src/axe.ts`). Colour contrast needs real layout, so the e2e run checks
+it instead, in light and dark themes.
+
+`npm run test:e2e` builds the dashboard, starts `wrangler dev --local` on a throwaway
+store and drives the golden path (issue, pull request, inline comment, approval, merge)
+in Playwright's Chromium (`npx playwright install chromium` once), with axe colour
+contrast checks on the way. Set `YAG_E2E_PORT` when port 18690 is taken. It is not part
+of `npm test`.
+
 ## Local dev
 
 ```sh

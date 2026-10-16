@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MergeQueueView } from './MergeQueue';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -66,6 +67,7 @@ function mount(path: string) {
 it('lists queued pull requests in order, groups and recent results', async () => {
   mount('/r/acme/tools/queue');
   expect(await screen.findByText('#12 Fix parser')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('Merge queue for main')).toBeTruthy();
   expect(screen.getByText('priority 3')).toBeTruthy();
   expect(screen.getByText('#9 Break build')).toBeTruthy();
@@ -77,6 +79,7 @@ it('lists queued pull requests in order, groups and recent results', async () =>
 it('removes a pull request and reads another branch', async () => {
   const fetcher = mount('/r/acme/tools/queue?ref=release');
   fireEvent.click(await screen.findByText('Remove #13'));
+  await expectAccessible(document.body);
   await vi.waitFor(() =>
     expect(
       fetcher.mock.calls.map(([url, init]) => `${init?.method ?? 'GET'} ${url}`),

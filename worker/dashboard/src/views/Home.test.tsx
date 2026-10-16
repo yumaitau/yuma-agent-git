@@ -5,6 +5,7 @@ import { api } from '../api';
 import { ToastProvider } from '../toast';
 import { HomeView } from './Home';
 import { RepoOverviewView } from './RepoOverview';
+import { expectAccessible } from '../axe';
 
 const repo = {
   id: 'native',
@@ -39,6 +40,7 @@ it('creates a native repository and opens its code page without a GitHub connect
   });
   fireEvent.click(screen.getByRole('button', { name: 'Create repository' }));
   expect(await screen.findByText('Native code page')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(create).toHaveBeenCalledWith({
     slug: repo.slug,
     default_branch: repo.default_branch,
@@ -66,6 +68,7 @@ it('initializes native history and offers the correct clone command and Yuma CI'
     </MemoryRouter>,
   );
   fireEvent.click(await screen.findByText('Create initial README'));
+  await expectAccessible(document.body);
   await waitFor(() => expect(initialize).toHaveBeenCalledWith(repo.slug));
   const ci = await screen.findByText('Set up Yuma CI');
   expect(ci.getAttribute('href')).toBe('/r/team/native/ci');

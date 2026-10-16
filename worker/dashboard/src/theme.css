@@ -183,7 +183,7 @@ h3 {
   flex: 1;
 }
 .topnav .hint {
-  color: var(--faint);
+  color: var(--muted);
   font-size: 12px;
 }
 .topnav kbd {
@@ -294,17 +294,16 @@ button:hover,
   border-color: var(--accent);
   text-decoration: none;
 }
-/* site CTA: bg-accent text-white hover:bg-accent-dark */
+/* site CTA on site --accent-dark: white on --accent is 4.2:1, under WCAG AA (#80) */
 button.primary,
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: #b83d25;
+  border-color: #b83d25;
   color: #fff;
 }
 button.primary:hover,
 .btn.primary:hover {
-  background: #b83d25;
-  border-color: #b83d25;
+  filter: brightness(0.9);
 }
 button.danger {
   color: var(--danger);
@@ -607,12 +606,8 @@ pre.code {
   border-radius: 0;
   font: inherit;
 }
-.diff-line button.ln:hover:not(:disabled) {
+.diff-line button.ln:hover {
   color: var(--accent-text);
-}
-.diff-line button.ln:disabled {
-  opacity: 1;
-  cursor: default;
 }
 .review-thread {
   border: 1px solid var(--border-soft);
@@ -930,7 +925,8 @@ summary {
 }
 button:focus-visible,
 a:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+[tabindex='0']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
