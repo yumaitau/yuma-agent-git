@@ -105,7 +105,11 @@ contexts with an equivalent, and `success()`, `startsWith()`, `endsWith()` and
 `contains()` on strings. Comparisons are case-sensitive here (GitHub ignores
 case). A failed step ends the job, so `always()` is true while earlier steps
 pass and `failure()` and `cancelled()` steps never run (both translated). A job
-`if:` that is false skips the job's steps, and jobs that need it still run.
+`if:` that is false skips the job's steps, and jobs that need it still run. The
+job still starts, so a job `if:` on a job with an `environment`, the AWS action
+or `id-token: write` is unsupported: it would still wait for the environment's
+approval and get its secrets and credentials. Filter with `on:` branches or put
+the condition on the steps.
 
 ## Gaps
 

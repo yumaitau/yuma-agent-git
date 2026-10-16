@@ -1045,12 +1045,6 @@ function job(
       }
       case 'if':
         condition = t.condition(value, path);
-        if (condition)
-          t.note(
-            'translated',
-            path,
-            'The job always starts; when the condition is false its steps are skipped and jobs that need it still run',
-          );
         break;
       case 'env':
         if (isObj(value)) Object.assign(env, value);
@@ -1168,6 +1162,25 @@ function job(
   if (state.aws) out.aws = state.aws;
   if (Object.values(state.permissions).includes('write'))
     out.permissions = state.permissions;
+  // The job still starts when its condition is false, so a gated job would
+  // still ask for its environment's approval and get its credentials.
+  if (condition)
+    if (
+      out.environment !== undefined ||
+      state.aws ||
+      state.permissions.id_token === 'write'
+    )
+      t.note(
+        'unsupported',
+        [...at, 'if'],
+        'A job if: only skips steps here, so this job would still wait for its environment approval and get its secrets and cloud credentials; filter with on: branches instead, or move the condition to the steps',
+      );
+    else
+      t.note(
+        'translated',
+        [...at, 'if'],
+        'The job always starts; when the condition is false its steps are skipped and jobs that need it still run',
+      );
   return out;
 }
 

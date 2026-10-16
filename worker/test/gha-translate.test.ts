@@ -489,6 +489,29 @@ jobs:
       '16 unsupported: The pwsh shell is not supported; use bash',
     ]);
   });
+
+  it('refuses a job if: on a job with an environment or cloud credentials', () => {
+    const gated = (access: string) => `on: [push]
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+${access}
+    steps:
+      - run: make deploy
+`;
+    // the job would still wait for production's approval and get its secrets
+    expect(messages(gated('    environment: production'))).toEqual([
+      expect.stringMatching(/^4 unsupported: A job if: only skips steps here/),
+    ]);
+    expect(
+      messages(gated('    permissions:\n      id-token: write')).map((m) =>
+        m.slice(0, 15),
+      ),
+    ).toEqual(['4 unsupported: ']);
+    expect(messages(gated('    timeout-minutes: 5'))).toEqual([
+      '4 translated: The job always starts; when the condition is false its steps are skipped and jobs that need it still run',
+    ]);
+  });
 });
 
 describe('steps', () => {
