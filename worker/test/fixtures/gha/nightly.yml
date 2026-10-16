@@ -1,0 +1,27 @@
+name: Nightly
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+jobs:
+  integration:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - name: Integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgres://postgres:ci@localhost:5432/postgres
+      - name: Report
+        if: github.event_name == 'schedule' && failure()
+        run: echo "nightly failed"

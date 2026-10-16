@@ -492,6 +492,15 @@ const SPECS: ToolSpec[] = [
     scope: 'contents:read',
   },
   {
+    name: 'ci_actions_report',
+    title: 'GitHub Actions compatibility',
+    route: 'GET /api/v1/repos/:repo/ci/actions',
+    description:
+      'How each .github/workflows file translates to a pipeline: supported, translated (with what changes) or unsupported (with reasons), and the translated YAML.',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
     name: 'ci_run',
     title: 'Start CI run',
     route: 'POST /api/v1/repos/:repo/ci/runs',

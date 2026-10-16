@@ -7,6 +7,7 @@ import { getChangeset } from '../core/changesets';
 import { getTree, resolvePath } from '../core/trees';
 import type { CiPolicy, SpecError } from '../../shared/collaboration';
 import { accessFields, AWS_NEEDS_ID_TOKEN } from './config';
+import { actionsEnabled, analyseTree } from './gha/analyse';
 
 /**
  * Pipeline spec v2 (issue #47): `.yuma/pipelines/*.yml` in the repository.
@@ -19,8 +20,8 @@ import { accessFields, AWS_NEEDS_ID_TOKEN } from './config';
  * Limits match the settings pipeline so one job reserves what one run did.
  */
 const PIPELINE_DIR = ['.yuma', 'pipelines'];
-const MAX_FILES = 20;
-const MAX_FILE_BYTES = 64 * 1024;
+export const MAX_FILES = 20;
+export const MAX_FILE_BYTES = 64 * 1024;
 const MAX_JOBS = 16;
 const MAX_MATRIX = 8;
 
@@ -448,6 +449,9 @@ export async function loadPipelines(
     }
     out.push(parseSpec(path, text));
   }
+  // GitHub Actions compatibility (#49): opted-in repos without pipelines run their workflows
+  if (out.length === 0 && (await actionsEnabled(env, repoId)))
+    return (await analyseTree(env, repoId, cs.root_tree)).files;
   return out;
 }
 

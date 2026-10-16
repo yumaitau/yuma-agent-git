@@ -228,6 +228,11 @@ describe('policy engine', () => {
     const files = [{ path: '.yuma/pipelines/ci.yml', op: 'add' as const }];
     expect(evaluatePolicy(policy, { action: 'push', files }).outcome).toBe('deny');
     expect(evaluatePolicy(policy, { action: 'ref.move', files }).outcome).toBe('allow');
+    // GitHub workflows run as pipelines once a repo opts in (#49)
+    const workflow = [{ path: '.github/workflows/ci.yml', op: 'mod' as const }];
+    expect(evaluatePolicy(policy, { action: 'push', files: workflow }).outcome).toBe(
+      'deny',
+    );
   });
 
   it('rejects malformed policies', () => {

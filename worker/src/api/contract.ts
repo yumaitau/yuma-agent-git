@@ -77,6 +77,7 @@ import {
   userRefSchema,
 } from './orgs';
 import { manual as manualPipelineRun } from './pipelines';
+import { actionsSettingsBody, checkWorkflowsBody } from './actions';
 import { decisionBody, environmentBody, secretBody, variableBody } from './secrets';
 import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
@@ -609,6 +610,15 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: manualPipelineRun,
   },
   'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': { id: 'cancelPipelineRun' },
+  'GET /api/v1/repos/:repo/ci/actions': {
+    id: 'getActionsCompat',
+    query: z.object({ head: rev.optional() }),
+  },
+  'PUT /api/v1/repos/:repo/ci/actions': {
+    id: 'setActionsCompat',
+    body: actionsSettingsBody,
+  },
+  'POST /api/v1/ci/actions/check': { id: 'checkWorkflows', body: checkWorkflowsBody },
   'POST /api/v1/repos/:repo/ci/runs': { id: 'createCiRun', body: createRunSchema },
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': { id: 'cancelCiRun' },
   'POST /api/v1/repos/:repo/ci/runs/:id/retry': { id: 'retryCiRun' },

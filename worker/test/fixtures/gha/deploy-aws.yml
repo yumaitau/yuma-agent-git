@@ -1,0 +1,28 @@
+name: Deploy
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+env:
+  AWS_REGION: ap-southeast-2
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync site
+        run: aws s3 sync dist/ "s3://${{ vars.SITE_BUCKET }}" --delete
+      - name: Notify
+        if: github.ref_type == 'tag'
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer ${{ secrets.SLACK_TOKEN }}" "$HOOK"
+        env:
+          HOOK: ${{ secrets.SLACK_HOOK }}
