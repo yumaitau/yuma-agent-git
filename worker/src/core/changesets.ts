@@ -14,6 +14,7 @@ import {
 import { C, T } from '../db/schema';
 import { ObjectWalkLimitError, RequestValidationError } from './errors';
 import { canonicalJson, sha256Hex } from './hashing';
+import { storageId } from './network';
 
 export type { Author, FileChange };
 
@@ -133,7 +134,11 @@ export async function createChangeset(
   repoId: string,
   input: CreateChangesetInput,
 ): Promise<Changeset> {
-  const parsed = changesetInputSchema.safeParse({ ...input, repo_id: repoId });
+  // content lives under the fork network's root (core/network.ts)
+  const parsed = changesetInputSchema.safeParse({
+    ...input,
+    repo_id: storageId(repoId),
+  });
   if (!parsed.success) {
     throw new RequestValidationError('invalid changeset', {
       issues: parsed.error.issues.map((i) => ({
@@ -164,7 +169,7 @@ export async function createChangeset(
     const parent = await q1(
       env,
       `SELECT ${C.changesets.id} FROM ${T.changesets} WHERE ${C.changesets.repoId} = ? AND ${C.changesets.id} = ?`,
-      [repoId, parentId],
+      [fields.repo_id, parentId],
     );
     if (!parent) {
       throw new RequestValidationError(
@@ -245,7 +250,7 @@ export async function getChangeset(
   const row = await q1(
     env,
     `SELECT * FROM ${T.changesets} WHERE ${C.changesets.repoId} = ? AND ${C.changesets.id} = ?`,
-    [repoId, id],
+    [storageId(repoId), id],
   );
   return row ? parseChangesetRow(row) : null;
 }

@@ -20,6 +20,7 @@ import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
 import { recordCommit } from '../observability/metrics';
+import { storageId } from './network';
 
 /** Max inline content per file in a commit request (route maps to 413). */
 export const MAX_INLINE_BYTES = 4 * 1024 * 1024;
@@ -198,7 +199,7 @@ async function commitChangesInner(
 
   // --- 3. content-addressed idempotency (before ANY R2 write) -------------
   const fields: ChangesetFields = {
-    repo_id: repoId,
+    repo_id: storageId(repoId),
     first_parent: firstParent,
     parents,
     author: req.author,

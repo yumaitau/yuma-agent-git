@@ -24,6 +24,7 @@ export type AuditAction =
   | 'org.import'
   | 'org.import.resume'
   | 'repo.export'
+  | 'repo.fork'
   | 'member.set'
   | 'member.remove'
   | 'path_rule.create'

@@ -100,6 +100,8 @@ export interface Pull {
   /** Set once merged (issue #42): the method and the changeset the target moved to. */
   merge_method?: MergeMethod | null;
   merged_cs?: string | null;
+  /** A fork the head comes from (issue #36); null: this repository. */
+  head_repo_id?: string | null;
 }
 export interface Review {
   revision: number;

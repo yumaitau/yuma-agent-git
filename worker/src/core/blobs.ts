@@ -3,17 +3,19 @@ import { r2 } from '../observability/phase';
 import { compressBytes, decompressBytes, parseCodec, preferredCodec } from './compress';
 import { ObjectCorruptError } from './errors';
 import { sha256Hex } from './hashing';
+import { storageId } from './network';
 
 /**
  * Content-addressed blob store over R2 (architecture §1.1).
  *
- * Key layout: `repos/{repo_id}/blobs/{hash[0:2]}/{hash}`
+ * Key layout: `repos/{repo_id}/blobs/{hash[0:2]}/{hash}`, where a fork uses its
+ * network root's id (core/network.ts)
  * Address = SHA-256 of uncompressed content. Immutable; re-writing an existing
  * hash is a no-op (dedup for free). No packfiles, ever.
  */
 
 export function blobKey(repoId: string, hash: string): string {
-  return `repos/${repoId}/blobs/${hash.slice(0, 2)}/${hash}`;
+  return `repos/${storageId(repoId)}/blobs/${hash.slice(0, 2)}/${hash}`;
 }
 
 export interface PutBlobResult {

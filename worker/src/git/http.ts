@@ -31,7 +31,7 @@ export const gitRoutes = new Hono<AppEnv>();
 
 const REPO = '/:owner/:repo{[^/]+\\.git}';
 const GIT_PATH_RE =
-  /^\/[^/]+\/[^/]+\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/;
+  /^\/[^/]+\/[^/]+\.git\/(info\/refs|git-upload-pack|git-receive-pack|info\/lfs\/.+)$/;
 /** Upload-pack requests are want/have lists; this bounds a hostile one. */
 const MAX_UPLOAD_REQUEST_BYTES = 4 * 1024 * 1024;
 
@@ -84,54 +84,73 @@ function gitError(service: string, message: string, advert: boolean): Response {
   );
 }
 
-type Loaded =
+export type Loaded =
   | { ok: true; repo: RepoRecord; principal: Principal }
   | { ok: false; response: Response };
 
+/** Why a Git or LFS request is refused; each protocol formats it its own way. */
+export interface GitRefusal {
+  kind: 'unauthorized' | 'not_found' | 'forbidden' | 'sso_required' | 'path_restricted';
+  message: string;
+  deniedBy?: Decision['deniedBy'];
+}
+
 /**
- * The repo and caller for a Git request: 401 anonymous, 404 unreadable, 403
- * without write for a push, `path_restricted` for any read or history
- * restriction, and `sso_required` while org SSO withholds access.
+ * Git's formats: 401 with `WWW-Authenticate`, 404 and 403 envelopes, and
+ * `ERR` lines for SSO and path rules so Git prints the reason.
  */
-async function loadGitRepo(
+function gitRefuser(
   c: Context<AppEnv>,
   service: string,
-  perm: 'read' | 'write',
   advert: boolean,
+): (r: GitRefusal) => Response {
+  return (r) => {
+    if (r.kind === 'unauthorized') return unauthorized(c);
+    if (r.kind === 'not_found') return apiError(c, 404, 'repo_not_found', r.message);
+    if (r.kind === 'forbidden')
+      return apiError(c, 403, 'forbidden', r.message, {
+        ...(r.deniedBy ? { denied_by: r.deniedBy } : {}),
+      });
+    return gitError(service, `${r.kind}: ${r.message}`, advert);
+  };
+}
+
+/**
+ * The repo and caller for a Git or LFS request: 401 anonymous, 404
+ * unreadable, 403 without write for a push, `path_restricted` for any read
+ * or history restriction, and `sso_required` while org SSO withholds access.
+ */
+export async function loadGitRepo(
+  c: Context<AppEnv>,
+  perm: 'read' | 'write',
+  refuse: (r: GitRefusal) => Response,
 ): Promise<Loaded> {
+  const no = (r: GitRefusal): Loaded => ({ ok: false, response: refuse(r) });
   const principal = c.get('principal');
-  if (!principal) return { ok: false, response: unauthorized(c) };
+  if (!principal) return no({ kind: 'unauthorized', message: 'authentication required' });
   const slug = `${c.req.param('owner')}/${(c.req.param('repo') ?? '').slice(0, -'.git'.length)}`;
   const repo = await getRepoBySlug(c.env, slug);
-  // org SSO: an ERR line, so Git prints where to sign in
-  const ssoRefusal = (d: Decision): Loaded | null =>
+  const sso = (d: Decision): GitRefusal | null =>
     d.ssoRequired
       ? {
-          ok: false,
-          response: gitError(
-            service,
-            `sso_required: ${ssoMessage(d.ssoRequired, new URL(c.req.url).origin)}`,
-            advert,
-          ),
+          kind: 'sso_required',
+          message: ssoMessage(d.ssoRequired, new URL(c.req.url).origin),
         }
       : null;
   const read = repo ? await decide(c.env, repo, principal, 'read') : null;
-  const readRefused = read && ssoRefusal(read);
-  if (readRefused) return readRefused;
-  if (!repo || !read?.allowed) {
-    return { ok: false, response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`) };
-  }
+  const readRefused = read && sso(read);
+  if (readRefused) return no(readRefused);
+  if (!repo || !read?.allowed) return no({ kind: 'not_found', message: `no repo ${slug}` });
   if (perm === 'write') {
     const decision = await decide(c.env, repo, principal, 'write');
-    const refused = ssoRefusal(decision);
-    if (refused) return refused;
+    const refused = sso(decision);
+    if (refused) return no(refused);
     if (!decision.allowed) {
-      return {
-        ok: false,
-        response: apiError(c, 403, 'forbidden', 'insufficient permission', {
-          ...(decision.deniedBy ? { denied_by: decision.deniedBy } : {}),
-        }),
-      };
+      return no({
+        kind: 'forbidden',
+        message: 'insufficient permission',
+        ...(decision.deniedBy ? { deniedBy: decision.deniedBy } : {}),
+      });
     }
   }
   // history too: a pack carries every path's full history
@@ -140,15 +159,12 @@ async function loadGitRepo(
     'history',
   ]);
   if (restricted) {
-    return {
-      ok: false,
-      response: gitError(
-        service,
-        // the rule's prefix is not named: that would reveal the hidden path
-        'path_restricted: permission rules hide part of this repository from you and Git needs the whole tree; use the yag CLI or the API',
-        advert,
-      ),
-    };
+    return no({
+      kind: 'path_restricted',
+      // the rule's prefix is not named: that would reveal the hidden path
+      message:
+        'permission rules hide part of this repository from you and Git needs the whole tree; use the yag CLI or the API',
+    });
   }
   return { ok: true, repo, principal };
 }
@@ -193,9 +209,8 @@ gitRoutes.get(`${REPO}/info/refs`, async (c) => {
     }
     const loaded = await loadGitRepo(
       c,
-      service,
       service === 'git-receive-pack' ? 'write' : 'read',
-      true,
+      gitRefuser(c, service, true),
     );
     if (!loaded.ok) return loaded.response;
     if (service === 'git-receive-pack') {
@@ -229,7 +244,7 @@ gitRoutes.post(`${REPO}/git-upload-pack`, async (c) => {
         'expected a Git upload-pack request',
       );
     }
-    const loaded = await loadGitRepo(c, 'git-upload-pack', 'read', false);
+    const loaded = await loadGitRepo(c, 'read', gitRefuser(c, 'git-upload-pack', false));
     if (!loaded.ok) return loaded.response;
     if (!wantsV2(c)) {
       return gitError(
@@ -263,7 +278,11 @@ gitRoutes.post(`${REPO}/git-receive-pack`, async (c) => {
         'expected a Git receive-pack request',
       );
     }
-    const loaded = await loadGitRepo(c, 'git-receive-pack', 'write', false);
+    const loaded = await loadGitRepo(
+      c,
+      'write',
+      gitRefuser(c, 'git-receive-pack', false),
+    );
     if (!loaded.ok) return loaded.response;
     const body = await readBody(c, PUSH_LIMITS.maxPackBytes);
     return gitResponse(

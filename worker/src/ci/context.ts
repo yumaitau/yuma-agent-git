@@ -64,19 +64,24 @@ export function triggerOf(c: Context<AppEnv>): Trigger {
   };
 }
 
+/** A pull request whose head comes from a fork (#36). */
+export function forkPull(pull: { repo_id: string; head_repo_id?: string | null }): boolean {
+  return (pull.head_repo_id ?? pull.repo_id) !== pull.repo_id;
+}
+
 /** A fresh run context; `ref` is a full ref name or null. */
 export function contextFor(
   trigger: Trigger,
   event: RunContext['event'],
   ref: string | null,
   pullId: number | null = null,
+  fork = false,
 ): RunContext {
   return {
     event,
     ref,
     pull_id: pullId,
-    // pull requests always come from this repository; forks do not exist yet
-    fork: false,
+    fork,
     actor_kind: trigger.actor_kind,
     origin: trigger.origin,
     approval_id: null,

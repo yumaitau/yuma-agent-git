@@ -4,7 +4,7 @@ import { diffRevisions } from '../core/diff';
 import { TAG_PREFIX } from '../core/refs';
 import type { Pull } from '../../shared/collaboration';
 import { monthlyBudget } from './config';
-import { contextFor, type RunContext, type Trigger } from './context';
+import { contextFor, forkPull, type RunContext, type Trigger } from './context';
 import { advancePipelines, startPipeline } from './planner';
 import { globMatch, loadPipelines, nextRun, type PipelineFile } from './spec';
 
@@ -120,7 +120,13 @@ export async function pullPipelines(
       head: pull.head_cs,
       ref: `pull/${pull.id}`,
       actor: trigger.actor,
-      context: contextFor(trigger, 'pull_request', `refs/pull/${pull.id}/merge`, pull.id),
+      context: contextFor(
+        trigger,
+        'pull_request',
+        `refs/pull/${pull.id}/merge`,
+        pull.id,
+        forkPull(pull),
+      ),
     },
     'pull_request',
     async (file) => {

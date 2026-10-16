@@ -6,6 +6,7 @@ import { getRepo } from '../../db/repos';
 import { fileChangeSchema } from '../../db/client';
 import { getBlob } from '../../core/blobs';
 import { ulid } from '../../core/ids';
+import { storageId } from '../../core/network';
 import { recordAlerts, scanFile, withoutDismissed, type Located } from './scan';
 
 /**
@@ -129,7 +130,14 @@ export async function runSecretScanSlice(
     `SELECT id, created_at, changed_files FROM changesets
       WHERE repo_id = ? AND (created_at > ? OR (created_at = ? AND id > ?))
       ORDER BY created_at, id LIMIT ?`,
-    [repo.id, scan.cursor_at ?? -1, scan.cursor_at ?? -1, scan.cursor_id ?? '', slice],
+    // a fork scans its network's changesets (core/network.ts)
+    [
+      storageId(repo.id),
+      scan.cursor_at ?? -1,
+      scan.cursor_at ?? -1,
+      scan.cursor_id ?? '',
+      slice,
+    ],
   );
   let files = 0;
   const found: Located[] = [];

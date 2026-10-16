@@ -34,6 +34,7 @@ import {
   gitTreeId,
   type GitIds,
 } from '../../git/objects';
+import { storageId } from '../network';
 
 /**
  * `git_ids` derived kind (issue #30): the Git commit/tree/blob IDs of a
@@ -146,7 +147,7 @@ async function treeIds(r: Run, hash: string): Promise<GitIds> {
     `INSERT OR IGNORE INTO ${T.gitTrees}
        (${C.gitTrees.repoId}, ${C.gitTrees.treeHash}, ${C.gitTrees.sha1}, ${C.gitTrees.sha256})
      VALUES (?, ?, ?, ?)`,
-    [r.repoId, hash, ids.sha1, ids.sha256],
+    [storageId(r.repoId), hash, ids.sha1, ids.sha256],
   );
   r.trees.set(hash, ids);
   return ids;
@@ -196,7 +197,7 @@ export async function computeGitIds(
          (${C.gitCommits.repoId}, ${C.gitCommits.csId}, ${C.gitCommits.sha1}, ${C.gitCommits.sha256})
        VALUES (?, ?, ?, ?)
        ON CONFLICT (${C.gitCommits.repoId}, ${C.gitCommits.csId}) DO NOTHING`,
-      [repoId, c.id, ids.sha1, ids.sha256],
+      [storageId(repoId), c.id, ids.sha1, ids.sha256],
     );
     known.set(c.id, ids);
   }
