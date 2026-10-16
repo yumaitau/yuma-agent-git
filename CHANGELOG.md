@@ -44,6 +44,14 @@ All notable changes to this project are documented here. The format follows
   agent gets the intersection of its grant and the person's role, never moves the
   default branch, owns `refs/agents/<agent-id>/`, and its changesets record the
   agent, the person and the task. Disabling an agent revokes its tokens at once.
+- Issues (#38): labels, milestones, assignees (people, teams and agent tokens),
+  ordered sub-issues with progress, pins, locks, Markdown templates and issue forms
+  from `.yuma/` or `.github/ISSUE_TEMPLATE`, and a timeline. `#N` and
+  `owner/name#N` references link issues from issues, pull requests and commit
+  messages; `Closes`/`Fixes`/`Resolves` close them once the change lands on the
+  default branch. Issues and pull requests share one number sequence per repo. A
+  new `triage` repo role labels, assigns and closes issues without code access.
+  Markdown is rendered escape-first by one shared module (`worker/shared/markdown.ts`).
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
 - Rulesets (#41) for branches, tags and pushes at repo and org level: no deletion,
   no force push, pull request only, required approvals, required CI, and push rules

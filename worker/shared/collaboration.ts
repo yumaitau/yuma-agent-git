@@ -30,6 +30,8 @@ export interface CiRun {
 }
 export interface Pull {
   id: number;
+  /** Per-repo number shared with issues (issue #38); `#N` in references. */
+  number: number;
   repo_id: string;
   title: string;
   body: string;

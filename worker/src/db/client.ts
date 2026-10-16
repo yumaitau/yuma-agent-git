@@ -314,7 +314,7 @@ export function parseSessionRow(row: unknown): SessionRecord {
 export const repoMemberRowSchema = z.object({
   repo_id: z.string(),
   user_id: z.string(),
-  role: z.enum(['admin', 'write', 'read']),
+  role: z.enum(['admin', 'write', 'triage', 'read']),
 });
 export type RepoMemberRecord = z.infer<typeof repoMemberRowSchema>;
 

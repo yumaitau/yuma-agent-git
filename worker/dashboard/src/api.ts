@@ -407,7 +407,7 @@ export type AgentProvenance = z.infer<typeof provenanceSchema>;
 
 export const memberSchema = z.object({
   user_id: z.string(),
-  role: z.enum(['admin', 'write', 'read']),
+  role: z.enum(['admin', 'write', 'triage', 'read']),
 });
 export type Member = z.infer<typeof memberSchema>;
 
@@ -986,7 +986,11 @@ export const api = {
 
   async putMember(
     slug: string,
-    input: { user_login?: string; user_id?: string; role: 'admin' | 'write' | 'read' },
+    input: {
+      user_login?: string;
+      user_id?: string;
+      role: 'admin' | 'write' | 'triage' | 'read';
+    },
   ): Promise<{ ok: boolean; user_id: string; role: string }> {
     return requestJson(
       `/api/v1/repos/${slug}/members`,

@@ -829,6 +829,48 @@ summary {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* issues (#38): rendered Markdown, labels, sub-issue progress */
+.markdown {
+  max-width: 75ch;
+  overflow-wrap: anywhere;
+}
+.markdown pre {
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  overflow: auto;
+}
+.markdown blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.markdown li.task {
+  list-style: none;
+}
+.label-chip {
+  margin-right: 4px;
+  color: var(--fg-strong);
+  background: var(--panel-2);
+}
+.label-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.sub-progress progress {
+  width: 64px;
+  height: 6px;
+  vertical-align: middle;
+  accent-color: var(--ok);
+}
+.timeline-event {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible {

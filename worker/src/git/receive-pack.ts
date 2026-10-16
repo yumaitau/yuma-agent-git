@@ -6,6 +6,7 @@ import { agentIdOf, type AppEnv, type Principal } from '../auth/principal';
 import { recordAgentProvenance } from '../auth/agents';
 import { pathDecider } from '../auth/rbac';
 import { actorOf, recordAudit } from '../audit/record';
+import { linkLanded } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
@@ -568,6 +569,12 @@ export async function receivePack(
         via: 'git-push',
       });
     }
+  }
+  // Commit messages landing on the default branch link and close issues (#38).
+  for (const u of moved) {
+    const to = push.csOf.get(u.newSha);
+    if (u.name === repo.default_branch && !u.deleting && to)
+      await linkLanded(c, repo, u.from, to);
   }
   return statusReport(updates, 'ok', useSideband, messages);
 }

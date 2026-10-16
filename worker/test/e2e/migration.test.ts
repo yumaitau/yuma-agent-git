@@ -3,6 +3,7 @@ import { applyD1Migrations, env } from 'cloudflare:test';
 import type { Env } from '../../src/env';
 import type { TestEnv } from '../helpers';
 import { getRepoBySlug, createRepo, listRefs } from '../../src/db/repos';
+import { nextNumber } from '../../src/collab/issues';
 
 /**
  * Migration convergence (issue #22): `worker/migrations` applied in one go to
@@ -173,6 +174,8 @@ describe('migrations converge', () => {
     expect(cs).toEqual({ root_tree: null });
     const task = await testEnv.DB.prepare('SELECT github_issue FROM agent_tasks').first();
     expect(task).toEqual({ github_issue: null });
+    const member = await testEnv.DB.prepare('SELECT role FROM repo_members').first();
+    expect(member).toEqual({ role: 'admin' }); // survives the 0017 triage rebuild
     expect(await listRefs(dbEnv, 'repo-early')).toEqual([
       expect.objectContaining({ name: 'main', head: 'c'.repeat(64) }),
     ]);
@@ -187,5 +190,40 @@ describe('migrations converge', () => {
     // re-applying is a no-op
     await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
     expect(await snapshot()).toEqual(upgraded);
+  });
+
+  it('keeps pull request numbers and continues the shared issue sequence', async () => {
+    await wipe();
+    const before = testEnv.TEST_MIGRATIONS.findIndex((m) => m.name === '0017_issues.sql');
+    await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS.slice(0, before));
+    const now = Date.now();
+    for (const [id, slug] of [
+      ['r1', 'acme/one'],
+      ['r2', 'acme/two'],
+    ]) {
+      await createRepo(dbEnv, { slug: slug as string, createdBy: 'u' }, now);
+      await testEnv.DB.prepare('UPDATE repos SET id = ? WHERE slug = ?')
+        .bind(id, slug)
+        .run();
+    }
+    for (const repo of ['r1', 'r2', 'r1']) {
+      await testEnv.DB.prepare(
+        `INSERT INTO pull_requests (repo_id, title, author_id, base_ref, base_cs, head_cs,
+           state, created_at, updated_at) VALUES (?, 't', 'u', 'main', 'b', 'h', 'open', ?, ?)`,
+      )
+        .bind(repo, now, now)
+        .run();
+    }
+    await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
+    const pulls = await testEnv.DB.prepare(
+      'SELECT repo_id, id, number FROM pull_requests ORDER BY id',
+    ).all();
+    expect(pulls.results).toEqual([
+      { repo_id: 'r1', id: 1, number: 1 },
+      { repo_id: 'r2', id: 2, number: 2 },
+      { repo_id: 'r1', id: 3, number: 3 },
+    ]);
+    expect(await nextNumber(dbEnv, 'r1')).toBe(4);
+    expect(await nextNumber(dbEnv, 'r2')).toBe(3);
   });
 });

@@ -21,6 +21,7 @@ import {
   authorLabel,
 } from '../ui';
 import { DiffView } from '../DiffView';
+import { Markdown } from '../Markdown';
 import { api } from '../api';
 import type { DiffResult } from '../api';
 
@@ -73,6 +74,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
         {[
           ['Code', ''],
           ['History', '/history'],
+          ['Issues', '/issues'],
           ['Pull requests', '/pulls'],
           ['CI', '/ci'],
         ].map(([name, tail]) => (
@@ -229,7 +231,7 @@ export function PullsView(): ReactElement {
               <strong>{pull.title}</strong>
             </Link>
             <div className="small muted">
-              #{pull.id} · {pull.state} · {formatRelative(pull.updated_at)}
+              #{pull.number} · {pull.state} · {formatRelative(pull.updated_at)}
             </div>
           </li>
         ))}
@@ -300,13 +302,13 @@ export function PullView(): ReactElement {
       {data && (
         <>
           <h1>
-            {data.pull.title} <span className="muted">#{data.pull.id}</span>
+            {data.pull.title} <span className="muted">#{data.pull.number}</span>
           </h1>
           <p className="muted">
             {data.pull.state} · <code>{shortId(tip)}</code> into{' '}
             <code>{data.pull.base_ref}</code>
           </p>
-          <p className="preserve-lines">{data.pull.body}</p>
+          <Markdown source={data.pull.body} slug={slug} />
           {['open', 'draft'].includes(data.pull.state) && (
             <section className="merge-gate" aria-label="Merge requirements">
               <h2>Ready to merge?</h2>

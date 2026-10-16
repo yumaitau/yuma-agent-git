@@ -200,7 +200,7 @@ function MembersPanel({ repos }: { repos: Repo[] }): ReactElement {
   const [error, setError] = useState<ApiError | null>(null);
   const [user, setUser] = useState('');
   const [lookup, setLookup] = useState<'login' | 'id'>('login');
-  const [role, setRole] = useState<'admin' | 'write' | 'read'>('read');
+  const [role, setRole] = useState<'admin' | 'write' | 'triage' | 'read'>('read');
 
   const load = useCallback(() => {
     setMembers(null);
@@ -296,6 +296,7 @@ function MembersPanel({ repos }: { repos: Repo[] }): ReactElement {
           <Field label="Role">
             <select value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
               <option value="read">read</option>
+              <option value="triage">triage</option>
               <option value="write">write</option>
               <option value="admin">admin</option>
             </select>
@@ -426,7 +427,7 @@ function PathRulesPanel({ repos }: { repos: Repo[] }): ReactElement {
               <option value="grant">grant</option>
             </select>
           </Field>
-          <Field label="Principal (* , role:admin|write|read, user:ID, agent:ID)">
+          <Field label="Principal (* , role:admin|write|triage|read, user:ID, agent:ID)">
             <input
               type="text"
               value={principal}

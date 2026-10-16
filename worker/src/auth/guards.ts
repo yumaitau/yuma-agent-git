@@ -108,6 +108,11 @@ export function loadWritableRepo(c: Context, slug: string): Promise<RepoLoad> {
   return loadWithPerm(c, slug, 'write');
 }
 
+/** Issue triage: labels, assignees, milestones, state and locks (issue #38). */
+export function loadTriageRepo(c: Context, slug: string): Promise<RepoLoad> {
+  return loadWithPerm(c, slug, 'triage');
+}
+
 /** Repo administration (members, path rules, connections). */
 export function loadAdminRepo(c: Context, slug: string): Promise<RepoLoad> {
   return loadWithPerm(c, slug, 'admin');

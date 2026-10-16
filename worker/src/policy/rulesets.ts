@@ -314,7 +314,7 @@ export interface Outcome {
   requireChecks: boolean;
 }
 
-const ROLE_RANK: Record<Role, number> = { read: 1, write: 2, admin: 3 };
+const ROLE_RANK: Record<Role, number> = { read: 1, triage: 2, write: 3, admin: 4 };
 
 export function canBypass(ruleset: Ruleset, actor: Actor): boolean {
   const p = actor.principal;
