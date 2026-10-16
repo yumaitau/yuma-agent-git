@@ -127,6 +127,11 @@ test('issue to merged pull request', async ({ browser }) => {
   await expect(page.getByText(/^Closed/)).toBeVisible();
   await expectContrast(page);
 
+  // the SSH keys page (#34) meets contrast too
+  await page.goto('/ssh-keys');
+  await expect(page.getByRole('heading', { name: 'Your SSH keys' })).toBeVisible();
+  await expectContrast(page);
+
   await ada.close();
   await grace.close();
 });

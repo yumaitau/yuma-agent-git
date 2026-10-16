@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
+import { expectAccessible } from '../axe';
 import { DeployKeysPanel, SshKeysView } from './SshKeys';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -41,6 +42,7 @@ it('lists, adds and removes your SSH keys', async () => {
     </MemoryRouter>,
   );
   expect(await screen.findByText(row.fingerprint)).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByPlaceholderText(/ssh-ed25519/), {
     target: { value: KEY },
   });
@@ -70,6 +72,7 @@ it('adds deploy keys read-only unless write is ticked', async () => {
   );
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'acme/tools' } });
   expect(await screen.findByText('read-only')).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByPlaceholderText(/ssh-ed25519/), {
     target: { value: KEY },
   });
