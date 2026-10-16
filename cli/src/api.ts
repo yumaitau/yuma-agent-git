@@ -101,6 +101,30 @@ const workItemSchema = z.object({
 });
 export type WorkItem = z.infer<typeof workItemSchema>;
 
+const releaseAssetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  size: z.number(),
+  sha256: z.string(),
+});
+const releaseSchema = z.object({
+  id: z.string(),
+  tag: z.string(),
+  name: z.string(),
+  body: z.string(),
+  draft: z.boolean(),
+  prerelease: z.boolean(),
+  latest: z.boolean(),
+  target_cs: z.string(),
+  assets: z.array(releaseAssetSchema),
+});
+export type Release = z.infer<typeof releaseSchema>;
+const attestationSchema = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  envelope: z.unknown(),
+});
+
 export interface UploadBlobResult {
   sha256: string;
   size: number;
@@ -288,6 +312,89 @@ export class YagApi {
       body: JSON.stringify(body),
     });
     return z.object({ item: workItemSchema }).parse(result).item;
+  }
+
+  async listReleases(): Promise<Release[]> {
+    return z
+      .object({ releases: z.array(releaseSchema) })
+      .parse(await this.json('/releases?limit=100')).releases;
+  }
+
+  async getRelease(tag: string): Promise<Release> {
+    return z
+      .object({ release: releaseSchema })
+      .parse(await this.json(`/releases/tags/${encodeURIComponent(tag)}`)).release;
+  }
+
+  async createRelease(body: RequestBody<'createRelease'>): Promise<Release> {
+    const result = await this.json('/releases', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return z.object({ release: releaseSchema }).parse(result).release;
+  }
+
+  async updateRelease(id: string, body: RequestBody<'updateRelease'>): Promise<Release> {
+    const result = await this.json(`/releases/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    return z.object({ release: releaseSchema }).parse(result).release;
+  }
+
+  async deleteRelease(id: string): Promise<void> {
+    await this.request(`/releases/${id}`, { method: 'DELETE' });
+  }
+
+  async uploadAsset(
+    releaseId: string,
+    name: string,
+    bytes: Uint8Array,
+    sha256: string,
+  ): Promise<z.infer<typeof releaseAssetSchema>> {
+    const result = await this.json(
+      `/releases/${releaseId}/assets?name=${encodeURIComponent(name)}&sha256=${sha256}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: new Uint8Array(bytes),
+      },
+    );
+    return z.object({ asset: releaseAssetSchema }).parse(result).asset;
+  }
+
+  /** Asset bytes; the server aborts the body if they fail its stored SHA-256. */
+  async downloadAsset(releaseId: string, assetId: string): Promise<Uint8Array> {
+    const res = await this.request(`/releases/${releaseId}/assets/${assetId}`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
+  async attestRelease(
+    releaseId: string,
+    body: RequestBody<'createReleaseAttestation'>,
+  ): Promise<z.infer<typeof attestationSchema>> {
+    const result = await this.json(`/releases/${releaseId}/attestations`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return z.object({ attestation: attestationSchema }).parse(result).attestation;
+  }
+
+  async listAttestations(
+    releaseId: string,
+  ): Promise<z.infer<typeof attestationSchema>[]> {
+    return z
+      .object({ attestations: z.array(attestationSchema) })
+      .parse(await this.json(`/releases/${releaseId}/attestations`)).attestations;
+  }
+
+  /** The forge's published CI signing keys (public, no token sent). */
+  async jwks(): Promise<unknown> {
+    const res = await this.fetchFn(
+      new Request(`${this.opts.api.replace(/\/$/, '')}/ci/oidc/jwks`),
+    );
+    if (!res.ok) throw new ApiError(res.status, 'http_error', `JWKS: HTTP ${res.status}`);
+    return res.json();
   }
 
   async history(

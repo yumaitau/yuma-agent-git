@@ -9,6 +9,7 @@ import { BoardView } from './views/Board';
 import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
 import { WebhooksView } from './views/Webhooks';
+import { ReleasesView } from './views/Releases';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
@@ -71,6 +72,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/r/:owner/:name/ci/access" element={<CiAccessView />} />
                 <Route path="/r/:owner/:name/ci/runners" element={<RunnersView />} />
                 <Route path="/r/:owner/:name/hooks" element={<WebhooksView />} />
+                <Route path="/r/:owner/:name/releases" element={<ReleasesView />} />
                 <Route path="/oauth/authorize" element={<OAuthAuthorizeView />} />
                 <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
                 <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />

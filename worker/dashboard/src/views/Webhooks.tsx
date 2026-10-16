@@ -45,6 +45,7 @@ const EVENTS = [
   'issues',
   'ci_run',
   'work_item',
+  'release',
 ];
 const STATUS_KIND = {
   pending: 'info',

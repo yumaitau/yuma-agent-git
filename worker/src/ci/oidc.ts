@@ -102,7 +102,7 @@ async function importKeys(raw: string): Promise<SigningKeys> {
   };
 }
 
-function signingKeys(env: Env): Promise<SigningKeys> {
+export function signingKeys(env: Env): Promise<SigningKeys> {
   const raw = env.CI_OIDC_SIGNING_KEYS;
   if (!raw) return Promise.reject(notConfigured());
   if (cached?.raw !== raw) {

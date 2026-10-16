@@ -803,6 +803,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/orgs/{org}/release-settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Release asset size cap for the org */
+    get: operations['getOrgReleaseSettings'];
+    /** Set the org release asset size cap */
+    put: operations['putOrgReleaseSettings'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orgs/{org}/repos': {
     parameters: {
       query?: never;
@@ -1305,6 +1323,23 @@ export interface paths {
     put?: never;
     /** Approve or reject a held agent action */
     post: operations['decideApproval'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/attestations/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Verify a DSSE envelope against the published CI keys (optional `sha256` subject) */
+    post: operations['verifyAttestation'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2442,6 +2477,147 @@ export interface paths {
     get: operations['getRef'];
     /** Compare-and-swap move a ref */
     put: operations['moveRef'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List releases, newest first (drafts only for writers; cursor paged) */
+    get: operations['listReleases'];
+    put?: never;
+    /** Create a release from an existing tag (draft, prerelease, generated notes) */
+    post: operations['createRelease'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** One release with its assets and attestations */
+    get: operations['getRelease'];
+    put?: never;
+    post?: never;
+    /** Delete a release and its assets (the tag stays) */
+    delete: operations['deleteRelease'];
+    options?: never;
+    head?: never;
+    /** Edit notes or flags; clearing `draft` publishes it */
+    patch: operations['updateRelease'];
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/{id}/assets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload an asset (`?name=`, Content-Length, SHA-256 computed; org size cap) */
+    post: operations['uploadReleaseAsset'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/{id}/assets/{asset}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Download an asset, checked against its stored SHA-256 while streaming */
+    get: operations['downloadReleaseAsset'];
+    put?: never;
+    post?: never;
+    /** Delete a release asset */
+    delete: operations['deleteReleaseAsset'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/{id}/attestations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Build provenance attestations (DSSE envelopes) for a release */
+    get: operations['listReleaseAttestations'];
+    put?: never;
+    /** Sign SLSA provenance for assets from a CI ID token (`audience=yag:attest`) */
+    post: operations['createReleaseAttestation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/generate-notes': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Markdown notes from merged pull requests and commits since the previous release */
+    post: operations['generateReleaseNotes'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The newest published release that is not a prerelease */
+    get: operations['getLatestRelease'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/releases/tags/{tag}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The release for a tag */
+    get: operations['getReleaseByTag'];
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -3963,6 +4139,7 @@ export interface operations {
               | 'issues'
               | 'ci_run'
               | 'work_item'
+              | 'release'
             )[];
             /**
              * @default yag
@@ -4208,6 +4385,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'release'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -4934,6 +5112,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'release'
           )[];
           /**
            * @default yag
@@ -5137,6 +5316,60 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getOrgReleaseSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putOrgReleaseSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          asset_max_bytes: number;
+        };
+      };
+    };
     responses: {
       /** @description Success */
       '2XX': {
@@ -6365,6 +6598,45 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  verifyAttestation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          envelope: {
+            payloadType: string;
+            payload: string;
+            signatures: {
+              keyid: string;
+              sig: string;
+            }[];
+          };
+          sha256?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getBlame: {
     parameters: {
       query: {
@@ -7368,6 +7640,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'release'
           )[];
           /**
            * @default yag
@@ -8931,6 +9204,381 @@ export interface operations {
         };
       };
     };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listReleases: {
+    parameters: {
+      query?: {
+        cursor?: string;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createRelease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          tag: string;
+          name?: string;
+          body?: string;
+          draft?: boolean;
+          prerelease?: boolean;
+          generate_notes?: boolean;
+          previous_tag?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getRelease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteRelease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateRelease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          name?: string;
+          body?: string;
+          draft?: boolean;
+          prerelease?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  uploadReleaseAsset: {
+    parameters: {
+      query: {
+        name: string;
+        sha256?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/octet-stream': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  downloadReleaseAsset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+        asset: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteReleaseAsset: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+        asset: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listReleaseAttestations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createReleaseAttestation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          id_token: string;
+          assets?: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  generateReleaseNotes: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          tag: string;
+          previous_tag?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getLatestRelease: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getReleaseByTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        tag: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Success */
       '2XX': {
