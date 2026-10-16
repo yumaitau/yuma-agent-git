@@ -14,6 +14,14 @@ export function LoginView(): ReactElement {
       className="panel"
       style={{ maxWidth: 460, margin: '64px auto', textAlign: 'center' }}
     >
+      <img
+        className="brand-logo"
+        src="/logo.svg"
+        alt="Yuma IT"
+        width={180}
+        height={65}
+        style={{ height: 65, margin: '8px auto 16px', padding: '4px 8px' }}
+      />
       <h1>Sign in</h1>
       <p className="muted">
         Sign in to create repositories, review changes and run CI on Yuma. GitHub verifies

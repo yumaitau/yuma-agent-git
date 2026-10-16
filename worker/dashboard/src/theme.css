@@ -1,28 +1,82 @@
-/* yuma-agent-git dashboard — hand-rolled dark theme (no UI kit). */
+/*
+ * Yuma Git dashboard: hand-rolled theme (no UI kit) in the Yuma IT brand.
+ * Every colour and font below comes from https://www.yumait.com.au (read
+ * 2026-10-16): its stylesheet's :root custom properties and Tailwind palette,
+ * /logo.svg and <meta name="theme-color">. Tints use the same color-mix() the
+ * site's `bg-accent/10`-style utilities compile to. The site is light-only, so
+ * light is the default; the dark variant reuses the stone ramp from the same
+ * stylesheet.
+ */
 
 :root {
-  --bg: #0d1117;
-  --bg-soft: #12181f;
-  --panel: #161d26;
-  --panel-2: #1c2531;
-  --border: #2a3441;
-  --border-soft: #222b36;
-  --fg: #d8e0ea;
-  --fg-strong: #f0f4f9;
-  --muted: #8b98a7;
-  --faint: #5f6b7a;
-  --accent: #4d9fec;
-  --accent-soft: #17324d;
-  --ok: #57c98a;
-  --ok-soft: #12321f;
-  --warn: #d9a445;
-  --warn-soft: #3a2c10;
-  --danger: #e0655f;
-  --danger-soft: #3b1715;
-  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  color-scheme: light;
+  --bg: #faf5ee; /* site --background */
+  --bg-soft: #f5f0e9; /* site --surface-alt */
+  --panel: #fff; /* site --surface */
+  --panel-2: #f5f0e9; /* site --surface-alt */
+  --border: #e7e0d8; /* site --muted-light */
+  --border-soft: color-mix(
+    in oklab,
+    #e7e0d8 60%,
+    transparent
+  ); /* site border-muted-light/60 */
+  --fg: #44403b; /* site stone-700 */
+  --fg-strong: #1c1917; /* site --foreground */
+  --muted: #57534d; /* site stone-600 */
+  --faint: #78716c; /* site --muted */
+  --accent: #d74c2f; /* site --accent, logo wordmark */
+  --accent-text: #b83d25; /* site --accent-dark (prose links) */
+  --accent-soft: #fde8e4; /* site --accent-light */
+  --info: #1040c0; /* site bg-[#1040C0] */
+  --ok: color-mix(in oklab, #00c758 55%, #1c1917); /* site green-500 over --foreground */
+  --ok-soft: color-mix(in oklab, #00c758 12%, transparent); /* site green-500 tint */
+  --warn: color-mix(
+    in oklab,
+    #f0c020 55%,
+    #1c1917
+  ); /* site bg-[#F0C020] over --foreground */
+  --warn-soft: #fff9c4; /* site focus:bg-[#FFF9C4] */
+  --danger: #bf000f; /* site red-700 */
+  --danger-soft: color-mix(in oklab, #e40014 10%, transparent); /* site red-600 tint */
+  --logo-bg: transparent;
+  /* site --font-mono */
+  --mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
   --sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    'DM Sans', system-ui, sans-serif; /* site body font (Google Fonts, index.html) */
+  --heading: 'Sora', 'DM Sans', system-ui, sans-serif; /* site --font-heading */
   --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1c1917; /* site --foreground */
+    --bg-soft: #292524; /* site stone-800 */
+    --panel: #292524; /* site stone-800 */
+    --panel-2: #44403b; /* site stone-700 */
+    --border: #57534d; /* site stone-600 */
+    --border-soft: #44403b; /* site stone-700 */
+    --fg: #e7e5e4; /* site stone-200 */
+    --fg-strong: #f5f5f4; /* site stone-100 */
+    --muted: #d6d3d1; /* site stone-300 */
+    --faint: #a6a09b; /* site stone-400 */
+    --accent-text: color-mix(
+      in oklab,
+      #d74c2f 65%,
+      #fde8e4
+    ); /* site --accent over --accent-light */
+    --accent-soft: color-mix(in oklab, #d74c2f 22%, #1c1917); /* site --accent tint */
+    --info: #3080ff; /* site blue-500 */
+    --ok: #00c758; /* site green-500 */
+    --ok-soft: color-mix(in oklab, #00c758 18%, #1c1917); /* site green-500 tint */
+    --warn: #f0c020; /* site bg-[#F0C020] */
+    --warn-soft: color-mix(in oklab, #f0c020 18%, #1c1917); /* site yellow tint */
+    --danger: #fb2c36; /* site red-500 */
+    --danger-soft: color-mix(in oklab, #fb2c36 18%, #1c1917); /* site red-500 tint */
+    --logo-bg: #fff3e8; /* site theme-color: keeps the navy logo line art legible */
+  }
 }
 
 * {
@@ -44,7 +98,7 @@ body {
 }
 
 a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: none;
 }
 a:hover {
@@ -58,6 +112,12 @@ pre,
   font-size: 12.5px;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--heading);
+  font-weight: 600;
+}
 h1 {
   font-size: 20px;
   margin: 0 0 12px;
@@ -94,9 +154,23 @@ h3 {
   z-index: 20;
 }
 .topnav .brand {
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--heading);
+  font-weight: 600;
   color: var(--fg-strong);
   letter-spacing: 0.2px;
+}
+.brand-logo {
+  display: block;
+  height: 30px;
+  width: auto;
+  background: var(--logo-bg);
+  border-radius: 6px;
+}
+.topnav .brand-logo {
+  padding: 2px 4px;
 }
 .topnav .brand:hover {
   text-decoration: none;
@@ -220,11 +294,17 @@ button:hover,
   border-color: var(--accent);
   text-decoration: none;
 }
+/* site CTA: bg-accent text-white hover:bg-accent-dark */
 button.primary,
 .btn.primary {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--fg-strong);
+  color: #fff;
+}
+button.primary:hover,
+.btn.primary:hover {
+  background: #b83d25;
+  border-color: #b83d25;
 }
 button.danger {
   color: var(--danger);
@@ -319,7 +399,7 @@ form.stack {
   border-color: var(--danger-soft);
 }
 .chip.info {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   border-color: var(--accent-soft);
 }
@@ -394,7 +474,7 @@ form.stack {
   border-left-width: 3px;
   border-radius: 6px;
   padding: 10px 14px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 24px #0000001a; /* site --tw-shadow colour */
 }
 .toast.info {
   border-left-color: var(--accent);
@@ -411,7 +491,7 @@ form.stack {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 14, 0.72);
+  background: color-mix(in oklab, #1c1917 60%, transparent);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -440,23 +520,23 @@ pre.code {
 
 /* syntax tokens (regex highlighter) */
 .tok-k {
-  color: #d68fd6;
+  color: var(--accent-text);
 }
 .tok-s {
-  color: #9ed47a;
+  color: var(--ok);
 }
 .tok-c {
   color: var(--faint);
   font-style: italic;
 }
 .tok-n {
-  color: #e0af68;
+  color: var(--warn);
 }
 .tok-t {
-  color: #6fc3df;
+  color: var(--info);
 }
 .tok-r {
-  color: #e0af68;
+  color: var(--warn);
 }
 
 /* --------------------------------------------------------------- diff */
@@ -506,13 +586,13 @@ pre.code {
   overflow-wrap: anywhere;
 }
 .diff-line.add {
-  background: rgba(60, 130, 80, 0.16);
+  background: var(--ok-soft);
 }
 .diff-line.del {
-  background: rgba(160, 60, 55, 0.16);
+  background: var(--danger-soft);
 }
 .diff-line.meta {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 .diff-line.hunk {
@@ -738,7 +818,7 @@ summary {
 }
 .state-running,
 .state-queued {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .table-scroll {
   overflow: auto;
