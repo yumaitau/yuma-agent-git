@@ -6,7 +6,15 @@ import { getRef, getRepo } from '../db/repos';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { commitChanges } from '../core/commit';
 import { mergeTrees } from '../core/merge';
-import { ApiError } from '../core/errors';
+import {
+  ApiError,
+  InvalidTreeError,
+  ObjectCorruptError,
+  ObjectNotFoundError,
+  ObjectWalkLimitError,
+} from '../core/errors';
+import { can } from '../auth/rbac';
+import { requestPushMirrors } from '../mirrors/queue';
 import { getPull, landPull, queueGate } from '../reviews/pulls';
 import {
   mergeQueueRule,
@@ -485,6 +493,68 @@ async function verdict(env: Env, g: MergeGroupRow): Promise<Verdict> {
 }
 
 /**
+ * Why whoever queued an entry may no longer land it, or null. The queue lands
+ * hours later as that principal, so access is checked again then: agents
+ * never merge (#57), and a revoked token or a lost write role stops the land.
+ */
+async function queuerProblem(
+  env: Env,
+  repo: RepoRecord,
+  principal: Principal,
+): Promise<string | null> {
+  if (principal.kind === 'agent') return 'agents cannot merge pull requests.';
+  if (principal.kind === 'token') {
+    const live = await q1(
+      env,
+      'SELECT 1 FROM api_tokens WHERE id = ? AND (expires_at IS NULL OR expires_at > ?)',
+      [principal.tokenId, Date.now()],
+    );
+    if (!live) return 'the token that queued it was revoked or expired.';
+  }
+  const active = await q1(env, 'SELECT 1 FROM users WHERE id = ? AND active = 1', [
+    principal.userId,
+  ]);
+  if (!active || !(await can(env, repo, principal, 'write')))
+    return 'whoever queued it can no longer write to this repository.';
+  return null;
+}
+
+/**
+ * Why one entry's history or objects cannot be processed (a history walk past
+ * its limit, a missing or corrupt object), or null for any other error. Such
+ * an entry is ejected; rethrowing would fail every tick and stall the queue.
+ */
+function entryFailure(err: unknown): string | null {
+  if (
+    err instanceof ObjectWalkLimitError ||
+    err instanceof ObjectNotFoundError ||
+    err instanceof ObjectCorruptError ||
+    err instanceof InvalidTreeError
+  )
+    return `it could not be processed (${err.message}).`;
+  return null;
+}
+
+/** Merge requirements and the queuer's access; eject reasons, empty when it may land. */
+async function landProblems(
+  env: Env,
+  repo: RepoRecord,
+  pull: Pull,
+  entry: QueueEntry,
+  principal: Principal,
+): Promise<string[]> {
+  const queuer = await queuerProblem(env, repo, principal);
+  if (queuer) return [queuer];
+  try {
+    return (await queueGate(env, pull, principal, entry.method)).reasons;
+  } catch (err) {
+    const failure = entryFailure(err);
+    if (failure === null) throw err;
+    return [failure];
+  }
+}
+
+/**
  * The entries that may still land as queued, after ejecting those whose pull
  * request changed or whose merge requirements no longer hold.
  */
@@ -505,9 +575,9 @@ async function landable(
       continue;
     }
     const principal = principalSchema.parse(JSON.parse(entry.principal));
-    const gate = await queueGate(env, pull, principal, entry.method);
-    if (gate.reasons.length > 0) {
-      await eject(env, repo, entry, gate.reasons.join(' '));
+    const problems = await landProblems(env, repo, pull, entry, principal);
+    if (problems.length > 0) {
+      await eject(env, repo, entry, problems.join(' '));
       continue;
     }
     out.push({ entry, pull, principal });
@@ -554,12 +624,14 @@ async function buildGroup(
       target = await landPull(env, pull, entry.method, target, head, principal, {});
       members.push(entry);
     } catch (err) {
-      if (!(err instanceof ApiError)) throw err;
+      const failure = entryFailure(err);
+      if (!(err instanceof ApiError) && failure === null) throw err;
       await eject(
         env,
         repo,
         entry,
-        `it does not merge with the pull requests ahead of it (${err.message})`,
+        failure ??
+          `it does not merge with the pull requests ahead of it (${(err as Error).message})`,
       );
     }
   }
@@ -643,10 +715,10 @@ async function landGroup(env: Env, repo: RepoRecord, g: MergeGroupRow): Promise<
     for (const entry of entries) {
       const pull = pulls.find((p) => p.id === entry.pull_id)!;
       const principal = principalSchema.parse(JSON.parse(entry.principal));
-      const gate = await queueGate(env, pull, principal, entry.method);
-      if (gate.reasons.length === 0) continue;
+      const problems = await landProblems(env, repo, pull, entry, principal);
+      if (problems.length === 0) continue;
       await cancelGroup(env, g, 'A pull request no longer meets its merge requirements.');
-      await eject(env, repo, entry, gate.reasons.join(' '));
+      await eject(env, repo, entry, problems.join(' '));
       return false;
     }
     const lock = env.REF_LOCK.get(env.REF_LOCK.idFromName(`${repo.id}:${g.base_ref}`));
@@ -716,6 +788,8 @@ async function landGroup(env: Env, repo: RepoRecord, g: MergeGroupRow): Promise<
     null,
   );
   if (g.mode === 'strict') await groupEvent(env, repo, g, 'destroyed', 'merged');
+  // push mirrors (#36) follow the land like any other move of the branch
+  await requestPushMirrors(env, repo.id);
   try {
     await pushPipelines(env, repo.id, TRIGGER, [
       { name: g.base_ref, from: g.base_cs, to: g.head_cs },
@@ -847,6 +921,7 @@ async function revertGroup(env: Env, repo: RepoRecord, g: MergeGroupRow): Promis
     });
     // the ref moved meanwhile: the next tick reverts on the new head
     if (!res.ok) return;
+    await requestPushMirrors(env, repo.id);
     await emitRefUpdate(
       env,
       repo,

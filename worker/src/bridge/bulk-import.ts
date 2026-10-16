@@ -156,6 +156,48 @@ export async function bulkRepos(env: Env, jobId: string): Promise<BulkRepo[]> {
   return rows.map((r) => repoRow.parse(r));
 }
 
+/**
+ * The caller's linked GitHub account must own the source: be the account the
+ * App is installed on, or an active admin of that GitHub org. Installations
+ * are global, so without this any forge org could import any installed org.
+ */
+async function requireGithubAdmin(
+  env: Env,
+  userId: string,
+  installation: { installation_id: number; account_id: number },
+  githubOrg: string,
+): Promise<void> {
+  const linked = await q1<{ subject: string }>(
+    env,
+    "SELECT subject FROM user_identities WHERE user_id = ? AND provider = 'github'",
+    [userId],
+  );
+  const refuse = (message: string): never => {
+    throw new ApiError(403, 'not_github_admin', message);
+  };
+  if (!linked) return refuse('link your GitHub account to import a GitHub org');
+  const githubId = Number(linked.subject);
+  if (githubId === installation.account_id) return;
+  const id = installation.installation_id;
+  const members = { members: 'read' };
+  const who = await githubApi(env, id, `/user/${githubId}`, {}, members);
+  const login = who.ok ? ((await who.json()) as { login?: string }).login : undefined;
+  const membership = login
+    ? await githubApi(
+        env,
+        id,
+        `/orgs/${encodeURIComponent(githubOrg)}/memberships/${encodeURIComponent(login)}`,
+        {},
+        members,
+      )
+    : null;
+  const role = membership?.ok
+    ? ((await membership.json()) as { state?: string; role?: string })
+    : null;
+  if (role?.state !== 'active' || role.role !== 'admin')
+    refuse(`only an admin of ${githubOrg} on GitHub can import it`);
+}
+
 /** The installation must be one the App webhook recorded, for this GitHub org. */
 export async function startBulkImport(
   env: Env,
@@ -163,9 +205,13 @@ export async function startBulkImport(
   userId: string,
   input: BulkImportInput,
 ): Promise<BulkJob> {
-  const installation = await q1<{ account_login: string }>(
+  const installation = await q1<{
+    installation_id: number;
+    account_login: string;
+    account_id: number;
+  }>(
     env,
-    'SELECT account_login FROM installations WHERE installation_id = ?',
+    'SELECT installation_id, account_login, account_id FROM installations WHERE installation_id = ?',
     [input.installation_id],
   );
   if (
@@ -178,6 +224,7 @@ export async function startBulkImport(
       `GitHub App installation ${input.installation_id} is not installed on ${input.github_org}`,
     );
   }
+  await requireGithubAdmin(env, userId, installation, input.github_org);
   const id = ulid();
   const now = Date.now();
   await run(

@@ -743,7 +743,7 @@ export interface paths {
     /** Recent GitHub bulk imports */
     get: operations['listOrgImports'];
     put?: never;
-    /** Import a GitHub org (history, issues, pulls, releases, LFS) */
+    /** Import a GitHub org (history, issues, pulls, releases, LFS); the caller must administer it on GitHub */
     post: operations['startOrgImport'];
     delete?: never;
     options?: never;
@@ -2287,7 +2287,7 @@ export interface paths {
     /** List pull and push mirrors with their last sync */
     get: operations['listMirrors'];
     put?: never;
-    /** Create a pull or push mirror (token write-only) */
+    /** Create a pull or push mirror (token write-only; `github_app` reaches the connected GitHub repo only) */
     post: operations['createMirror'];
     delete?: never;
     options?: never;
@@ -2309,7 +2309,7 @@ export interface paths {
     delete: operations['deleteMirror'];
     options?: never;
     head?: never;
-    /** Change a mirror remote, token, interval or state */
+    /** Change a mirror remote, token, interval or state (a new remote URL needs the token again) */
     patch: operations['updateMirror'];
     trace?: never;
   };
@@ -2528,7 +2528,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Add a pull request to its target branch merge queue */
+    /** Add a pull request to its target branch merge queue (agents cannot) */
     post: operations['enqueuePull'];
     /** Take a pull request out of the merge queue */
     delete: operations['dequeuePull'];

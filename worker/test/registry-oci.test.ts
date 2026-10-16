@@ -164,15 +164,25 @@ async function member(repoId: string, userId: string, role: string): Promise<voi
   ]);
 }
 
-/** A running CI job of `repoId` and its request token. */
-async function ciJob(repoId: string): Promise<{ id: string; token: string }> {
+/** A running CI job of `repoId` (by default with `packages: write`) and its request token. */
+async function ciJob(
+  repoId: string,
+  permissions: Record<string, string> = { packages: 'write' },
+): Promise<{ id: string; token: string }> {
   const id = `run-${repoId}`;
   await run(
     dbEnv,
     `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by, state,
                           month, reserved_micros, created_at, deadline)
-     VALUES (?, ?, 'cs', 1, '{}', ?, 'running', '2026-10', 0, ?, ?)`,
-    [id, repoId, owner.userId, Date.now(), Date.now() + 60_000],
+     VALUES (?, ?, 'cs', 1, ?, ?, 'running', '2026-10', 0, ?, ?)`,
+    [
+      id,
+      repoId,
+      JSON.stringify({ commands: ['true'], permissions }),
+      owner.userId,
+      Date.now(),
+      Date.now() + 60_000,
+    ],
   );
   return { id, token: await createRequestToken(dbEnv, id, Date.now() + 60_000) };
 }
@@ -653,6 +663,22 @@ describe('permissions', () => {
     // once the run ends the token stops working
     await run(dbEnv, "UPDATE ci_runs SET state = 'passed' WHERE id = ?", [job.id]);
     expect((await reg('GET', '/v2/', auth)).status).toBe(401);
+  });
+
+  it('lets a job without permissions.packages: write pull but not push', async () => {
+    const job = await ciJob(repoA, { id_token: 'write' });
+    const auth = basic(job.token);
+    const upload = await reg('POST', '/v2/acme/app/ci/blobs/uploads/', auth);
+    expect(upload.status).toBe(403);
+    const token = await json<{ token: string }>(
+      await reg('GET', '/v2/token?scope=repository:acme/app/ci:pull,push', auth),
+    );
+    const row = await q1<{ access: string }>(
+      dbEnv,
+      'SELECT access FROM registry_tokens WHERE token_hash = ?',
+      [await sha256(new TextEncoder().encode(token.token))],
+    );
+    expect(JSON.parse(row!.access)).toEqual([{ name: 'acme/app/ci', actions: ['pull'] }]);
   });
 
   it('judges a publish from a CI job an agent started as that agent (#62)', async () => {

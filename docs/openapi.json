@@ -1683,7 +1683,7 @@
       },
       "post": {
         "operationId": "startOrgImport",
-        "summary": "Import a GitHub org (history, issues, pulls, releases, LFS)",
+        "summary": "Import a GitHub org (history, issues, pulls, releases, LFS); the caller must administer it on GitHub",
         "security": [{ "session": [] }, { "bearer": [] }],
         "x-yag-permission": "org owner or admin; token needs `repo:write`, no agents",
         "x-yag-rate-bucket": "api_write",
@@ -7041,7 +7041,7 @@
       },
       "post": {
         "operationId": "createMirror",
-        "summary": "Create a pull or push mirror (token write-only)",
+        "summary": "Create a pull or push mirror (token write-only; `github_app` reaches the connected GitHub repo only)",
         "security": [{ "session": [] }],
         "x-yag-permission": "admin (whole repo)",
         "x-yag-rate-bucket": "api_write",
@@ -7102,7 +7102,7 @@
     "/api/v1/repos/{owner}/{repo}/mirrors/{id}": {
       "patch": {
         "operationId": "updateMirror",
-        "summary": "Change a mirror remote, token, interval or state",
+        "summary": "Change a mirror remote, token, interval or state (a new remote URL needs the token again)",
         "security": [{ "session": [] }],
         "x-yag-permission": "admin (whole repo)",
         "x-yag-rate-bucket": "api_write",
@@ -7722,7 +7722,7 @@
     "/api/v1/repos/{owner}/{repo}/pulls/{id}/queue": {
       "post": {
         "operationId": "enqueuePull",
-        "summary": "Add a pull request to its target branch merge queue",
+        "summary": "Add a pull request to its target branch merge queue (agents cannot)",
         "security": [{ "session": [] }, { "bearer": [] }],
         "x-yag-permission": "write (whole repo)",
         "x-yag-rate-bucket": "api_write",

@@ -310,8 +310,15 @@ describe('npm registry', () => {
       dbEnv,
       `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by, state,
                             month, reserved_micros, created_at, deadline)
-       VALUES (?, ?, 'cs', 1, '{}', ?, 'running', '2026-10', 0, ?, ?)`,
-      [id, repoA, owner.userId, Date.now(), Date.now() + 60_000],
+       VALUES (?, ?, 'cs', 1, ?, ?, 'running', '2026-10', 0, ?, ?)`,
+      [
+        id,
+        repoA,
+        JSON.stringify({ commands: ['true'], permissions: { packages: 'write' } }),
+        owner.userId,
+        Date.now(),
+        Date.now() + 60_000,
+      ],
     );
     const auth = `Bearer ${await createRequestToken(dbEnv, id, Date.now() + 60_000)}`;
     const own = await publishDoc('@acme/app', '1.0.0');
@@ -327,5 +334,31 @@ describe('npm registry', () => {
     expect(events.map((e) => [e.event, e.action, e.data.version])).toEqual([
       ['package', 'published', '1.0.0'],
     ]);
+  });
+
+  it('refuses a publish from a job without permissions.packages: write', async () => {
+    const id = 'run-oidc-only';
+    await run(
+      dbEnv,
+      `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by, state,
+                            month, reserved_micros, created_at, deadline)
+       VALUES (?, ?, 'cs', 1, ?, ?, 'running', '2026-10', 0, ?, ?)`,
+      [
+        id,
+        repoA,
+        JSON.stringify({ commands: ['true'], permissions: { id_token: 'write' } }),
+        owner.userId,
+        Date.now(),
+        Date.now() + 60_000,
+      ],
+    );
+    const auth = `Bearer ${await createRequestToken(dbEnv, id, Date.now() + 60_000)}`;
+    const doc = await publishDoc('@acme/app', '1.0.0');
+    expect((await npm('PUT', `/npm/${encoded('@acme/app')}`, auth, doc.doc)).status).toBe(
+      403,
+    );
+    expect(await q(dbEnv, 'SELECT 1 FROM packages WHERE repo_id = ?', [repoA])).toEqual(
+      [],
+    );
   });
 });

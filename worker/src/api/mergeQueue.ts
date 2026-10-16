@@ -3,12 +3,11 @@ import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import type { RepoWithCreator } from '../auth/rbac';
-import { errorResponse, readJsonBody } from './errors';
+import { apiError, errorResponse, readJsonBody } from './errors';
 import { ApiError } from '../core/errors';
 import { getPull, type Pull } from '../reviews/pulls';
 import { actorOf, recordAudit } from '../audit/record';
 import { emitEvent } from '../webhooks/events';
-import { enforceAgentAction } from '../policy/guardrails';
 import {
   enqueueSchema,
   queueStub,
@@ -18,7 +17,8 @@ import {
 
 /**
  * Merge queue routes (issue #43). Entries are ordered by the queue's Durable
- * Object; these routes resolve RBAC, agent scopes and guardrails first.
+ * Object; these routes resolve RBAC and agent scopes first. Agents cannot
+ * queue: queueing lands the pull request, and agents never merge (#57).
  */
 export const mergeQueueRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -75,17 +75,11 @@ mergeQueueRoutes.post(`${base}/pulls/:id/queue`, async (c) => {
     if (!loaded.ok) return loaded.response;
     const scoped = requireAgentScope(c, 'pulls:write');
     if (scoped) return scoped;
+    // queueing lands the pull request, and agents never merge (#57), as /merge refuses
+    if (c.get('principal')?.kind === 'agent')
+      return apiError(c, 403, 'protected_branch', 'agents cannot merge pull requests');
     const pull = await getPull(c.env, loaded.repo.id, Number(c.req.param('id')));
     const body = parse(enqueueSchema, await readJsonBody(c));
-    // agent guardrails (#62): queueing is how an agent lands a pull request
-    const summary = { pull: pull.number, head_cs: body.head_cs, method: body.method };
-    await enforceAgentAction(
-      c.env,
-      c.get('principal'),
-      loaded.repo,
-      { action: 'pr.merge', ref: pull.base_ref },
-      { exact: summary, summary: { ...summary, base_ref: pull.base_ref } },
-    );
     const res = await queueStub(c.env, loaded.repo.id, pull.base_ref).fetch(
       'https://merge-queue/enqueue',
       {

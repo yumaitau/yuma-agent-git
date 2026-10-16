@@ -607,6 +607,9 @@ describe('import → export SHA round trip (#30, #72)', () => {
     const { env: qEnv } = capturedQueue(dbEnv);
     const app = makeApp(qEnv);
     const gh = fakeGithub('acme-gh');
+    // the owner's linked GitHub account administers the source org
+    gh.objects['/user/1'] = { login: 'owner-gh' };
+    gh.objects['/orgs/acme-gh/memberships/owner-gh'] = { state: 'active', role: 'admin' };
     restore = installFakeGithub(gh, app);
     const owner = await loginAs(testEnv, 1, 'owner');
     const orgRes = await app(

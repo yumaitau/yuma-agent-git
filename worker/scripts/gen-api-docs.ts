@@ -150,9 +150,10 @@ const PURPOSES: Record<string, string> = {
   'PUT /npm/:pkg': 'npm publish: one version and its tarball',
   'POST /api/v1/repos/:repo/hooks': 'Create a repository webhook',
   'GET /api/v1/repos/:repo/mirrors': 'List pull and push mirrors with their last sync',
-  'POST /api/v1/repos/:repo/mirrors': 'Create a pull or push mirror (token write-only)',
+  'POST /api/v1/repos/:repo/mirrors':
+    'Create a pull or push mirror (token write-only; `github_app` reaches the connected GitHub repo only)',
   'PATCH /api/v1/repos/:repo/mirrors/:id':
-    'Change a mirror remote, token, interval or state',
+    'Change a mirror remote, token, interval or state (a new remote URL needs the token again)',
   'DELETE /api/v1/repos/:repo/mirrors/:id': 'Delete a mirror',
   'POST /api/v1/repos/:repo/mirrors/:id/sync': 'Sync a mirror now and return the outcome',
   'GET /api/v1/repos/:repo/migration': 'Cutover state and the checks for each next move',
@@ -344,7 +345,7 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/pulls/:id/merge':
     'Merge a pull request (merge commit, squash or rebase)',
   'POST /api/v1/repos/:repo/pulls/:id/queue':
-    'Add a pull request to its target branch merge queue',
+    'Add a pull request to its target branch merge queue (agents cannot)',
   'DELETE /api/v1/repos/:repo/pulls/:id/queue':
     'Take a pull request out of the merge queue',
   'GET /api/v1/repos/:repo/merge-queue':
@@ -453,7 +454,7 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/orgs/:org': 'One org and the caller role',
   'GET /api/v1/orgs/:org/imports': 'Recent GitHub bulk imports',
   'POST /api/v1/orgs/:org/imports':
-    'Import a GitHub org (history, issues, pulls, releases, LFS)',
+    'Import a GitHub org (history, issues, pulls, releases, LFS); the caller must administer it on GitHub',
   'GET /api/v1/orgs/:org/imports/:id': 'Bulk import progress and per-repo report',
   'POST /api/v1/orgs/:org/imports/:id/resume':
     'Retry failed repos from their checkpoints',

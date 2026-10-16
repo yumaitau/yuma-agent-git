@@ -7,7 +7,7 @@ import { resolveTokenPrincipal } from '../auth/tokens';
 import { randomB64url } from '../auth/encoding';
 import { resolveCloneToken } from '../ci/runners';
 import { REQUEST_TOKEN_PREFIX, verifyIdToken } from '../ci/oidc';
-import type { CiRun } from '../ci/config';
+import { parsePolicy, type CiRun } from '../ci/config';
 import { parseContext } from '../ci/context';
 import { jobAgent } from '../ci/inject';
 import { sha256Hex } from '../core/hashing';
@@ -25,8 +25,9 @@ import type { RepoRecord } from '../db/client';
  *
  * CI jobs sign in with their request token (`yagjob_…`, the
  * `YAG_ID_TOKEN_REQUEST_TOKEN` variable) or an ID token minted for the
- * registry host as audience. Either may pull and push the packages linked to
- * the job's own repo, nothing else. A self-hosted runner's clone token pulls
+ * registry host as audience. Either may pull the packages linked to the
+ * job's own repo, and push them only when the job's pipeline has
+ * `permissions.packages: write`; nothing else. A self-hosted runner's clone token pulls
  * only. Only the Authorization header counts: browser sessions never reach
  * the registry, so a cross-site request cannot write.
  */
@@ -58,13 +59,23 @@ async function hashToken(raw: string): Promise<string> {
   return sha256Hex(new TextEncoder().encode(raw));
 }
 
+/** Whether the job's pipeline asked for `permissions.packages: write`. */
+function writesPackages(job: CiRun): boolean {
+  try {
+    return parsePolicy(JSON.parse(job.config)).permissions.packages === 'write';
+  } catch {
+    return false;
+  }
+}
+
 function ciPrincipal(job: CiRun): Principal | null {
   if (job.state !== 'running' || !job.deadline || job.deadline <= Date.now()) return null;
   return {
     kind: 'token',
     userId: job.requested_by,
     tokenId: `ci-run:${job.id}`,
-    scopes: ['packages:write'],
+    // pull for any job; push only when the pipeline grants packages: write
+    scopes: writesPackages(job) ? ['packages:write'] : [],
     repoId: job.repo_id,
     ciRunId: job.id,
   };

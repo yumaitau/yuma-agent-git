@@ -96,8 +96,12 @@ export async function appJwt(env: Env, now: number = Date.now()): Promise<string
 // keyed by installation and requested permissions, so a narrowed token is
 // never served where a broader one was asked for (or the other way round)
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
-const cacheKey = (installationId: number, permissions?: Record<string, string>): string =>
-  `${installationId}:${permissions ? JSON.stringify(permissions) : ''}`;
+const cacheKey = (
+  installationId: number,
+  permissions?: Record<string, string>,
+  repositoryIds?: number[],
+): string =>
+  `${installationId}:${permissions ? JSON.stringify(permissions) : ''}:${repositoryIds?.join(',') ?? ''}`;
 
 export function clearInstallationToken(installationId: number): void {
   for (const key of tokenCache.keys()) {
@@ -110,8 +114,11 @@ export async function installationToken(
   installationId: number,
   permissions?: Record<string, string>,
   now: number = Date.now(),
+  /** Narrow the token to these repositories of the installation. */
+  repositoryIds?: number[],
 ): Promise<string> {
-  const cached = tokenCache.get(cacheKey(installationId, permissions));
+  const key = cacheKey(installationId, permissions, repositoryIds);
+  const cached = tokenCache.get(key);
   if (cached && cached.expiresAt - 5 * 60_000 > now) return cached.token;
 
   const jwt = await appJwt(env, now);
@@ -125,14 +132,20 @@ export async function installationToken(
         'x-github-api-version': GITHUB_API_VERSION,
         'user-agent': USER_AGENT,
       },
-      body: permissions ? JSON.stringify({ permissions }) : undefined,
+      body:
+        permissions || repositoryIds
+          ? JSON.stringify({
+              ...(permissions ? { permissions } : {}),
+              ...(repositoryIds ? { repository_ids: repositoryIds } : {}),
+            })
+          : undefined,
     },
   );
   if (!res.ok) {
     throw new Error(`installation token mint failed: ${res.status}`);
   }
   const body = (await res.json()) as { token: string; expires_at: string };
-  tokenCache.set(cacheKey(installationId, permissions), {
+  tokenCache.set(key, {
     token: body.token,
     expiresAt: Date.parse(body.expires_at),
   });

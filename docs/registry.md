@@ -60,8 +60,9 @@ A job with `permissions.id_token: write` (see docs/ci-oidc-aws.md) can also use
 audience:
 `curl -H "Authorization: Bearer $YAG_ID_TOKEN_REQUEST_TOKEN" "$YAG_ID_TOKEN_REQUEST_URL&audience=forge.example.com"`.
 
-Each pulls and pushes the packages linked to the job's own repo and nothing
-else: a job of repo A gets 404 for a package of repo B. It stops working when
+Each pulls the packages linked to the job's own repo and nothing else, and
+pushes them only when the job also has `permissions.packages: write` (403
+otherwise): a job of repo A gets 404 for a package of repo B. It stops working when
 the run ends. Fork pull requests and other untrusted runs get no login. A
 self-hosted runner's clone token pulls only. A publish from a job an agent
 started is judged by the agent policy as that agent's (#62).

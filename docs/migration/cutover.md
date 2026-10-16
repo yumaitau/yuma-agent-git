@@ -44,14 +44,18 @@ dashboard page is `/r/<owner>/<repo>/mirrors`.
   of other branches are mirrored.
 - **Credentials**: `auth` is `none`, `token` (HTTP Basic, user
   `x-access-token` unless `username` is set) or `github_app` (an installation
-  token of the connected GitHub App, github.com only). Tokens are encrypted
+  token of the connected GitHub App, for the connected GitHub repository only:
+  the remote URL must name it, and the token is narrowed to that repository,
+  `contents: read` for a pull mirror and `contents: write` for a push mirror).
+  Changing a token mirror's remote URL needs the token again. Tokens are encrypted
   with the #50 envelope keys, never returned (the API shows `has_token`),
   never put in a URL and scrubbed from every error. Remote URLs must be https,
   without credentials, and must not resolve to private addresses; redirects
   are refused.
 - **When syncs run**: the `mirror-sync` queue runs one sync per message. The
   cron queues every enabled mirror whose `interval_s` has passed; every
-  accepted ref move queues the repository's enabled push mirrors at once; and
+  accepted ref move (pushes, pull request merges, merge queue lands and
+  reverts) queues the repository's enabled push mirrors at once; and
   `POST .../mirrors/:id/sync` syncs inline and returns the outcome. A D1 lease
   keeps one sync per mirror at a time.
 - **Failures** show on the mirror (`last_error`, `last_result` per ref) and in

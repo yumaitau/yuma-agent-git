@@ -98,9 +98,12 @@ A trigram index in D1, built as the `code_search` derived kind
   budget; when the budget runs out first the answer says `partial`.
 - **Regex.** Required literals are read from the pattern conservatively (top
   level only, none under alternation); their trigrams narrow the candidates
-  and every candidate is matched with the real regex. Limits: 200 characters,
-  nested quantifiers refused, the first 1000 characters of a line, files up to
-  1 MiB, 2000 files or 32 MiB read per search.
+  and every candidate is matched with the real regex. A regex runs on a
+  linear-time matcher (`core/linear-regex.ts`, a Pike VM) instead of RegExp,
+  whose backtracking takes exponential time on patterns such as `(a|aa)+$`;
+  look-around and back-references are refused. Limits: 200 characters, the
+  first 1000 characters of a line, files up to 1 MiB, 2000 files or 32 MiB
+  read and 50 million matcher steps per search (`partial` when spent).
 - **Access.** Each repo is decided with `can()` (`pathDecider`), and each file
   with its path rules before its content is read.
 - **Case.** Trigrams are folded to ASCII lower case, matching how a JavaScript

@@ -70,8 +70,9 @@ const notAllowed = (value: string): boolean => !allowListed(value);
 /** No token character on either side (`\b` treats `-` as a boundary). */
 const END = '(?![A-Za-z0-9_-])';
 const START = '(?<![A-Za-z0-9_-])';
-// PEM body characters; a dash only when it does not start the next `-----` line
-const KEY_BODY = '(?:[A-Za-z0-9+/=\\s:,]|-(?!----))*';
+// PEM body characters, and the literal `\n` / `\r` escapes of a key kept in a
+// JSON or .env string; a dash only when it does not start the next `-----` line
+const KEY_BODY = '(?:[A-Za-z0-9+/=\\s:,]|\\\\[nr]|-(?!----))*';
 
 export const DETECTORS: Detector[] = [
   {
@@ -134,6 +135,7 @@ export const DETECTORS: Detector[] = [
     ),
     accept: (block) => {
       const body = block
+        .replace(/\\[nr]/g, '\n')
         .replace(/-----[^-]+-----/g, '')
         .replace(/^[A-Za-z-]+:.*$/gm, '')
         .replace(/\s/g, '');

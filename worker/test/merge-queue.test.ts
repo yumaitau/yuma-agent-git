@@ -44,6 +44,12 @@ let reviewer: Login;
 let repoId = '';
 let seed = '';
 let events: ForgeEvent[] = [];
+/** Push mirror syncs asked for (#36). */
+let mirrorSyncs: string[] = [];
+const mirrorQueue = {
+  sendBatch: async (messages: { body: { mirror_id: string } }[]) =>
+    void mirrorSyncs.push(...messages.map((m) => m.body.mirror_id)),
+};
 
 /** CI on: queue sends are dropped (tests finish runs by hand), runner calls succeed. */
 function ci(): Env {
@@ -58,6 +64,7 @@ function ci(): Env {
         };
       if (key === 'EVENTS_QUEUE')
         return { send: async (m: { event: ForgeEvent }) => void events.push(m.event) };
+      if (key === 'MIRROR_QUEUE') return mirrorQueue;
       return Reflect.get(target, key, receiver);
     },
   });
@@ -69,7 +76,9 @@ const app = makeApp(
     get: (target, key, receiver) =>
       key === 'EVENTS_QUEUE'
         ? { send: async (m: { event: ForgeEvent }) => void events.push(m.event) }
-        : Reflect.get(target, key, receiver),
+        : key === 'MIRROR_QUEUE'
+          ? mirrorQueue
+          : Reflect.get(target, key, receiver),
   }),
 );
 
@@ -220,6 +229,7 @@ beforeEach(async () => {
   await seedSchema(testEnv);
   await cleanDb(testEnv);
   events = [];
+  mirrorSyncs = [];
   owner = await loginAs(testEnv, 901, 'owner');
   reviewer = await loginAs(testEnv, 902, 'reviewer');
   repoId = (await createRepo(dbEnv, { slug: 'team/queue', createdBy: owner.userId })).id;
@@ -705,5 +715,128 @@ describe('durability', () => {
     await tick();
     for (const pull of pulls) expect((await pullOf(pull.id)).state).toBe('merged');
     expect((await view()).groups[0]).toMatchObject({ state: 'merged' });
+  });
+});
+
+describe('landing as whoever queued it', () => {
+  async function entries(): Promise<
+    { pull_id: number; state: string; reason: string | null }[]
+  > {
+    return q(
+      dbEnv,
+      'SELECT pull_id, state, reason FROM merge_queue_entries ORDER BY position',
+    );
+  }
+
+  it('ejects entries whose queuer lost write access, or that an agent queued', async () => {
+    await queueRule('strict', 5);
+    const queuer = await loginAs(testEnv, 903, 'queuer');
+    await run(
+      dbEnv,
+      "INSERT INTO repo_members(repo_id,user_id,role) VALUES (?,?,'write')",
+      [repoId, queuer.userId],
+    );
+    const lost = await approved('lost.txt');
+    await json(
+      await api(
+        `/pulls/${lost.id}/queue`,
+        'POST',
+        { head_cs: lost.head_cs, revision: lost.revision },
+        queuer,
+      ),
+      201,
+    );
+    const byAgent = await approved('agent.txt');
+    await enqueue(byAgent);
+    // an entry an agent queued before the route refused agents
+    await run(dbEnv, 'UPDATE merge_queue_entries SET principal = ? WHERE pull_id = ?', [
+      JSON.stringify({
+        kind: 'agent',
+        userId: owner.userId,
+        agentId: 'agt_old',
+        jti: 'jti',
+        taskId: null,
+        scopes: ['contents:write', 'pulls:write'],
+        repoIds: [repoId],
+      }),
+      byAgent.id,
+    ]);
+    const kept = await approved('kept.txt');
+    await enqueue(kept);
+    await run(dbEnv, 'DELETE FROM repo_members WHERE user_id = ?', [queuer.userId]);
+
+    await drain();
+    expect((await pullOf(lost.id)).state).toBe('open');
+    expect((await pullOf(byAgent.id)).state).toBe('open');
+    expect((await pullOf(kept.id)).state).toBe('merged');
+    expect(await entries()).toEqual([
+      {
+        pull_id: lost.id,
+        state: 'ejected',
+        reason: 'whoever queued it can no longer write to this repository.',
+      },
+      {
+        pull_id: byAgent.id,
+        state: 'ejected',
+        reason: 'agents cannot merge pull requests.',
+      },
+      { pull_id: kept.id, state: 'merged', reason: null },
+    ]);
+  });
+
+  it('ejects a pull request whose history is too long to walk instead of stalling', async () => {
+    await queueRule('strict', 1);
+    const stale = await approved('stale.txt');
+    await enqueue(stale);
+    // main moves 10,001 changesets past the pull request's base
+    await run(
+      dbEnv,
+      `INSERT INTO changesets (id, repo_id, first_parent, parents, author, message, created_at,
+                               changed_files, root_tree)
+       WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 10001)
+       SELECT 'chain' || i, s.repo_id,
+              CASE WHEN i = 1 THEN s.id ELSE 'chain' || (i - 1) END,
+              json_array(CASE WHEN i = 1 THEN s.id ELSE 'chain' || (i - 1) END),
+              s.author, 'chain', ? + i, '[]', s.root_tree
+         FROM n, changesets s WHERE s.repo_id = ? AND s.id = ?`,
+      [Date.now() + 60_000, repoId, seed],
+    );
+    await setRef(dbEnv, repoId, 'main', 'chain10001');
+
+    await tick();
+    expect(await entries()).toEqual([
+      {
+        pull_id: stale.id,
+        state: 'ejected',
+        reason: expect.stringContaining('could not be processed'),
+      },
+    ]);
+  });
+
+  it('syncs push mirrors after a pull request merge and after a queue land', async () => {
+    await run(
+      dbEnv,
+      `INSERT INTO mirrors (id, repo_id, direction, remote_url, auth, interval_s, enabled, origin,
+                            created_by, created_at, updated_at)
+       VALUES ('mir_push', ?, 'push', 'https://github.com/gh/queue.git', 'none', 3600, 1,
+               'https://x', ?, 0, 0)`,
+      [repoId, owner.userId],
+    );
+    const direct = await approved('direct.txt');
+    await json(
+      await api(`/pulls/${direct.id}/merge`, 'POST', {
+        head_cs: direct.head_cs,
+        revision: direct.revision,
+      }),
+    );
+    expect(mirrorSyncs).toEqual(['mir_push']);
+
+    mirrorSyncs = [];
+    await queueRule('strict', 1);
+    const queued = await approved('queued.txt');
+    await enqueue(queued);
+    await drain();
+    expect((await pullOf(queued.id)).state).toBe('merged');
+    expect(mirrorSyncs).toEqual(['mir_push']);
   });
 });

@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
+import type { Env } from '../env';
 import { loadWholeRepo } from '../auth/guards';
 import { parseBody, sessionUser } from '../auth/owners';
 import { requireRecentMfa } from '../auth/session';
@@ -13,6 +14,7 @@ import { encryptSecret } from '../secrets/crypto';
 import { keyOwnerOf } from '../secrets/store';
 import { remoteUrlProblem } from '../mirrors/remote';
 import {
+  githubAppProblem,
   mirrorAad,
   parseMirror,
   parseResults,
@@ -93,22 +95,23 @@ export function publicMirror(m: MirrorRow, now = Date.now()) {
 
 const host = (url: string): string => new URL(url).host;
 
-function checkRemote(repo: RepoRecord, url: string, auth: MirrorRow['auth']): void {
+async function checkRemote(
+  env: Env,
+  repo: RepoRecord,
+  url: string,
+  auth: MirrorRow['auth'],
+): Promise<void> {
   const problem = remoteUrlProblem(url);
   if (problem) throw new ApiError(400, 'invalid_remote_url', problem);
   if (auth === 'github_app') {
-    if (!repo.github_installation_id)
+    if (!repo.github_installation_id || !repo.github_repo_id)
       throw new ApiError(
         400,
         'not_connected',
         'connect the repository to the GitHub App first',
       );
-    if (host(url) !== 'github.com')
-      throw new ApiError(
-        400,
-        'invalid_remote_url',
-        'the GitHub App reaches github.com only',
-      );
+    const appProblem = await githubAppProblem(env, repo, url);
+    if (appProblem) throw new ApiError(400, 'invalid_remote_url', appProblem);
   }
 }
 
@@ -153,7 +156,7 @@ mirrorsRoutes.post(`${base}/mirrors`, async (c) => {
     if (mfa) return mfa;
     const repo = loaded.repo;
     const input = parseBody(mirrorInputSchema, await readJsonBody(c));
-    checkRemote(repo, input.remote_url, input.auth);
+    await checkRemote(c.env, repo, input.remote_url, input.auth);
     if ((input.auth === 'token') !== (input.token !== undefined))
       throw new ApiError(
         400,
@@ -249,12 +252,19 @@ mirrorsRoutes.patch(`${base}/mirrors/:id`, async (c) => {
     const input = parseBody(mirrorPatchSchema, await readJsonBody(c));
     const auth = input.auth ?? mirror.auth;
     const url = input.remote_url ?? mirror.remote_url;
-    checkRemote(repo, url, auth);
+    await checkRemote(c.env, repo, url, auth);
     if (input.token !== undefined && auth !== 'token')
       throw new ApiError(400, 'invalid_request', 'a token is only used with auth token');
     const keepToken = auth === 'token' && input.token === undefined;
     if (keepToken && mirror.credential_ciphertext === null)
       throw new ApiError(400, 'invalid_request', 'auth token needs a token');
+    // the stored token was given for the old remote: never send it anywhere else
+    if (keepToken && url !== mirror.remote_url)
+      throw new ApiError(
+        400,
+        'invalid_request',
+        'changing the remote URL needs the token again',
+      );
     if (input.enabled) {
       const conflict = enableConflict(await getMigration(c.env, repo.id), mirror);
       if (conflict) throw new ApiError(409, 'migration_conflict', conflict);

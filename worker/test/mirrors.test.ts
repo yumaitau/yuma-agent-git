@@ -77,12 +77,18 @@ async function api(
 const realFetch = globalThis.fetch;
 let remoteCalls: Request[] = [];
 let archived: boolean[] = [];
+/** Bodies of GitHub App installation token requests. */
+let tokenRequests: string[] = [];
+/** The token requests made for Git traffic (narrowed to repositories). */
+const gitTokens = (): unknown[] =>
+  tokenRequests.filter((b) => b.includes('repository_ids')).map((b) => JSON.parse(b));
 /** Overrides one remote answer (status code tests). */
 let remoteOverride: ((req: Request) => Response | null) | null = null;
 
 beforeEach(() => {
   remoteCalls = [];
   archived = [];
+  tokenRequests = [];
   clearInstallationToken(7);
   remoteOverride = null;
   queued = [];
@@ -101,8 +107,10 @@ beforeEach(() => {
       );
     }
     if (url.hostname === 'api.github.com') {
-      if (url.pathname === '/app/installations/7/access_tokens')
+      if (url.pathname === '/app/installations/7/access_tokens') {
+        tokenRequests.push(await req.text());
         return Response.json({ token: ghToken, expires_at: '2999-01-01T00:00:00Z' });
+      }
       if (url.pathname === '/repositories/99' && req.method === 'GET')
         return Response.json({ full_name: 'gh/widgets' });
       if (url.pathname === '/repos/gh/widgets' && req.method === 'PATCH') {
@@ -208,6 +216,7 @@ async function mirrorRow(id: string) {
     last_result: string;
     last_refs: string;
     enabled: number;
+    remote_url: string;
     credential_ciphertext: string | null;
   };
 }
@@ -764,6 +773,80 @@ describe('mirror API', () => {
     });
     expect((await sync(mirror.id)).ok).toBe(true);
     expect((await shasOf('acme/widgets'))['refs/heads/main']).toBe(upstream.commit.sha);
+    // the token reaches the connected repository only, read-only for a pull mirror
+    expect(gitTokens()).toEqual([
+      {
+        permissions: { contents: 'read', metadata: 'read' },
+        repository_ids: [99],
+      },
+    ]);
+  });
+
+  it('keeps the GitHub App on the connected repository', async () => {
+    const other = 'https://github.com/gh/payments.git';
+    for (const direction of ['pull', 'push']) {
+      const res = await api('/repos/acme/widgets/mirrors', 'POST', {
+        direction,
+        remote_url: other,
+        auth: 'github_app',
+        force: true,
+      });
+      expect(res.status).toBe(400);
+    }
+    const mirror = await createMirror('acme/widgets', {
+      direction: 'push',
+      remote_url: REMOTE,
+      auth: 'github_app',
+      enabled: false,
+    });
+    const repoint = await api(`/repos/acme/widgets/mirrors/${mirror.id}`, 'PATCH', {
+      remote_url: other,
+    });
+    expect(repoint.status).toBe(400);
+    // a stored URL aimed elsewhere is refused at sync, before any token is minted
+    await run(testEnv, 'UPDATE mirrors SET remote_url = ?, enabled = 1 WHERE id = ?', [
+      other,
+      mirror.id,
+    ]);
+    expect((await sync(mirror.id)).ok).toBe(false);
+    expect((await mirrorRow(mirror.id)).last_error).toMatch(/connected repository/);
+    expect(gitTokens()).toEqual([]);
+    expect(remoteCalls).toEqual([]);
+    // the connected repository gets a write token for this one repository
+    await run(testEnv, 'UPDATE mirrors SET remote_url = ? WHERE id = ?', [
+      REMOTE,
+      mirror.id,
+    ]);
+    expect((await sync(mirror.id)).ok).toBe(true);
+    expect(gitTokens()).toEqual([
+      { permissions: { contents: 'write', metadata: 'read' }, repository_ids: [99] },
+    ]);
+  });
+
+  it('asks for the token again when the remote URL changes', async () => {
+    const mirror = await createMirror('acme/widgets', {
+      direction: 'push',
+      remote_url: REMOTE,
+      auth: 'token',
+      token: ghToken,
+      enabled: false,
+    });
+    const elsewhere = 'https://git.example.org/x.git';
+    const moved = await api(`/repos/acme/widgets/mirrors/${mirror.id}`, 'PATCH', {
+      remote_url: elsewhere,
+    });
+    expect(moved.status).toBe(400);
+    expect((await mirrorRow(mirror.id)).remote_url).toBe(REMOTE);
+    // other edits keep the token, and a new URL with a new token is fine
+    expect(
+      (await api(`/repos/acme/widgets/mirrors/${mirror.id}`, 'PATCH', { force: true }))
+        .status,
+    ).toBe(200);
+    const fresh = await api(`/repos/acme/widgets/mirrors/${mirror.id}`, 'PATCH', {
+      remote_url: elsewhere,
+      token: 'a-new-token-for-the-new-remote',
+    });
+    expect(fresh.status).toBe(200);
   });
 });
 

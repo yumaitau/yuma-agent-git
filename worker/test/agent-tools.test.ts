@@ -137,9 +137,11 @@ describe('agent tools', () => {
     const hidden = await executeTool(dbEnv, ctx, 'grep', { pattern: 'PRIVATE' });
     expect((hidden.matches as unknown[]).length).toBe(0);
 
-    // catastrophic backtracking guard
-    const unsafe = await executeTool(dbEnv, ctx, 'grep', { pattern: '(a+)+$' });
-    expect(unsafe).toMatchObject({ error: 'unsafe_pattern' });
+    // backtracking patterns run on the linear-time matcher; look-around cannot
+    const nested = await executeTool(dbEnv, ctx, 'grep', { pattern: '(a+)+$' });
+    expect(nested).not.toHaveProperty('error');
+    const around = await executeTool(dbEnv, ctx, 'grep', { pattern: 'a(?=b)' });
+    expect(around).toMatchObject({ error: 'invalid_pattern' });
   });
 
   it('commit advances head_cs; land moves main; stale land reports structured reason', async () => {

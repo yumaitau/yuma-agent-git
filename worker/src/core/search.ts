@@ -7,6 +7,7 @@ import { getBlob } from './blobs';
 import type { Changeset } from './changesets';
 import { diffRevisions } from './diff';
 import { ApiError, ObjectWalkLimitError } from './errors';
+import { linearMatcher, MatchBudgetError, type LineMatcher } from './linear-regex';
 import {
   foldAscii,
   isBinary,
@@ -29,8 +30,8 @@ import {
  * every candidate is then read and matched line by line, so results are
  * exact. Path rules are applied to each file before its content is read.
  *
- * Limits (also in docs/api.md): patterns up to 200 characters; nested
- * quantifiers are refused; each line is matched on its first 1000
+ * Limits (also in docs/api.md): patterns up to 200 characters, matched in
+ * linear time (no look-around or back-references); each line is matched on its first 1000
  * characters; files over 1 MiB and binary files are not searched by
  * content; one search reads at most 2000 files or 32 MiB.
  */
@@ -88,7 +89,7 @@ export interface CodeSearchOutput {
   results: CodeResult[];
   /** More files matched than were returned. */
   truncated: boolean;
-  /** Not yet indexed files were left unread (read budget): results may be missing. */
+  /** Files were left unread or unmatched (read or match budget): results may be missing. */
   partial: boolean;
   skipped_repos: SkippedRepo[];
 }
@@ -98,7 +99,7 @@ export interface CodeSearchOutput {
 // ---------------------------------------------------------------------------
 
 export interface CompiledQuery {
-  regex: RegExp;
+  matcher: LineMatcher;
   /** Trigrams every match contains, or null when none can be derived. */
   grams: string[] | null;
 }
@@ -173,9 +174,6 @@ export function requiredLiterals(source: string): string[] {
   return out;
 }
 
-/** Nested quantifiers such as `(a+)+` backtrack catastrophically. */
-const NESTED_QUANTIFIER = /\([^)]*[+*}][^)]*\)[+*{]/;
-
 export function compileQuery(input: {
   q: string;
   regex: boolean;
@@ -188,13 +186,6 @@ export function compileQuery(input: {
       `query must be 1 to ${MAX_PATTERN_CHARS} characters`,
     );
   }
-  if (input.regex && NESTED_QUANTIFIER.test(input.q)) {
-    throw new ApiError(
-      400,
-      'unsafe_pattern',
-      'nested quantifiers can backtrack catastrophically',
-    );
-  }
   const source = input.regex ? input.q : escapeRegex(input.q);
   let regex: RegExp;
   try {
@@ -202,7 +193,22 @@ export function compileQuery(input: {
   } catch {
     throw new ApiError(400, 'invalid_pattern', 'not a valid regular expression');
   }
-  if (regex.test('')) {
+  // a literal is linear in RegExp; a pattern runs on the linear-time matcher,
+  // since RegExp backtracking on a crafted pattern can take exponential time
+  const matcher: LineMatcher = input.regex
+    ? linearMatcher(source, !input.caseSensitive)
+    : {
+        test: (line) => regex.test(line),
+        ranges: (line, max) => {
+          const out: [number, number][] = [];
+          for (const m of line.matchAll(new RegExp(regex.source, `${regex.flags}g`))) {
+            out.push([m.index, m.index + m[0].length]);
+            if (out.length >= max) break;
+          }
+          return out;
+        },
+      };
+  if (matcher.test('')) {
     throw new ApiError(400, 'invalid_pattern', 'pattern matches every line');
   }
   const literals = input.regex ? requiredLiterals(input.q) : [input.q];
@@ -215,7 +221,7 @@ export function compileQuery(input: {
       grams.add(gram);
     }
   }
-  return { regex, grams: grams.size === 0 ? null : spread([...grams], MAX_GRAMS) };
+  return { matcher, grams: grams.size === 0 ? null : spread([...grams], MAX_GRAMS) };
 }
 
 /** Up to `n` items spread evenly across `items`. */
@@ -227,21 +233,21 @@ function spread<T>(items: T[], n: number): T[] {
   );
 }
 
-/** Matches of `regex` in `text` as `[start, end)` lines. */
-export function matchText(text: string, regex: RegExp, maxMatches: number): CodeMatch[] {
-  const global = new RegExp(regex.source, `${regex.flags}g`);
+/** Matches of `matcher` in `text` as `[start, end)` lines. */
+export function matchText(
+  text: string,
+  matcher: LineMatcher,
+  maxMatches: number,
+): CodeMatch[] {
   const out: CodeMatch[] = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length && out.length < maxMatches; i++) {
     const line = (lines[i] as string).slice(0, MAX_LINE_CHARS);
-    if (!regex.test(line)) continue;
-    const ranges: [number, number][] = [];
-    global.lastIndex = 0;
-    for (const m of line.matchAll(global)) {
-      if (m[0].length === 0) continue;
-      ranges.push([m.index, m.index + m[0].length]);
-      if (ranges.length >= RANGES_PER_LINE) break;
-    }
+    if (!matcher.test(line)) continue;
+    const ranges = matcher
+      .ranges(line, RANGES_PER_LINE + 1)
+      .filter(([a, b]) => b > a)
+      .slice(0, RANGES_PER_LINE);
     out.push({ line: i + 1, text: line, ranges });
   }
   return out;
@@ -546,15 +552,23 @@ export async function searchCode(
     const batch = queue.slice(next, next + READ_CONCURRENCY);
     next += batch.length;
     read += batch.length;
+    let spent = false;
     const found = await Promise.all(
       batch.map(async ({ view, file }) => {
         const blob = await getBlob(env, view.repo.id, file.hash);
         if (blob === null || isBinary(blob.content)) return { size: 0, result: null };
-        const matches = matchText(
-          new TextDecoder().decode(blob.content),
-          compiled.regex,
-          MATCHES_PER_FILE,
-        );
+        let matches: CodeMatch[];
+        try {
+          matches = matchText(
+            new TextDecoder().decode(blob.content),
+            compiled.matcher,
+            MATCHES_PER_FILE,
+          );
+        } catch (err) {
+          if (!(err instanceof MatchBudgetError)) throw err;
+          spent = true;
+          return { size: blob.size, result: null };
+        }
         const result: CodeResult | null =
           matches.length === 0
             ? null
@@ -572,6 +586,11 @@ export async function searchCode(
     for (const { size, result } of found) {
       bytes += size;
       if (result !== null) results.push(result);
+    }
+    // the matching budget is spent: what was not matched may hold results
+    if (spent) {
+      partial = true;
+      break;
     }
   }
   if (next < queue.length) {

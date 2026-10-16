@@ -40,6 +40,7 @@ import { enforceAgentAction } from '../policy/guardrails';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
 import { requestCodeOwners } from '../reviews/codeowners';
+import { requestPushMirrors } from '../mirrors/queue';
 
 export const collaborationRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -255,6 +256,8 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
         );
       }
       if (response.ok && action === 'merge') {
+        // push mirrors (#36) follow the merge like any other move of the branch
+        await requestPushMirrors(c.env, loaded.repo.id);
         // A merge moves the target branch like a push does, so it starts `on: push` pipelines.
         try {
           await pushPipelines(c.env, loaded.repo.id, triggerOf(c), [

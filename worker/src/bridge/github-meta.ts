@@ -240,6 +240,8 @@ const ghPull = z.object({
   created_at: time,
   updated_at: time,
   merged_at: time.nullish(),
+  /** The commit a merge, squash or rebase left on the base branch. */
+  merge_commit_sha: z.string().nullish(),
 });
 const ghReview = z.object({
   id: z.number(),
@@ -789,6 +791,11 @@ async function pullsStep(ctx: MetaContext, path: string): Promise<string | null>
       continue;
     }
     imported++;
+    // release notes and issue links match a merged pull request by what landed
+    const mergedCs =
+      pull.merged_at && pull.merge_commit_sha
+        ? await changesetForSha1(ctx.env, ctx.repo.id, pull.merge_commit_sha)
+        : null;
     const state = pull.merged_at
       ? 'merged'
       : pull.state === 'closed'
@@ -801,8 +808,8 @@ async function pullsStep(ctx: MetaContext, path: string): Promise<string | null>
       db
         .prepare(
           `INSERT OR IGNORE INTO pull_requests (repo_id, number, title, body, author_id, base_ref,
-             base_cs, head_cs, state, created_at, updated_at, merged_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+             base_cs, head_cs, state, created_at, updated_at, merged_at, merged_cs)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .bind(
           ctx.repo.id,
@@ -817,6 +824,7 @@ async function pullsStep(ctx: MetaContext, path: string): Promise<string | null>
           pull.created_at,
           pull.updated_at,
           pull.merged_at ?? null,
+          mergedCs,
         ),
       mapStatement(ctx, 'pull', pull.id, local, [ctx.repo.id, pull.number]),
       counterStatement(ctx, pull.number),

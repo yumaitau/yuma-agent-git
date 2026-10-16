@@ -22,6 +22,7 @@ import {
   rewriteReferences,
 } from '../src/bridge/github-meta';
 import { planChunks } from '../src/bridge/bulk-import';
+import { generateNotes } from '../src/releases/notes';
 import { runSecretScanSlice } from '../src/security/secrets/history';
 
 /**
@@ -168,6 +169,9 @@ beforeEach(async () => {
   gh = fakeGithub('acme-gh');
   restore = installFakeGithub(gh, app);
   admin = await loginAs(testEnv, 1, 'admin');
+  // the caller's linked GitHub account administers the source org
+  gh.objects['/user/1'] = { login: 'admin-gh' };
+  gh.objects['/orgs/acme-gh/memberships/admin-gh'] = { state: 'active', role: 'admin' };
   await setupOrg();
 });
 
@@ -261,7 +265,23 @@ describe('bulk import: one org end to end', () => {
         updated_at: at(3),
         merged_at: null,
       },
+      {
+        // squash-merged: the head is off main, the squash commit is main's head
+        id: 305,
+        number: 5,
+        title: 'Squashed',
+        body: '',
+        state: 'closed',
+        user: ghAlice,
+        base: { ref: 'main', sha: src.c1 },
+        head: { sha: src.c3 },
+        created_at: at(4),
+        updated_at: at(5),
+        merged_at: at(5),
+        merge_commit_sha: src.c2,
+      },
     ];
+    gh.lists[`${base}/pulls/5/reviews`] = [];
     gh.lists[`${base}/issues/comments`] = [
       {
         id: 401,
@@ -381,7 +401,7 @@ describe('bulk import: one org end to end', () => {
         issues: 3,
         sub_issue_links: 1,
         work_items: 1,
-        pulls: 1,
+        pulls: 2,
         issue_comments: 1,
         pull_comments: 1,
         reviews: 1,
@@ -470,7 +490,7 @@ describe('bulk import: one org end to end', () => {
         'SELECT last_number FROM repo_counters WHERE repo_id = ?',
         [repo.id],
       ),
-    ).toEqual({ last_number: 4 });
+    ).toEqual({ last_number: 5 });
 
     // pulls, conversation comments, reviews and line threads
     const pull = await q1<{
@@ -488,6 +508,23 @@ describe('bulk import: one org end to end', () => {
       base_ref: 'main',
       state: 'open',
     });
+    // a squash merge keeps what landed, so release notes list the pull request
+    const main = (await getRef(qEnv, repo.id, 'main'))!.head;
+    const tag = (await getRef(qEnv, repo.id, 'refs/tags/v1.0'))!.head;
+    expect(
+      await q1(
+        qEnv,
+        'SELECT state, merged_cs FROM pull_requests WHERE repo_id = ? AND number = 5',
+        [repo.id],
+      ),
+    ).toEqual({ state: 'merged', merged_cs: main });
+    const notes = await generateNotes(qEnv, repo, {
+      tag: 'v1.1',
+      target: main,
+      previous: { tag: 'v1.0', cs: tag },
+    });
+    expect(notes.pulls).toEqual([5]);
+    expect(notes.body).not.toContain('Other commits');
     expect(
       await q(
         qEnv,
@@ -594,9 +631,10 @@ describe('bulk import: one org end to end', () => {
       ]),
     ).toEqual([{ source: 'history', path: 'deploy.env', state: 'open' }]);
 
-    // read-only installation tokens only
+    // read-only installation tokens only (members: read checks the caller is a GitHub admin)
     expect(gh.tokenPermissions.length).toBeGreaterThan(0);
-    for (const p of gh.tokenPermissions) expect(p).toEqual(READ_ONLY);
+    for (const p of gh.tokenPermissions)
+      expect([READ_ONLY, { members: 'read' }]).toContainEqual(p);
     // chunked history: commits-only plan, then one fetch per chunk
     expect(gh.calls.filter((c) => c.endsWith('/git-upload-pack')).length).toBeGreaterThan(
       3,
@@ -844,6 +882,49 @@ describe('bulk import: API access', () => {
       bearer,
     );
     expect(started.status).toBe(202);
+  });
+
+  it('refuses an installation the caller does not administer on GitHub', async () => {
+    // an unrelated user owns a fresh forge org and names someone else's installation
+    const intruder = await loginAs(testEnv, 60, 'intruder');
+    const own = await call('POST', '/api/v1/orgs', { slug: 'evil' }, intruder.headers);
+    expect(own.status).toBe(201);
+    gh.objects['/user/60'] = { login: 'intruder-gh' };
+    const start = (headers: Record<string, string>) =>
+      call(
+        'POST',
+        '/api/v1/orgs/evil/imports',
+        { source: 'github', github_org: 'acme-gh', installation_id: 77 },
+        headers,
+      );
+    const refused = await start(intruder.headers);
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      'not_github_admin',
+    );
+    // a plain member of the GitHub org is refused too
+    gh.objects['/orgs/acme-gh/memberships/intruder-gh'] = {
+      state: 'active',
+      role: 'member',
+    };
+    expect((await start(intruder.headers)).status).toBe(403);
+    // and a forge user with no linked GitHub account
+    const local = await createUser(qEnv, 'local');
+    await run(
+      qEnv,
+      "INSERT INTO org_members (org_id, user_id, role) SELECT id, ?, 'owner' FROM orgs WHERE slug = 'evil'",
+      [local.id],
+    );
+    const session = await (
+      await import('../src/auth/session')
+    ).createSession(qEnv, local.id);
+    expect((await start({ cookie: `yag_session=${session.token}` })).status).toBe(403);
+    expect(
+      await q(
+        qEnv,
+        "SELECT id FROM bulk_imports WHERE org_id = (SELECT id FROM orgs WHERE slug = 'evil')",
+      ),
+    ).toEqual([]);
   });
 });
 

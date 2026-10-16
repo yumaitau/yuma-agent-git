@@ -134,6 +134,14 @@ describe('detectors', () => {
     expect(redactSecrets(`a\n${legacy}\nb`)).toBe('a\n[REDACTED:private_key]\nb');
     const cut = `-----BEGIN ${'OPENSSH PRIVATE'} KEY-----\n${body}\n${body}`;
     expect(redactSecrets(`x\n${cut}`)).toBe('x\n[REDACTED:private_key]');
+
+    // a service account key: the PEM inside a JSON string, newlines escaped
+    const pem = `-----BEGIN ${'PRIVATE'} KEY-----\\n${body}\\n${body}\\n-----END ${'PRIVATE'} KEY-----\\n`;
+    const json = `{\n  "type": "service_account",\n  "private_key": "${pem}",\n  "client_id": "1"\n}\n`;
+    expect(scanText(json).map((f) => [f.detector, f.line])).toEqual([['private_key', 3]]);
+    expect(redactSecrets(json)).toBe(
+      '{\n  "type": "service_account",\n  "private_key": "[REDACTED:private_key]\\n",\n  "client_id": "1"\n}\n',
+    );
   });
 
   it('a token inside a generic assignment is reported once, as itself', () => {

@@ -180,6 +180,45 @@ beforeEach(async () => {
   );
 });
 
+describe('merge queue and agents (#43 x #57)', () => {
+  it('refuses an agent queueing a pull request, as a direct merge does', async () => {
+    await json(
+      await call(owner, 'POST', '/rulesets', {
+        name: 'Merge queue',
+        target: 'branch',
+        conditions: { ref_name: { include: ['~DEFAULT_BRANCH'] } },
+        rules: [{ type: 'merge_queue', mode: 'strict', max_batch: 1 }],
+      }),
+      201,
+    );
+    const pull = await openPull();
+    // approved by another writer, so a person could queue it
+    const reviewer = await loginAs(testEnv, 2, 'reviewer');
+    await run(
+      dbEnv,
+      "INSERT INTO repo_members (repo_id, user_id, role) VALUES (?, ?, 'write')",
+      [repoId, reviewer.userId],
+    );
+    const body = { head_cs: pull.head_cs, revision: pull.revision };
+    await json(
+      await call(reviewer, 'POST', `/pulls/${pull.id}/review`, {
+        ...body,
+        decision: 'approve',
+        body: 'ok',
+      }),
+    );
+    const worker = await agent('contents:read contents:write pulls:write');
+    const queued = await call(worker, 'POST', `/pulls/${pull.id}/queue`, body);
+    expect(queued.status, await queued.clone().text()).toBe(403);
+    expect(((await queued.json()) as { error: { code: string } }).error.code).toBe(
+      'protected_branch',
+    );
+    const merged = await call(worker, 'POST', `/pulls/${pull.id}/merge`, body);
+    expect(merged.status).toBe(403);
+    expect(await q1(dbEnv, 'SELECT id FROM merge_queue_entries')).toBeNull();
+  });
+});
+
 describe('work queue guardrails (#59 x #62)', () => {
   it('holds an agent claim of high risk work until a person approves it', async () => {
     await policy([

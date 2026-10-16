@@ -27,6 +27,7 @@ import {
   trigrams,
 } from '../src/core/derived/codeSearch';
 import { compileQuery, requiredLiterals } from '../src/core/search';
+import { linearMatcher, MatchBudgetError } from '../src/core/linear-regex';
 import { executeTool, type ToolCtx } from '../src/agents/tools';
 import { newBudget } from '../src/agents/budget';
 import type { Principal } from '../src/auth/principal';
@@ -155,7 +156,7 @@ describe('code search index', () => {
     expect(requiredLiterals('get[A-Z]\\w+Async')).toEqual(['get', 'Async']);
     expect(requiredLiterals('(optional)?required')).toEqual(['required']);
     expect(
-      compileQuery({ q: 'a.b', regex: false, caseSensitive: false }).regex.test('a.b'),
+      compileQuery({ q: 'a.b', regex: false, caseSensitive: false }).matcher.test('a.b'),
     ).toBe(true);
   });
 
@@ -315,8 +316,9 @@ describe('GET /api/v1/search/code', () => {
       expect(res.status).toBe(400);
       return ((await res.json()) as { error: { code: string } }).error.code;
     };
-    expect(await bad({ q: '(a+)+$', regex: '1' })).toBe('unsafe_pattern');
     expect(await bad({ q: '(unclosed', regex: '1' })).toBe('invalid_pattern');
+    expect(await bad({ q: 'a(?=b)', regex: '1' })).toBe('invalid_pattern');
+    expect(await bad({ q: '(a)\\1', regex: '1' })).toBe('invalid_pattern');
     expect(await bad({ q: '.*', regex: '1' })).toBe('invalid_pattern');
     expect(await bad({ q: 'x'.repeat(201) })).toBe('invalid_request');
     // alternation has no required literal: matched by reading every file
@@ -325,6 +327,79 @@ describe('GET /api/v1/search/code', () => {
         (m) => m.line,
       ),
     ).toEqual([1, 2]);
+  });
+
+  it('matches backtracking patterns in linear time', async () => {
+    const line = `${'a'.repeat(999)}!`; // within the 1000 characters matched
+    await seedRepo('acme/redos', { 'a.txt': `${line}\n${'a'.repeat(30)}\n` });
+    const started = Date.now();
+    // RegExp backtracks for seconds to years on the first line; none match it
+    for (const [q, want] of [
+      ['((a+))+$', [2]],
+      ['(a|aa)+$', [2]],
+      ['(a*)*b', []],
+      ['.*.*.*.*x', []],
+      ['(\\w+\\s?)+$', [2]],
+    ] as const) {
+      const found = await search({ q, regex: '1', repo: 'acme/redos' });
+      expect(
+        found.results.flatMap((r) => r.matches.map((m) => m.line)),
+        q,
+      ).toEqual(want);
+    }
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('finds the same matches as RegExp', () => {
+    const lines = [
+      'const fooBar = startServer(port, { host: "0.0.0.0" });',
+      'if (x <= 10 && y >= 2) return a_b + c$d;',
+      'Hello, World!  tabs\there\u00e9 [brackets] {braces} a|b',
+      'aaa bbb aaab abab ba',
+      '',
+    ];
+    const patterns = [
+      'start_?[sS]erver',
+      '\\bfoo\\w*',
+      '[A-Z][a-z]+',
+      '\\d+(\\.\\d+)*',
+      '(a|ab)(c|bcd)?',
+      'a+?b',
+      'a{2,3}',
+      'b{2}',
+      '[^\\s\\w]+',
+      '\\$\\w',
+      '^const|;$',
+      '\\[\\w+\\]',
+      '\\{braces}',
+      'a\\|b',
+      '(?:ab)+',
+      '\\x41|\\u00e9',
+      '[\\d.]+',
+      '\\B\\w\\b',
+      '(?<word>W\\w+)',
+      '[a-c-]{3,}',
+    ];
+    for (const p of patterns) {
+      for (const ci of [false, true]) {
+        const expected = new RegExp(p, `g${ci ? 'i' : ''}`);
+        const matcher = linearMatcher(p, ci);
+        for (const line of lines) {
+          const want = [...line.matchAll(expected)]
+            .filter((m) => m[0].length > 0)
+            .map((m) => [m.index, m.index + m[0].length]);
+          expect(matcher.ranges(line, 100), `${p} on ${line}`).toEqual(want);
+          expect(matcher.test(line), `${p} on ${line}`).toBe(
+            new RegExp(p, ci ? 'i' : '').test(line),
+          );
+        }
+      }
+    }
+  });
+
+  it('stops matching when the search spends its budget', () => {
+    const matcher = linearMatcher('(a|b)*c', false, { steps: 1000 });
+    expect(() => matcher.test('ab'.repeat(500))).toThrow(MatchBudgetError);
   });
 
   it('never returns files a deny path rule hides', async () => {
@@ -473,8 +548,8 @@ describe('agent grep tool', () => {
     expect(out.matches).toEqual([
       { path: 'zz/last.txt', line: 1, text: 'needle in the haystack' },
     ]);
-    expect(await executeTool(dbEnv, ctx, 'grep', { pattern: '(a+)+$' })).toMatchObject({
-      error: 'unsafe_pattern',
+    expect(await executeTool(dbEnv, ctx, 'grep', { pattern: 'a(?=b)' })).toMatchObject({
+      error: 'invalid_pattern',
     });
   });
 });

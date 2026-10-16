@@ -8,7 +8,7 @@ import { getRepo, listRefs } from '../db/repos';
 import { decide, pathDecider, restrictingDecision } from '../auth/rbac';
 import { appendAudit } from '../audit/record';
 import { decryptSecrets } from '../secrets/crypto';
-import { installationToken } from '../bridge/github';
+import { githubApi, installationToken } from '../bridge/github';
 import { isAncestorDag } from '../core/ancestry';
 import { AGENT_PREFIX } from '../core/refs';
 import { changesetForSha1, readGitObject } from '../git/mapping';
@@ -178,16 +178,52 @@ async function checkAccess(env: Env, repo: RepoRecord, principal: Principal) {
   }
 }
 
+/**
+ * Why the GitHub App cannot reach `url` for `repo`, or null. The App's
+ * installation covers many repositories, so a mirror may use it only for the
+ * one GitHub repository this forge repo is connected to.
+ */
+export async function githubAppProblem(
+  env: Env,
+  repo: RepoRecord,
+  url: string,
+): Promise<string | null> {
+  if (!repo.github_installation_id || !repo.github_repo_id)
+    return 'connect the repository to the GitHub App first';
+  const res = await githubApi(
+    env,
+    repo.github_installation_id,
+    `/repositories/${repo.github_repo_id}`,
+  );
+  if (!res.ok) return 'the connected GitHub repository is not reachable via the App';
+  const { full_name: fullName } = z
+    .object({ full_name: z.string() })
+    .parse(await res.json());
+  const remote = new URL(url);
+  const path = remote.pathname.replace(/\/+$/, '').replace(/\.git$/, '');
+  return remote.host === 'github.com' &&
+    path.toLowerCase() === `/${fullName.toLowerCase()}`
+    ? null
+    : `the GitHub App reaches only the connected repository, https://github.com/${fullName}.git`;
+}
+
 async function remoteOf(env: Env, repo: RepoRecord, mirror: MirrorRow): Promise<Remote> {
   const problem = remoteUrlProblem(mirror.remote_url);
   if (problem) throw new MirrorError(problem);
   if (mirror.auth === 'none') return { url: mirror.remote_url, basic: null };
   if (mirror.auth === 'github_app') {
-    if (!repo.github_installation_id)
-      throw new MirrorError('the repository is not connected to the GitHub App');
+    const appProblem = await githubAppProblem(env, repo, mirror.remote_url);
+    if (appProblem) throw new MirrorError(appProblem);
     let token: string;
     try {
-      token = await installationToken(env, repo.github_installation_id);
+      // this repository only, and write only for a push mirror
+      token = await installationToken(
+        env,
+        repo.github_installation_id as number,
+        { contents: mirror.direction === 'push' ? 'write' : 'read', metadata: 'read' },
+        Date.now(),
+        [repo.github_repo_id as number],
+      );
     } catch {
       throw new MirrorError('a GitHub App installation token could not be issued');
     }

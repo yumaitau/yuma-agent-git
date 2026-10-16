@@ -91,7 +91,9 @@ https://github.com/settings/apps with:
 - Setup URL / install callback: `https://<your-worker>.workers.dev/auth/github/install-callback`
 - Webhook URL: `https://<your-worker>.workers.dev/webhooks/github`
 - Webhook secret: the same value as `GITHUB_WEBHOOK_SECRET`
-- Permissions: Contents **read**, Metadata **read**
+- Permissions: Contents **read**, Metadata **read**; for org bulk imports also
+  Organization Members **read** (the forge checks that whoever starts an
+  import is an admin of the GitHub org)
 - Subscribe to: `installation`, `installation_repositories`, `push`
 - Where can it be installed: any account (org installation supported)
 

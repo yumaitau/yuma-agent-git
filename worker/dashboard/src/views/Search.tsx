@@ -209,8 +209,9 @@ export function SearchView(): ReactElement {
             Search
           </button>
           <span className="small muted">
-            Regular expressions: up to 200 characters, no nested quantifiers, the first
-            1000 characters of each line. Files over 1 MiB are found by name only.
+            Regular expressions: up to 200 characters, no look-around or back-references,
+            the first 1000 characters of each line. Files over 1 MiB are found by name
+            only.
           </span>
         </div>
       </form>
