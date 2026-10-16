@@ -242,7 +242,8 @@ describe('the evaluator', () => {
       repoId: null,
     };
     expect(canBypass(r, { ...nobody, principal: token })).toBe(true);
-    // an agent identity (#57) never bypasses as its human, only when named
+    // an agent identity (#57) never bypasses as its human, only when named and
+    // its human may bypass too (any org member can delegate to an org agent)
     const agent = {
       kind: 'agent' as const,
       userId: 'u9',
@@ -254,7 +255,12 @@ describe('the evaluator', () => {
     };
     expect(canBypass(r, { principal: agent, role: 'admin', teams: ['ops'] })).toBe(false);
     const named = ruleset({ rules: [{ type: 'deletion' }], bypass: ['agent:a1'] });
-    expect(canBypass(named, { ...nobody, principal: agent })).toBe(true);
+    expect(canBypass(named, { ...nobody, principal: agent })).toBe(false);
+    const both = ruleset({
+      rules: [{ type: 'deletion' }],
+      bypass: ['agent:a1', 'user:u9'],
+    });
+    expect(canBypass(both, { ...nobody, principal: agent })).toBe(true);
     expect(canBypass(r, { principal: null, role: null, teams: [] })).toBe(false);
     const write = ruleset({ rules: [{ type: 'deletion' }], bypass: ['role:write'] });
     expect(canBypass(write, { ...nobody, role: 'admin' })).toBe(true);

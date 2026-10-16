@@ -48,14 +48,17 @@ interface MergeCheck {
   version: number;
   /** Pipeline runs on this revision; a run started after the gate blocks the merge. */
   pipelineCount: number;
+  /** The settings pipeline's latest run is one of the checks. */
+  settingsRun: boolean;
 }
 
 /**
  * Merge requirements for `actor`: pull request state, then the rulesets on
  * the target branch (#41) with this revision's approvals and CI result.
  * Without an active `pull_request` rule a merge still needs one approval.
- * Pipelines (#47) that ran on this revision replace the settings pipeline as
- * its checks; with no CI policy at all they gate the merge by themselves.
+ * Pipelines (#47) that ran on this revision add checks. They never replace
+ * the settings pipeline, since the pull request's author writes them and only
+ * admins set the CI policy; with no CI policy at all they are the checks.
  */
 async function checkMerge(
   env: Env,
@@ -87,17 +90,17 @@ async function checkMerge(
   const approvals = [...latest.values()].filter((r) => r.decision === 'approve').length;
   const version = config?.version ?? 0;
   const pipelines = await pipelineGate(env, pull.repo_id, pull.head_cs);
-  const check =
-    pipelines.count > 0
-      ? null
-      : await q1<{ state: string }>(
-          env,
-          `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
+  const settingsRun = config !== null || pipelines.count === 0;
+  const check = !settingsRun
+    ? null
+    : await q1<{ state: string }>(
+        env,
+        `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
           AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-          [pull.repo_id, pull.head_cs, version],
-        );
+        [pull.repo_id, pull.head_cs, version],
+      );
   const checksPassed =
-    pipelines.count > 0 ? pipelines.reasons.length === 0 : check?.state === 'passed';
+    (!settingsRun || check?.state === 'passed') && pipelines.reasons.length === 0;
   const rulesets = await rulesetsFor(env, repo);
   const outcome = evaluate(rulesets, {
     repo,
@@ -120,6 +123,7 @@ async function checkMerge(
     outcome,
     version,
     pipelineCount: pipelines.count,
+    settingsRun,
   };
 }
 
@@ -161,7 +165,7 @@ export async function mergePullLocked(
       repoId,
       pull.base_ref,
       pull.base_cs,
-      gate.outcome.requireChecks && gate.pipelineCount === 0 ? 1 : 0,
+      gate.outcome.requireChecks && gate.settingsRun ? 1 : 0,
       repoId,
       pull.head_cs,
       gate.version,

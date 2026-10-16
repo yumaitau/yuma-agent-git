@@ -3,7 +3,7 @@ import type { Env } from '../env';
 import { C, T } from '../db/schema';
 import { parsePathRuleRow, q } from '../db/client';
 import type { PathRuleRecord, RepoRecord } from '../db/client';
-import { agentIdOf, boundRepos, hasScope, type Principal } from './principal';
+import { boundRepos, hasScope, type Principal } from './principal';
 import { ssoRequirement, type SsoRequirement } from './sso';
 
 /**
@@ -90,7 +90,10 @@ function ruleMatchesPrincipal(
     case 'user':
       return principal.userId === id;
     case 'agent':
-      return agentIdOf(principal) === id;
+      // API tokens match by id with or without `agent:run`, as before #57
+      return principal.kind === 'agent'
+        ? principal.agentId === id
+        : principal.kind === 'token' && principal.tokenId === id;
     case 'role':
       return role === id;
     default:
@@ -247,7 +250,17 @@ export function restrictingDecision(
 }
 
 function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
-  const decision = evaluateAccess(ctx, perm, path);
+  let decision = evaluateAccess(ctx, perm, path);
+  // Any delegating human can use an agent, so `agent:` grants never take it
+  // past what that human gets (#57).
+  const p = ctx.principal;
+  if (decision.allowed && p?.kind === 'agent') {
+    decision = evaluateAccess(
+      { ...ctx, principal: { kind: 'user', userId: p.userId } },
+      perm,
+      path,
+    );
+  }
   if (!decision.allowed || ctx.sso === null) return decision;
   return evaluateAccess({ ...ctx, principal: null }, perm, path).allowed
     ? decision

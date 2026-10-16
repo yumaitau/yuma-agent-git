@@ -295,7 +295,7 @@ describe('agent identities (#57)', () => {
     );
   });
 
-  it('applies rulesets to agent refs, and lets an agent bypass only when named', async () => {
+  it('applies rulesets to agent refs, and lets an agent bypass only when named and its human may', async () => {
     const agentId = await createAgent(owner, {});
     const token = await agentToken({
       subject_token: ownerToken,
@@ -339,7 +339,15 @@ describe('agent identities (#57)', () => {
     };
     await bypass('role:admin');
     expect(await forced()).toMatch(/^ruleset "Agent refs" non_fast_forward/);
+    // named alone is not enough: the human it acts for must be able to bypass too
     await bypass(`agent:${agentId}`);
+    expect(await forced()).toMatch(/^ruleset "Agent refs" non_fast_forward/);
+    const res = await call(`/api/v1/repos/acme/app/rulesets/${id}`, {
+      method: 'PUT',
+      headers: owner.headers,
+      body: { ...rules, bypass: [`agent:${agentId}`, 'role:admin'] },
+    });
+    expect(res.status).toBe(200);
     expect(await forced()).toBe('ok');
   });
 
@@ -470,6 +478,83 @@ describe('agent identities (#57)', () => {
     expect(
       (await call('/api/v1/repos/acme/app', { headers: bearer(short) })).status,
     ).toBe(401);
+  });
+
+  it('revoking or expiring the delegating API token revokes its agent tokens', async () => {
+    const agentId = await createAgent(owner, {});
+    const delegate = await createApiToken(dbEnv, owner.userId, {
+      label: 'delegate',
+      scopes: ['repo:read', 'repo:write', 'agent:run'],
+    });
+    const token = await agentToken({
+      subject_token: delegate.raw,
+      agent_id: agentId,
+      resource: 'acme/app',
+      expires_in: '3600',
+    });
+    const repo = () => call('/api/v1/repos/acme/app', { headers: bearer(token) });
+    expect((await repo()).status).toBe(200);
+    await run(dbEnv, 'UPDATE api_tokens SET expires_at = ? WHERE id = ?', [
+      Date.now() - 1,
+      delegate.id,
+    ]);
+    expect((await repo()).status).toBe(401);
+    await run(dbEnv, 'UPDATE api_tokens SET expires_at = NULL WHERE id = ?', [
+      delegate.id,
+    ]);
+    expect((await repo()).status).toBe(200);
+    const revoked = await call(`/api/v1/tokens/${delegate.id}`, {
+      method: 'DELETE',
+      headers: owner.headers,
+    });
+    expect(revoked.status).toBe(200);
+    expect((await repo()).status).toBe(401);
+    expect(await q(dbEnv, 'SELECT jti FROM agent_tokens')).toEqual([]);
+  });
+
+  it('needs ci:run for pipeline runs and contents:write for issue writes', async () => {
+    const agentId = await createAgent(owner, {});
+    const token = await agentToken({
+      subject_token: ownerToken,
+      agent_id: agentId,
+      resource: 'acme/app',
+      scope: 'contents:read contents:write',
+    });
+    for (const path of ['/ci/pipelines/runs', '/ci/pipelines/runs/x/cancel']) {
+      const res = await call(`/api/v1/repos/acme/app${path}`, {
+        method: 'POST',
+        headers: bearer(token),
+        body: { pipeline: '.yuma/pipelines/ci.yml' },
+      });
+      expect(res.status, path).toBe(403);
+      expect(((await res.json()) as { error: { code: string } }).error.code, path).toBe(
+        'insufficient_scope',
+      );
+    }
+    const reader = await agentToken({
+      subject_token: ownerToken,
+      agent_id: agentId,
+      resource: 'acme/app',
+      scope: 'contents:read',
+    });
+    const issue = await call('/api/v1/repos/acme/app/issues', {
+      method: 'POST',
+      headers: bearer(reader),
+      body: { title: 'From a read-only agent' },
+    });
+    expect(issue.status).toBe(403);
+    expect(((await issue.json()) as { error: { code: string } }).error.code).toBe(
+      'insufficient_scope',
+    );
+    expect(
+      (
+        await call('/api/v1/repos/acme/app/issues', {
+          method: 'POST',
+          headers: bearer(token),
+          body: { title: 'From a writing agent' },
+        })
+      ).status,
+    ).toBe(201);
   });
 
   it('refuses exchanges outside the grant', async () => {

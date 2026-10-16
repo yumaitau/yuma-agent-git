@@ -1,11 +1,13 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
 import { requireRecentMfa } from '../auth/session';
 import {
   satisfiesSso,
   ssoConfigSchema,
+  ssoMessage,
   ssoProviderId,
+  unmetSso,
   type SsoConfig,
 } from '../auth/sso';
 import { q1, run } from '../db/client';
@@ -18,7 +20,8 @@ import { loadOrg } from './orgs';
  * Org SSO settings (issue #27). Members read them (to know where to sign in);
  * owners with a recent second factor change them. The IdP must be one of the
  * instance's OIDC providers, and an owner can only enforce SSO from a session
- * that already meets it, so enforcing never locks the owner out.
+ * that already meets it, so enforcing never locks the owner out. Once it is
+ * enforced, changing or removing it also needs such a session.
  *
  *   GET    /api/v1/orgs/:org/sso   settings, plus whether the caller meets them
  *   PUT    /api/v1/orgs/:org/sso   set (owners)
@@ -50,6 +53,15 @@ async function loadSso(
 ): Promise<SsoConfig | null> {
   const row = await q1(env, 'SELECT * FROM org_sso WHERE org_id = ?', [orgId]);
   return row ? ssoConfigSchema.parse(row) : null;
+}
+
+/** Owners who have not met the org's enforced SSO cannot change it (403 `sso_required`). */
+async function requireOrgSso(c: Context<AppEnv>, orgId: string): Promise<void> {
+  const sso = (await unmetSso(c.env, c.get('principal'))).get(orgId);
+  if (sso)
+    throw new ApiError(403, 'sso_required', ssoMessage(sso, new URL(c.req.url).origin), {
+      ...sso,
+    });
 }
 
 function view(env: AppEnv['Bindings'], cfg: SsoConfig): Record<string, unknown> {
@@ -94,6 +106,7 @@ orgSsoRoutes.put('/orgs/:org/sso', async (c) => {
     const { org, me } = await loadOrg(c, 'owner');
     const mfa = await requireRecentMfa(c);
     if (mfa) return mfa;
+    await requireOrgSso(c, org.id);
     const parsed = putSsoSchema.safeParse(await readJsonBody(c));
     if (!parsed.success) {
       throw new ApiError(
@@ -165,6 +178,7 @@ orgSsoRoutes.delete('/orgs/:org/sso', async (c) => {
     const { org } = await loadOrg(c, 'owner');
     const mfa = await requireRecentMfa(c);
     if (mfa) return mfa;
+    await requireOrgSso(c, org.id);
     const removed = await q1(
       c.env,
       'DELETE FROM org_sso WHERE org_id = ? RETURNING org_id',

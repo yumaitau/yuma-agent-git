@@ -156,6 +156,59 @@ describe('path rules (monorepo security)', () => {
     expect(await can(dbEnv, repo, p, 'read', 'src/secret/key.pem')).toBe(false);
   });
 
+  it('agent: grants never take an agent past its human, and token rules need no agent:run', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/rel', visibility: 'private' });
+    await addMember(repo.id, user.userId, 'read');
+    await addRuleFor(repo.id, {
+      path_prefix: 'secrets/',
+      effect: 'deny',
+      principal: '*',
+      perms: ['read'],
+    });
+    await addRuleFor(repo.id, {
+      path_prefix: 'secrets/',
+      effect: 'grant',
+      principal: 'agent:agt_REL',
+      perms: ['read'],
+    });
+    const agent: Principal = {
+      kind: 'agent',
+      userId: user.userId,
+      agentId: 'agt_REL',
+      jti: 'j',
+      taskId: null,
+      scopes: ['contents:read'],
+      repoIds: [repo.id],
+    };
+    // the human is denied secrets/, so the agent acting for them is too
+    expect(await can(dbEnv, repo, agent, 'read', 'secrets/key.pem')).toBe(false);
+    expect(await can(dbEnv, repo, agent, 'read', 'src/app.ts')).toBe(true);
+    await addRuleFor(repo.id, {
+      path_prefix: 'secrets/',
+      effect: 'grant',
+      principal: `user:${user.userId}`,
+      perms: ['read'],
+    });
+    expect(await can(dbEnv, repo, agent, 'read', 'secrets/key.pem')).toBe(true);
+
+    // a rule naming an API token applies whether or not it has agent:run
+    await addRuleFor(repo.id, {
+      path_prefix: 'ci/',
+      effect: 'deny',
+      principal: 'agent:tok_ci',
+      perms: ['read'],
+    });
+    const token: Principal = {
+      kind: 'token',
+      userId: user.userId,
+      tokenId: 'tok_ci',
+      scopes: ['repo:read'],
+      repoId: null,
+    };
+    expect(await can(dbEnv, repo, token, 'read', 'ci/deploy.sh')).toBe(false);
+    expect(await can(dbEnv, repo, token, 'read', 'src/app.ts')).toBe(true);
+  });
+
   it('user-specific beats role-based beats *; deny wins ties', async () => {
     const repo = await createRepo(dbEnv, {
       slug: 'acme/specific',

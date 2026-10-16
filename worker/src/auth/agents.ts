@@ -10,6 +10,7 @@ import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import { actorOf, recordAudit } from '../audit/record';
 import { can } from './rbac';
 import { hasScope, type AppEnv, type Principal } from './principal';
+import { ssoMessage, ssoRequirement } from './sso';
 import { resolveTokenPrincipal } from './tokens';
 
 /**
@@ -22,6 +23,8 @@ import { resolveTokenPrincipal } from './tokens';
  * and an optional task. RBAC resolves the human's role for that token, so an
  * agent never exceeds the person it acts for. Disabling an agent deletes its
  * tokens and every lookup also checks the flag, so the next request fails.
+ * Each lookup also needs the delegating API token, whose sign-in method the
+ * agent carries for org SSO, so revoking that token revokes the agent's.
  */
 
 export const AGENT_TOKEN_PREFIX = 'yagat_';
@@ -139,11 +142,13 @@ const agentTokenRowSchema = z.object({
   scopes: z.string(),
   repos: z.string(),
   expires_at: z.number(),
+  auth_method: z.string().nullable(),
 });
 
 /**
  * Resolve a raw `yagat_` token. Null when unknown, expired, revoked, its
- * agent disabled or the human it acts for deprovisioned.
+ * agent disabled, its delegating API token revoked or expired, or the human
+ * it acts for deprovisioned.
  */
 export async function resolveAgentToken(
   env: Env,
@@ -152,12 +157,15 @@ export async function resolveAgentToken(
 ): Promise<Principal | null> {
   const row = await q1(
     env,
-    `SELECT t.jti, t.agent_id, t.on_behalf_of, t.task_id, t.scopes, t.repos, t.expires_at
+    `SELECT t.jti, t.agent_id, t.on_behalf_of, t.task_id, t.scopes, t.repos, t.expires_at,
+            s.auth_method
        FROM agent_tokens t
        JOIN agents a ON a.id = t.agent_id
        JOIN ${T.users} u ON u.${C.users.id} = t.on_behalf_of
-      WHERE t.token_hash = ? AND a.disabled = 0 AND u.active = 1`,
-    [await hashToken(raw)],
+       JOIN ${T.apiTokens} s ON s.${C.apiTokens.id} = t.subject_token_id
+      WHERE t.token_hash = ? AND a.disabled = 0 AND u.active = 1
+        AND (s.${C.apiTokens.expiresAt} IS NULL OR s.${C.apiTokens.expiresAt} >= ?)`,
+    [await hashToken(raw), now],
   );
   if (!row) return null;
   const token = agentTokenRowSchema.parse(row);
@@ -170,6 +178,7 @@ export async function resolveAgentToken(
     taskId: token.task_id,
     scopes: JSON.parse(token.scopes) as string[],
     repoIds: JSON.parse(token.repos) as string[],
+    authMethod: token.auth_method,
   };
 }
 
@@ -320,6 +329,19 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
       ) {
         return apiError(c, 400, 'invalid_target', `repo ${slug} is not available`);
       }
+      // public org repos pass the read check above even when org SSO is unmet
+      const sso = await ssoRequirement(c.env, repo, subject);
+      if (sso) {
+        return apiError(
+          c,
+          403,
+          'sso_required',
+          ssoMessage(sso, new URL(c.req.url).origin),
+          {
+            ...sso,
+          },
+        );
+      }
       repos.push(repo);
     }
 
@@ -330,8 +352,9 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
     const expiresAt = now + ttl * 1000;
     const insert = c.env.DB.prepare(
       `INSERT INTO agent_tokens
-         (jti, token_hash, agent_id, on_behalf_of, task_id, scopes, repos, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (jti, token_hash, agent_id, on_behalf_of, task_id, scopes, repos, created_at, expires_at,
+          subject_token_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       jti,
       await hashToken(raw),
@@ -342,6 +365,7 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
       JSON.stringify(repos.map((r) => r.id)),
       now,
       expiresAt,
+      subject.tokenId,
     );
     // one event per repo so each owner's chain shows it; the first carries the insert
     for (const [i, repo] of repos.entries()) {

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
-import { loadWholeRepo } from '../auth/guards';
+import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { recordAudit } from '../audit/record';
 import { q1 } from '../db/client';
 import { resolveRevision } from '../core/read';
@@ -36,6 +36,8 @@ pipelineRoutes.post(`${base}/runs`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'ci:run');
+    if (scoped) return scoped;
     const parsed = manual.safeParse(await readJsonBody(c));
     if (!parsed.success)
       throw new ApiError(400, 'invalid_request', 'Give the pipeline file path');
@@ -88,6 +90,8 @@ pipelineRoutes.post(`${base}/runs/:id/cancel`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'ci:run');
+    if (scoped) return scoped;
     const found = await q1<{ id: string }>(
       c.env,
       'SELECT id FROM ci_pipeline_runs WHERE id = ? AND repo_id = ?',

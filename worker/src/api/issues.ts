@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { z } from 'zod';
-import type { AppEnv, Principal } from '../auth/principal';
+import { hasScope, type AppEnv, type Principal } from '../auth/principal';
 import { can, type RepoWithCreator } from '../auth/rbac';
 import {
   loadAdminRepo,
@@ -77,10 +77,10 @@ function principalOf(c: Context<AppEnv>): Principal {
   return c.get('principal') as Principal; // `/api/*` already refused anonymous callers
 }
 
-/** Opening issues and commenting are writes: tokens need `repo:write`. */
+/** Opening issues and commenting are writes: tokens need `repo:write` (agents `contents:write`). */
 function requireWriteScope(c: Context<AppEnv>): void {
   const principal = principalOf(c);
-  if (principal.kind === 'token' && !principal.scopes.includes('repo:write'))
+  if (principal.kind !== 'user' && !hasScope(principal, 'repo:write'))
     throw new ApiError(403, 'insufficient_scope', 'Token requires repo:write');
 }
 

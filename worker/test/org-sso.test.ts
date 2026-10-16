@@ -165,6 +165,14 @@ describe('org SSO enforcement', () => {
     );
     expect(audited.map((a) => a.action)).toEqual(['org.sso.set']);
 
+    // once enforced, only a session that meets it can relax or remove it
+    for (const res of [
+      await put(owner.cookie, { ...OKTA_SSO, enforced: false }),
+      await call(owner.cookie, 'DELETE', '/api/v1/orgs/yuma/sso'),
+    ]) {
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).code).toBe('sso_required');
+    }
     expect((await call(ownerOkta, 'DELETE', '/api/v1/orgs/yuma/sso')).status).toBe(200);
     expect((await call(ownerOkta, 'DELETE', '/api/v1/orgs/yuma/sso')).status).toBe(404);
   });
@@ -291,6 +299,57 @@ describe('org SSO enforcement', () => {
     expect(refused.status).toBe(400);
     expect((await errorOf(refused)).code).toBe('invalid_target');
     expect((await exchange(await delegate(ownerOkta))).status).toBe(200);
+  });
+
+  it('gates agent tokens on SSO: public repos at exchange, older tokens on use', async () => {
+    const res = await call(member.cookie, 'POST', '/api/v1/tokens', {
+      label: 'delegate',
+      scopes: ['repo:read', 'repo:write', 'agent:run'],
+    });
+    const githubToken = ((await res.json()) as { token: string }).token;
+    const agent = await call(member.cookie, 'POST', '/api/v1/agents', {
+      name: 'Codex',
+      kind: 'codex',
+    });
+    const agentId = ((await agent.json()) as { id: string }).id;
+    expect(
+      (
+        await call(ownerOkta, 'POST', '/api/v1/repos', {
+          slug: 'yuma/lib',
+          org: 'yuma',
+          visibility: 'public',
+        })
+      ).status,
+    ).toBe(201);
+    const exchange = (resource: string) =>
+      app('/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+          subject_token: githubToken,
+          subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          agent_id: agentId,
+          resource,
+        }),
+      });
+    const before = await exchange('yuma/core');
+    expect(before.status).toBe(200);
+    const agentToken = ((await before.json()) as { access_token: string }).access_token;
+    const bearer = { authorization: `Bearer ${agentToken}` };
+    expect((await app('/api/v1/repos/yuma/core', { headers: bearer })).status).toBe(200);
+    expect((await call(ownerOkta, 'PUT', '/api/v1/orgs/yuma/sso', OKTA_SSO)).status).toBe(
+      200,
+    );
+
+    // the token issued before enforcement carries its delegation's sign-in
+    const refused = await app('/api/v1/repos/yuma/core', { headers: bearer });
+    expect(refused.status).toBe(403);
+    expect((await errorOf(refused)).code).toBe('sso_required');
+    // a public org repo passes the read check but not the org's SSO
+    const lib = await exchange('yuma/lib');
+    expect(lib.status).toBe(403);
+    expect((await errorOf(lib)).code).toBe('sso_required');
   });
 
   it('does nothing while SSO is configured but not enforced', async () => {

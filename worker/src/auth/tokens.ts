@@ -160,7 +160,11 @@ export async function deleteApiToken(
     [id],
   );
   if (!existing || (existing as { user_id: string }).user_id !== userId) return false;
-  await run(env, `DELETE FROM ${T.apiTokens} WHERE ${C.apiTokens.id} = ?`, [id]);
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM ${T.apiTokens} WHERE ${C.apiTokens.id} = ?`).bind(id),
+    // agent tokens exchanged from it stop resolving anyway; drop them from live counts
+    env.DB.prepare('DELETE FROM agent_tokens WHERE subject_token_id = ?').bind(id),
+  ]);
   return true;
 }
 

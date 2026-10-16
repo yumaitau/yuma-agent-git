@@ -43,12 +43,12 @@ jobs:
 
 ## Triggers
 
-| Trigger        | When it runs                                                                                                                                         |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `push`         | After `git push` moves a branch or tag. `branches`, `tags` and `paths` filter it; a filter on only branches leaves tags out and the other way round. |
-| `pull_request` | When a pull request opens, leaves draft or gets a new revision. `branches` matches the target branch; `paths` matches the pull request's changes.    |
-| `manual`       | `POST /api/v1/repos/:repo/ci/pipelines/runs` with `{ "pipeline": ".yuma/pipelines/ci.yml", "head": "<rev>" }`.                                       |
-| `schedule`     | Five-field cron on the default branch, read in `timezone` (any IANA zone, `UTC` by default). The minute cron starts it at most a minute late.        |
+| Trigger        | When it runs                                                                                                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `push`         | After `git push` or a pull request merge moves a branch or tag. `branches`, `tags` and `paths` filter it; a filter on only branches leaves tags out and the other way round. |
+| `pull_request` | When a pull request opens, leaves draft or gets a new revision. `branches` matches the target branch; `paths` matches the pull request's changes.                            |
+| `manual`       | `POST /api/v1/repos/:repo/ci/pipelines/runs` with `{ "pipeline": ".yuma/pipelines/ci.yml", "head": "<rev>" }`.                                                               |
+| `schedule`     | Five-field cron on the default branch, read in `timezone` (any IANA zone, `UTC` by default). The minute cron starts it at most a minute late.                                |
 
 `on: push` and `on: [push, manual]` are short forms. Globs: `*` and `?` stay in
 one path segment, `**` crosses segments.
@@ -86,8 +86,9 @@ older unfinished runs in the group. Without it, the new run waits for them.
 
 Every job is a check named by its key. When pipelines ran on a pull request's
 revision, the latest run of each pipeline file must pass before merging (with the
-settings `require_checks`, on by default). Otherwise the settings pipeline rule
-applies.
+settings `require_checks`, on by default). A configured settings pipeline still
+runs on every pull request and must pass too: pipeline files come from the pull
+request, so they add checks but never replace the CI policy.
 
 ## Errors
 
@@ -99,4 +100,5 @@ with errors such as `.yuma/pipelines/ci.yml:4:13 jobs.a.needs.0: Unknown job
 ## Not supported yet
 
 Reusable `uses` steps, per-job runner labels, manual inputs, merge group and
-path-ignore filters.
+path-ignore filters. Branch moves through the API (`PUT /refs`, agent land) do
+not start `push` pipelines.

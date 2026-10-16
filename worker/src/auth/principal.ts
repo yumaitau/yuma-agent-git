@@ -34,8 +34,8 @@ export type Principal =
       taskId: string | null;
       scopes: string[];
       repoIds: string[];
-      /** Unset: SSO is checked on the delegating token when this one is issued. */
-      authMethod?: undefined;
+      /** The delegating API token's sign-in method, so org SSO gates the agent too. */
+      authMethod?: string | null;
     };
 
 export interface AppVariables {

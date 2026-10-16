@@ -398,6 +398,86 @@ describe('pull request pipelines', () => {
     expect(v1).toHaveLength(1);
     expect(v1[0]!.pipeline_run_id).toBeNull();
   });
+
+  const settingsRuns = (head: string) =>
+    q<CiRun>(
+      testEnv,
+      'SELECT * FROM ci_runs WHERE head_cs = ? AND pipeline_run_id IS NULL',
+      [head],
+    );
+  const CI_MUST_PASS =
+    'The latest CI run must pass for this revision and current pipeline.';
+
+  it("keeps the settings pipeline required when the pull request's spec passes", async () => {
+    const base = await commit(null, { 'README.md': 'hi' });
+    await setRef(testEnv, repoId, 'main', base);
+    expect(
+      (
+        await api('/ci', 'PUT', {
+          commands: ['npm test'],
+          timeout_seconds: 60,
+          required_approvals: 0,
+        })
+      ).status,
+    ).toBe(200);
+    // the author's own pipeline passes, but the admin's CI policy still has to
+    const head = await commit(base, { [SPEC]: spec('ok'), 'src.ts': 'broken' });
+    const pull = await openPull(head);
+    const [own] = await pipelines(head);
+    await finish(own!, 'ok');
+    expect(await settingsRuns(head)).toHaveLength(1);
+    expect(await gate(pull.id)).toContain(CI_MUST_PASS);
+    expect(
+      (await api(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head, revision: 1 }))
+        .status,
+    ).toBe(409);
+    await run(
+      testEnv,
+      "UPDATE ci_runs SET state = 'passed' WHERE head_cs = ? AND pipeline_run_id IS NULL",
+      [head],
+    );
+    expect(await gate(pull.id)).toEqual([]);
+  });
+
+  it('queues the settings pipeline when no pipeline file runs on pull requests', async () => {
+    const nightly =
+      'on:\n  schedule:\n    - cron: "0 3 * * *"\njobs:\n  a:\n    steps: [{ run: "true" }]\n';
+    const base = await commit(null, { [SPEC]: nightly });
+    await setRef(testEnv, repoId, 'main', base);
+    expect(
+      (await api('/ci', 'PUT', { commands: ['npm test'], timeout_seconds: 60 })).status,
+    ).toBe(200);
+    const head = await commit(base, { 'b.txt': 'b' });
+    await openPull(head);
+    expect(await pipelines(head)).toEqual([]);
+    expect(await settingsRuns(head)).toHaveLength(1);
+  });
+
+  it('starts push pipelines for the target branch when a pull request merges', async () => {
+    const both = 'on: [push, pull_request]\njobs:\n  a:\n    steps: [{ run: "true" }]\n';
+    const base = await commit(null, { [SPEC]: both });
+    await setRef(testEnv, repoId, 'main', base);
+    const head = await commit(base, { 'b.txt': 'b' });
+    const pull = await openPull(head);
+    const [own] = await pipelines(head);
+    expect(own).toMatchObject({ event: 'pull_request' });
+    await finish(own!, 'a');
+    const approve = await api(
+      `/pulls/${pull.id}/review`,
+      'POST',
+      { head_cs: head, decision: 'approve', body: '', revision: 1 },
+      reviewer,
+    );
+    expect(approve.status).toBe(200);
+    expect(
+      (await api(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head, revision: 1 }))
+        .status,
+    ).toBe(200);
+    expect((await pipelines(head)).map((r) => [r.event, r.ref])).toContainEqual([
+      'push',
+      'main',
+    ]);
+  });
 });
 
 describe('triggers', () => {

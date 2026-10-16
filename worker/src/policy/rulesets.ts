@@ -337,8 +337,13 @@ const ROLE_RANK: Record<Role, number> = { read: 1, triage: 2, write: 3, admin: 4
 export function canBypass(ruleset: Ruleset, actor: Actor): boolean {
   const p = actor.principal;
   if (p === null) return false;
-  // An agent identity (#57) bypasses only when named; never as its human.
-  if (p.kind === 'agent') return ruleset.bypass.includes(`agent:${p.agentId}`);
+  // An agent identity (#57) bypasses only when named, and only when the human
+  // it acts for may bypass too: any delegating human can use the agent.
+  if (p.kind === 'agent')
+    return (
+      ruleset.bypass.includes(`agent:${p.agentId}`) &&
+      canBypass(ruleset, { ...actor, principal: { kind: 'user', userId: p.userId } })
+    );
   return ruleset.bypass.some((entry) => {
     const [kind, id] = entry.split(':') as [string, string];
     if (kind === 'role')

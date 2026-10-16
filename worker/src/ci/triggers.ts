@@ -88,10 +88,7 @@ export async function pushPipelines(
   return messages;
 }
 
-/**
- * Pull request trigger. Returns null when the revision has no pipeline files,
- * so the settings pipeline runs instead.
- */
+/** Pull request trigger. Returns null when the revision has no pipeline files. */
 export async function pullPipelines(
   env: Env,
   pull: Pull,

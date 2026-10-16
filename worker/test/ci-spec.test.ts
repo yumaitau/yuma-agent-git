@@ -121,6 +121,12 @@ describe('pipeline spec v2', () => {
     expect(globMatch('docs/**/*.md', 'docs/a/b/c.md')).toBe(true);
     expect(globMatch('v1.?', 'v1.x')).toBe(true);
     expect(globMatch('v1.?', 'v1x2')).toBe(false);
+    expect(globMatch('docs/**/*.md', 'docs/c.md')).toBe(true);
+    expect(globMatch('**/a', 'xa')).toBe(false);
+    // repo YAML picks the pattern: matching stays linear, never backtracks
+    const start = Date.now();
+    expect(globMatch(`${'**a'.repeat(12)}b`, 'a'.repeat(250))).toBe(false);
+    expect(Date.now() - start).toBeLessThan(500);
   });
 
   it('computes the next schedule time in UTC and Australia/Sydney', () => {

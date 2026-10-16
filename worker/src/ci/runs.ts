@@ -75,7 +75,8 @@ export async function enqueueRun(
       reserved: reservation(config.policy),
     },
     {
-      sql: "NOT EXISTS (SELECT 1 FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND state IN ('queued','running'))",
+      // pipeline jobs on the same revision do not hold back its settings run
+      sql: "NOT EXISTS (SELECT 1 FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND pipeline_run_id IS NULL AND state IN ('queued','running'))",
       binds: [repoId, head],
     },
   );

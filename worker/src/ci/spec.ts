@@ -377,22 +377,40 @@ export async function loadPipelines(
   return out;
 }
 
-/** `*` and `?` stay within one path segment; `**` crosses segments. */
+/**
+ * `*` and `?` stay within one path segment; `**` crosses segments, and `**`
+ * then `/` also matches no directory at all. Steps the set of reachable value
+ * positions through the pattern, so time is O(pattern × value) whatever the
+ * pattern (patterns come from repo YAML; a backtracking regex could hang).
+ */
 export function globMatch(pattern: string, value: string): boolean {
-  let re = '';
+  const n = value.length;
+  let at = new Uint8Array(n + 1);
+  at[0] = 1;
   for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i] as string;
-    if (ch === '*' && pattern[i + 1] === '*') {
-      i++;
-      if (pattern[i + 1] === '/') {
+    const ch = pattern[i];
+    let next = new Uint8Array(n + 1);
+    if (ch === '*') {
+      const any = pattern[i + 1] === '*';
+      if (any) i++;
+      for (let k = 0; k <= n; k++)
+        next[k] =
+          at[k] || (k > 0 && next[k - 1] && (any || value[k - 1] !== '/')) ? 1 : 0;
+      if (any && pattern[i + 1] === '/') {
         i++;
-        re += '(?:.*/)?';
-      } else re += '.*';
-    } else if (ch === '*') re += '[^/]*';
-    else if (ch === '?') re += '[^/]';
-    else re += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+        const dirs = new Uint8Array(n + 1);
+        for (let k = 0; k <= n; k++)
+          dirs[k] = at[k] || (k > 0 && next[k - 1] && value[k - 1] === '/') ? 1 : 0;
+        next = dirs;
+      }
+    } else {
+      for (let k = 1; k <= n; k++)
+        next[k] =
+          at[k - 1] && (ch === '?' ? value[k - 1] !== '/' : value[k - 1] === ch) ? 1 : 0;
+    }
+    at = next;
   }
-  return new RegExp(`^${re}$`).test(value);
+  return at[n] === 1;
 }
 
 /** Wall-clock fields of `ms` in `zone`, as a UTC timestamp. */

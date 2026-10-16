@@ -21,7 +21,7 @@ import {
   type CiRun,
 } from '../ci/config';
 import { enqueueRun } from '../ci/runs';
-import { pullPipelines } from '../ci/triggers';
+import { pullPipelines, pushPipelines } from '../ci/triggers';
 import { recordAudit } from '../audit/record';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
@@ -176,6 +176,18 @@ for (const action of ['update', 'review', 'merge'] as const) {
             ...(action === 'review' && typeof decision === 'string' ? { decision } : {}),
           },
         });
+      }
+      if (response.ok && action === 'merge') {
+        // A merge moves the target branch like a push does, so it starts `on: push` pipelines.
+        const merged = await getPull(c.env, loaded.repo.id, pull.id);
+        try {
+          await pushPipelines(c.env, loaded.repo.id, c.get('principal')!.userId, [
+            { name: merged.base_ref, from: merged.base_cs, to: merged.head_cs },
+          ]);
+        } catch (err) {
+          // The branch already moved; a CI failure must not report the merge as failed.
+          console.error('merge: pipeline trigger failed', err);
+        }
       }
       const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
       // `Closes #N` closes issues only once the pull lands on the default branch.
@@ -440,12 +452,12 @@ async function autoCheck(
   if (pull.state !== 'open' || env.CI_ENABLED !== 'true')
     return { status: 'not_started' };
   try {
-    // Pipeline files in the proposed revision run instead of the settings pipeline.
+    // Pipeline files in the proposed revision run as well as the settings
+    // pipeline: the author writes them, so they never replace the CI policy.
+    const config = await settings(env, pull.repo_id);
+    if (config) await enqueueRun(env, pull.repo_id, pull.head_cs, actor);
     const pipelines = await pullPipelines(env, pull, actor);
-    if (pipelines) return pipelines;
-    if (!(await settings(env, pull.repo_id))) return { status: 'not_started' };
-    await enqueueRun(env, pull.repo_id, pull.head_cs, actor);
-    return { status: 'queued' };
+    return config ? { status: 'queued' } : (pipelines ?? { status: 'not_started' });
   } catch (err) {
     return {
       status: 'not_started',
