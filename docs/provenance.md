@@ -17,7 +17,8 @@ fixes no predicate. It holds:
   known) and `via` (`merge`, `merge_queue`, `api`, `git-push`, ...);
 - who moved it: the user, or the agent with the person it acted for and its
   task, or the token (with its CI run);
-- the pull requests it landed, with their approvals and CI runs;
+- the pull requests it landed, with their approvals, agent review verdicts
+  (#60: reviewer, verdict, confidence, round, findings count) and CI runs;
 - the rulesets that applied, what was bypassed, and `bypass`;
 - each new changeset (up to 100, with `changesets_total`): its author, agent,
   signature check and the agent sessions linked to it (model, harness, tools,

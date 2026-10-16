@@ -99,6 +99,17 @@ export const sourcePredicateSchema = z.looseObject({
     z.looseObject({
       number: z.number(),
       reviews: z.array(z.object({ by: z.string(), decision: z.string() })),
+      // records issued before agent review loops (#60) have none
+      agent_reviews: z
+        .array(
+          z.looseObject({
+            by: z.string(),
+            name: z.string().nullable(),
+            verdict: z.string(),
+            confidence: z.number(),
+          }),
+        )
+        .default([]),
     }),
   ),
   changesets: z.array(z.looseObject({ id: z.string() })),
@@ -144,6 +155,10 @@ export function formatPredicate(p: SourcePredicate): string[] {
     lines.push(
       `pull request #${pr.number}${approvals.length ? `, approved by ${approvals.join(', ')}` : ', no approvals'}`,
     );
+    for (const v of pr.agent_reviews)
+      lines.push(
+        `  agent review by ${v.name ?? v.by}: ${v.verdict} (confidence ${v.confidence})`,
+      );
   }
   if (p.bypass) lines.push('a ruleset was bypassed');
   lines.push(`${p.changesets.length} changeset${p.changesets.length === 1 ? '' : 's'}`);

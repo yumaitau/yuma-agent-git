@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import { cleanDb, loginAs, makeApp, seedSchema, type TestEnv } from './helpers';
 import type { Env } from '../src/env';
-import { createRepo, getRef, setRef } from '../src/db/repos';
+import { createRepo, getRef, getRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import { q, q1, run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
@@ -221,6 +221,78 @@ describe('issuing and verifying', () => {
     expect(
       (await verifyProvenance(provenanceRecordSchema.parse(record), published, base)).ok,
     ).toBe(false);
+  });
+
+  it('records agent review verdicts on the revision that landed (#60)', async () => {
+    const agent = await json<{ id: string }>(
+      await call(owner, 'POST', '/api/v1/agents', { name: 'reviewbot', kind: 'codex' }),
+      201,
+    );
+    await json(await call(owner, 'PUT', repoPath(`/agent-reviewers/${agent.id}`), {}));
+    const { pull } = await json<{ pull: Pull }>(
+      await call(owner, 'POST', repoPath('/pulls'), {
+        title: 'Add feature',
+        head_cs: head,
+      }),
+      201,
+    );
+    const { recordVerdict } = await import('../src/reviews/agentLoop');
+    await recordVerdict(
+      dbEnv,
+      (await getRepo(dbEnv, repoId))!,
+      pull,
+      agent.id,
+      {
+        head_cs: head,
+        revision: pull.revision,
+        verdict: 'pass',
+        confidence: 0.95,
+        summary: 'Looks right',
+        findings: [{ severity: 'low', body: 'Consider a test' }],
+      },
+      { kind: 'agent', id: agent.id, onBehalfOf: owner.userId },
+      null,
+    );
+    await json(
+      await call(reviewer, 'POST', repoPath(`/pulls/${pull.id}/review`), {
+        head_cs: head,
+        revision: pull.revision,
+        decision: 'approve',
+        body: '',
+      }),
+    );
+    const merged = (
+      await json<{ pull: Pull }>(
+        await call(owner, 'POST', repoPath(`/pulls/${pull.id}/merge`), {
+          head_cs: head,
+          revision: pull.revision,
+          method: 'merge',
+        }),
+      )
+    ).pull.merged_cs as string;
+    const { records: found } = await records(merged, reader);
+    const check = await verifyProvenance(
+      provenanceRecordSchema.parse(found[0]),
+      await keys(),
+      merged,
+    );
+    expect(check.ok).toBe(true);
+    if (!check.ok) return;
+    expect(check.predicate.pull_requests[0]).toMatchObject({
+      agent_reviews: [
+        {
+          by: `agent:${agent.id}`,
+          name: 'reviewbot',
+          verdict: 'pass',
+          confidence: 0.95,
+          round: 1,
+          findings: 1,
+        },
+      ],
+    });
+    expect(formatPredicate(check.predicate)).toContain(
+      '  agent review by reviewbot: pass (confidence 0.95)',
+    );
   });
 
   it('fails verification when any field is tampered with', async () => {

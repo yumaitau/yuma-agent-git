@@ -21,7 +21,8 @@ import { canSign, signStatement } from './keys';
  * branch updates but fixes no predicate, so the predicate type is this
  * forge's own. It names the ref and both revisions, who moved it (agent, the
  * human it acted for, task), how (`via`), the pull requests it landed with
- * their approvals and checks, the rulesets that applied with any bypass, and
+ * their approvals, agent review verdicts (#60) and checks, the rulesets that
+ * applied with any bypass, and
  * each new changeset with its author, agent, signature check and sessions
  * (model, harness, tools, transcript SHA-256).
  *
@@ -122,6 +123,22 @@ async function pullFacts(env: Env, repoId: string, ids: readonly number[]) {
         ORDER BY r.id`,
       [id, pull.head_cs, pull.revision],
     );
+    // agent reviewers' verdicts on the revision that landed (#60)
+    const verdicts = await q<{
+      reviewer: string;
+      name: string | null;
+      verdict: string;
+      confidence: number;
+      round: number;
+      findings: number;
+    }>(
+      env,
+      `SELECT v.reviewer, a.name, v.verdict, v.confidence, v.round,
+              json_array_length(v.findings) AS findings
+         FROM review_verdicts v LEFT JOIN agents a ON 'agent:' || a.id = v.reviewer
+        WHERE v.pull_id = ? AND v.revision = ? AND v.head_cs = ? ORDER BY v.reviewer`,
+      [id, pull.revision, pull.head_cs],
+    );
     const checks = await q<{ id: string; state: string; pipeline_run_id: string | null }>(
       env,
       `SELECT id, state, pipeline_run_id FROM ci_runs WHERE repo_id = ? AND head_cs = ?
@@ -135,6 +152,14 @@ async function pullFacts(env: Env, repoId: string, ids: readonly number[]) {
       author_id: pull.author_id,
       method: pull.merge_method,
       reviews: reviews.map((r) => ({ by: r.login ?? r.author_id, decision: r.decision })),
+      agent_reviews: verdicts.map((v) => ({
+        by: v.reviewer,
+        name: v.name,
+        verdict: v.verdict,
+        confidence: v.confidence,
+        round: v.round,
+        findings: v.findings,
+      })),
       checks: checks.map((r) => ({
         run: r.id,
         state: r.state,
