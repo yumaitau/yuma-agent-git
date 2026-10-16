@@ -217,7 +217,7 @@ describe('the evaluator', () => {
         ref: {
           ...input.ref,
           fastForward: true,
-          merge: { approvals: 0, checksPassed: false },
+          merge: { approvals: 0, checksPassed: false, unresolvedThreads: 0 },
         },
       }).evaluated,
     ).toEqual([]);

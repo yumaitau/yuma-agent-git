@@ -44,6 +44,8 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   ...refRules,
   approvalsRule,
   z.object({ type: z.literal('required_status_checks') }),
+  // every line-level review thread (#39) on the pull request is resolved
+  z.object({ type: z.literal('required_review_thread_resolution') }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
 const globSchema = z.string().min(1).max(256);
@@ -291,7 +293,7 @@ export interface RefFacts {
   /** For updates: the new head descends from the old one. */
   fastForward: boolean;
   /** Present for pull request merges. */
-  merge?: { approvals: number; checksPassed: boolean };
+  merge?: { approvals: number; checksPassed: boolean; unresolvedThreads: number };
 }
 
 export interface FileFacts {
@@ -330,6 +332,8 @@ export interface Outcome {
   requiredApprovals: number | null;
   /** An active `required_status_checks` rule binds this actor. */
   requireChecks: boolean;
+  /** An active `required_review_thread_resolution` rule binds this actor. */
+  requireResolvedThreads: boolean;
 }
 
 const ROLE_RANK: Record<Role, number> = { read: 1, triage: 2, write: 3, admin: 4 };
@@ -377,6 +381,12 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
       return ref.merge && !ref.merge.checksPassed
         ? 'The latest CI run must pass for this revision and current pipeline.'
         : null;
+    case 'required_review_thread_resolution': {
+      const n = ref.merge?.unresolvedThreads ?? 0;
+      return n > 0
+        ? `Resolve ${n} review thread${n === 1 ? '' : 's'} before merging.`
+        : null;
+    }
     default:
       return null;
   }
@@ -417,6 +427,7 @@ export function evaluate(rulesets: readonly Ruleset[], input: EvalInput): Outcom
     evaluated: [],
     requiredApprovals: null,
     requireChecks: false,
+    requireResolvedThreads: false,
   };
   for (const ruleset of rulesets) {
     if (!applies(ruleset, input.repo, input.ref?.name)) continue;
@@ -430,6 +441,12 @@ export function evaluate(rulesets: readonly Ruleset[], input: EvalInput): Outcom
         );
       if (enforcement === 'active' && rule.type === 'required_status_checks' && !bypass)
         out.requireChecks = true;
+      if (
+        enforcement === 'active' &&
+        rule.type === 'required_review_thread_resolution' &&
+        !bypass
+      )
+        out.requireResolvedThreads = true;
       const message = input.ref
         ? refMessage(rule, input.ref)
         : fileMessage(rule, input.files ?? []);

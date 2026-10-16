@@ -11,6 +11,7 @@ import {
 } from '../auth/scim';
 import { createAgentSchema, exchangeSchema, patchAgentSchema } from '../auth/agents';
 import { rulesetInputSchema } from '../policy/rulesets';
+import { reviewCommentsInput } from '../reviews/threads';
 import { assertionSchema, registrationSchema } from '../auth/webauthn';
 import { codeSchema } from '../auth/totp';
 import { connectSchema } from '../bridge/github';
@@ -50,6 +51,13 @@ import { manual as manualPipelineRun } from './pipelines';
 import { decisionBody, environmentBody, secretBody, variableBody } from './secrets';
 import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
+import {
+  applySuggestionsInput,
+  createThreadInput,
+  replyInput,
+  resolutionInput,
+  reviewersInput,
+} from './reviews';
 import { createRepoSchema, updateRepoSchema } from './repos';
 
 /**
@@ -96,6 +104,8 @@ const reviewPullSchema = z.object({
   revision: z.int(),
   decision: z.enum(['comment', 'approve', 'request_changes']),
   body: z.string().max(20000),
+  /** Inline comments submitted with the review; each starts a thread (#39). */
+  comments: reviewCommentsInput.optional(),
 });
 const mergePullSchema = z.object({ head_cs: z.string(), revision: z.int() });
 
@@ -475,6 +485,28 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/pulls/:id/update': {
     id: 'updatePull',
     body: updatePullSchema,
+  },
+  'GET /api/v1/repos/:repo/pulls/:id/reviewers': { id: 'listReviewRequests' },
+  'PUT /api/v1/repos/:repo/pulls/:id/reviewers': {
+    id: 'setReviewRequests',
+    body: reviewersInput,
+  },
+  'POST /api/v1/repos/:repo/pulls/:id/suggestions/apply': {
+    id: 'applySuggestions',
+    body: applySuggestionsInput,
+  },
+  'GET /api/v1/repos/:repo/pulls/:id/threads': { id: 'listReviewThreads' },
+  'POST /api/v1/repos/:repo/pulls/:id/threads': {
+    id: 'createReviewThread',
+    body: createThreadInput,
+  },
+  'POST /api/v1/repos/:repo/pulls/:id/threads/:thread/replies': {
+    id: 'replyToReviewThread',
+    body: replyInput,
+  },
+  'PUT /api/v1/repos/:repo/pulls/:id/threads/:thread/resolution': {
+    id: 'resolveReviewThread',
+    body: resolutionInput,
   },
   'GET /api/v1/repos/:repo/refs': {
     id: 'listRefs',

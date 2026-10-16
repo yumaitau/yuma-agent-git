@@ -518,6 +518,13 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{.+}/pulls/:id/update': 'pull.update',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/review': 'pull.review',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/merge': 'pull.merge',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/threads': 'pull.thread.create',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/threads/:thread/replies': 'pull.thread.reply',
+  // also pull.thread.unresolve
+  'PUT /api/v1/repos/:repo{.+}/pulls/:id/threads/:thread/resolution':
+    'pull.thread.resolve',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/suggestions/apply': 'pull.suggestion.apply',
+  'PUT /api/v1/repos/:repo{.+}/pulls/:id/reviewers': 'pull.reviewers.update',
   'PUT /api/v1/repos/:repo{.+}/ci': 'ci.settings.update',
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',

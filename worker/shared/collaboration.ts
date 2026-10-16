@@ -101,3 +101,47 @@ export interface Review {
   body: string;
   created_at: number;
 }
+/** A comment in a line-level review thread (issue #39). */
+export interface ReviewComment {
+  id: number;
+  thread_id: number;
+  /** `user:<id>` or `agent:<agent or token id>`. */
+  author: string;
+  body: string;
+  /** Replacement text for the thread's lines, from a fenced `suggestion` block. */
+  suggestion_patch: string | null;
+  /** The review this comment was submitted with, if any. */
+  review_id: number | null;
+  created_at: number;
+}
+export interface ReviewThread {
+  id: number;
+  pull_id: number;
+  path: string;
+  /** `head`: lines of the proposed revision. `base`: lines on the left of the diff. */
+  side: 'base' | 'head';
+  start_line: number;
+  end_line: number;
+  /** Pull request revision the anchor was last checked on. */
+  revision: number;
+  /** Changeset whose file the line numbers refer to. */
+  anchor_cs: string;
+  original_head_cs: string;
+  /** The lines changed in a later revision; the anchor stays on the old one. */
+  outdated: boolean;
+  author: string;
+  resolved_by: string | null;
+  resolved_at: number | null;
+  created_at: number;
+  /** The anchored lines as they read at `anchor_cs` (null for oversized files). */
+  snippet: string | null;
+  comments: ReviewComment[];
+}
+export interface ReviewRequest {
+  /** `user:<id>`, `team:<id>` or `agent:<id>`. */
+  principal: string;
+  requested_by: string;
+  state: 'pending' | 'reviewed';
+  created_at: number;
+  updated_at: number;
+}

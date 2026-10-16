@@ -219,7 +219,20 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/pulls': 'Open a pull request',
   'GET /api/v1/repos/:repo/pulls/:id': 'Pull request, reviews and merge gate',
   'POST /api/v1/repos/:repo/pulls/:id/merge': 'Merge a pull request',
-  'POST /api/v1/repos/:repo/pulls/:id/review': 'Comment, approve or request changes',
+  'POST /api/v1/repos/:repo/pulls/:id/review':
+    'Comment, approve or request changes, with inline comments',
+  'GET /api/v1/repos/:repo/pulls/:id/threads': 'Line review threads with their comments',
+  'POST /api/v1/repos/:repo/pulls/:id/threads':
+    'Comment on lines of the current revision',
+  'POST /api/v1/repos/:repo/pulls/:id/threads/:thread/replies':
+    'Reply to a review thread',
+  'PUT /api/v1/repos/:repo/pulls/:id/threads/:thread/resolution':
+    'Resolve or unresolve a review thread',
+  'POST /api/v1/repos/:repo/pulls/:id/suggestions/apply':
+    'Commit suggested changes onto the head',
+  'GET /api/v1/repos/:repo/pulls/:id/reviewers': 'Requested reviewers and their state',
+  'PUT /api/v1/repos/:repo/pulls/:id/reviewers':
+    'Request reviews from people, teams, agents',
   'POST /api/v1/repos/:repo/pulls/:id/update': 'Edit title/body/state or move the head',
   'GET /api/v1/repos/:repo/refs': 'List refs',
   'GET /api/v1/repos/:repo/refs/:name': 'One ref',

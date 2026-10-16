@@ -1809,8 +1809,95 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Comment, approve or request changes */
+    /** Comment, approve or request changes, with inline comments */
     post: operations['reviewPull'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/reviewers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Requested reviewers and their state */
+    get: operations['listReviewRequests'];
+    /** Request reviews from people, teams, agents */
+    put: operations['setReviewRequests'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/suggestions/apply': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Commit suggested changes onto the head */
+    post: operations['applySuggestions'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/threads': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Line review threads with their comments */
+    get: operations['listReviewThreads'];
+    put?: never;
+    /** Comment on lines of the current revision */
+    post: operations['createReviewThread'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/threads/{thread}/replies': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reply to a review thread */
+    post: operations['replyToReviewThread'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/threads/{thread}/resolution': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Resolve or unresolve a review thread */
+    put: operations['resolveReviewThread'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -6384,6 +6471,244 @@ export interface operations {
           /** @enum {string} */
           decision: 'comment' | 'approve' | 'request_changes';
           body: string;
+          comments?: {
+            path: string;
+            /**
+             * @default head
+             * @enum {string}
+             */
+            side?: 'base' | 'head';
+            line: number;
+            start_line?: number;
+            body: string;
+          }[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listReviewRequests: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setReviewRequests: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          reviewers: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  applySuggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          comment_ids: number[];
+          message?: string;
+          head_cs: string;
+          revision: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listReviewThreads: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createReviewThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          path: string;
+          /**
+           * @default head
+           * @enum {string}
+           */
+          side?: 'base' | 'head';
+          line: number;
+          start_line?: number;
+          body: string;
+          head_cs: string;
+          revision: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  replyToReviewThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+        thread: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          body: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  resolveReviewThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+        thread: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          resolved: boolean;
         };
       };
     };
