@@ -4,6 +4,7 @@ import { getChangeset } from '../core/changesets';
 import { getRepo, getRef } from '../db/repos';
 import { ApiError } from '../core/errors';
 import { monthlyBudget, reservation, settings, type CiRun } from './config';
+import type { RunContext } from './context';
 
 export async function enqueueRun(
   env: Env,
@@ -11,6 +12,7 @@ export async function enqueueRun(
   head: string,
   actor: string,
   publish = false,
+  context: RunContext | null = null,
 ): Promise<CiRun> {
   if (env.CI_ENABLED !== 'true' || !env.CI_QUEUE || !env.CI_RUNNER) {
     throw new ApiError(
@@ -71,8 +73,8 @@ export async function enqueueRun(
   // Never refund reservations: retries, failures and cancellations cannot hide spend.
   const inserted = await env.DB.prepare(
     `INSERT INTO ci_runs
-    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at)
-    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?
+    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, context)
+    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?
     WHERE (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE month = ?) + ? <= ?
       AND (SELECT COUNT(*) FROM ci_runs WHERE state IN ('queued','running')) < 2
       AND NOT EXISTS (SELECT 1 FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND state IN ('queued','running'))`,
@@ -88,6 +90,7 @@ export async function enqueueRun(
       month,
       reserved,
       now,
+      context ? JSON.stringify(context) : null,
       month,
       reserved,
       monthlyBudget(env),

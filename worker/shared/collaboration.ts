@@ -8,6 +8,14 @@ export interface CiPolicy {
   protect_default: boolean;
   dockerfile: string;
   image: string | null;
+  /** Deployment environment whose protection rules gate the run (issue #50). */
+  environment: string | null;
+  /** Secret names injected as environment variables. */
+  secrets: string[];
+  /** `id_token: 'write'` lets the job request OIDC tokens. */
+  permissions: { id_token: 'none' | 'write' };
+  /** AWS web identity: the runner writes a token file and sets AWS_* variables. */
+  aws: { role_arn: string; region: string; session_name?: string } | null;
 }
 export interface CiRun {
   id: string;
@@ -27,6 +35,8 @@ export interface CiRun {
   log_key: string | null;
   image: string | null;
   error: string | null;
+  /** Trigger context JSON (issue #50); null for older runs. */
+  context?: string | null;
 }
 export interface Pull {
   id: number;

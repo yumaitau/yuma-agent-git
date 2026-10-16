@@ -21,6 +21,17 @@ export interface Env {
   CI_REGISTRY_IMAGES?: string;
   CI_REGISTRY_USERNAME?: string;
   CI_REGISTRY_PASSWORD?: string;
+  /**
+   * CI workload identity (issue #50): JWK set `{"keys":[…]}` of RSA keys,
+   * secret. The first key signs; every key is published in the JWKS.
+   */
+  CI_OIDC_SIGNING_KEYS?: string;
+  /** Issuer URL override for a custom domain (default `{origin}/ci/oidc`). */
+  CI_OIDC_ISSUER?: string;
+  /** Key-encryption key for CI secrets, secret: base64 key or key ring JSON. */
+  SECRETS_KEK?: string;
+  /** Comma-separated user ids allowed to run the KEK re-wrap. */
+  SECRETS_ADMIN_USER_IDS?: string;
   /** Audit log (issue #65): queue `audit-stream` ships events to the SIEM sink. */
   AUDIT_QUEUE?: Queue;
   /** HTTPS ingest endpoint for audit streaming; unset disables streaming. */

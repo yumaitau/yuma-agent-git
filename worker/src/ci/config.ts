@@ -10,27 +10,58 @@ export const MAX_IMAGE_BYTES = 256 * 1024 * 1024;
 // standard-2: 1 vCPU + 6 GiB + 12 GB disk at published full CPU rates.
 // Round up $0.00003584/sec. Includes two sequential phases, never two VMs at once.
 export const MICROS_PER_SECOND = 36;
-export const policySchema = z.object({
-  preset: z.enum(['node', 'docker', 'custom']).default('node'),
-  commands: z.array(z.string().trim().min(1).max(2000)).min(1).max(8),
-  timeout_seconds: z.number().int().min(30).max(600).default(300),
-  required_approvals: z.number().int().min(0).max(5).default(1),
-  require_checks: z.boolean().default(true),
-  protect_default: z.boolean().default(true),
-  dockerfile: z
-    .string()
-    .regex(/^[a-zA-Z0-9_./-]+$/)
-    .default('Dockerfile')
-    .refine(
-      (v) => !v.startsWith('/') && !v.split('/').some((s) => s === '..' || s === ''),
-      'Use a relative Dockerfile path',
-    ),
-  image: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9.-]+(?::[0-9]+)?\/[a-z0-9][a-z0-9._/-]+$/)
-    .nullable()
-    .default(null),
-});
+export const policySchema = z
+  .object({
+    preset: z.enum(['node', 'docker', 'custom']).default('node'),
+    commands: z.array(z.string().trim().min(1).max(2000)).min(1).max(8),
+    timeout_seconds: z.number().int().min(30).max(600).default(300),
+    required_approvals: z.number().int().min(0).max(5).default(1),
+    require_checks: z.boolean().default(true),
+    protect_default: z.boolean().default(true),
+    dockerfile: z
+      .string()
+      .regex(/^[a-zA-Z0-9_./-]+$/)
+      .default('Dockerfile')
+      .refine(
+        (v) => !v.startsWith('/') && !v.split('/').some((s) => s === '..' || s === ''),
+        'Use a relative Dockerfile path',
+      ),
+    image: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9.-]+(?::[0-9]+)?\/[a-z0-9][a-z0-9._/-]+$/)
+      .nullable()
+      .default(null),
+    // Deployment access (issue #50). Jobs get nothing unless they ask.
+    environment: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/)
+      .nullable()
+      .default(null),
+    secrets: z
+      .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,99}$/))
+      .max(50)
+      .default([]),
+    permissions: z
+      .object({ id_token: z.enum(['none', 'write']).default('none') })
+      .default({ id_token: 'none' }),
+    aws: z
+      .object({
+        role_arn: z
+          .string()
+          .regex(/^arn:aws[a-z-]*:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/),
+        region: z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d{1,2}$/),
+        session_name: z
+          .string()
+          .regex(/^[\w+=,.@-]{2,64}$/)
+          .optional(),
+      })
+      .nullable()
+      .default(null),
+  })
+  .refine(
+    (p) => !p.aws || p.permissions.id_token === 'write',
+    'aws needs permissions.id_token: write',
+  );
 import type { CiPolicy } from '../../shared/collaboration';
 export type { CiPolicy, CiRun } from '../../shared/collaboration';
 export interface Settings {

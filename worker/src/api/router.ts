@@ -14,6 +14,7 @@ import { objectsRoutes } from './objects';
 import { orgsRoutes } from './orgs';
 import { readRoutes } from './read';
 import { refsRoutes } from './refs';
+import { secretsRoutes } from './secrets';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
 export const apiRouter = new Hono<{ Bindings: Env }>();
@@ -21,6 +22,7 @@ export const apiRouter = new Hono<{ Bindings: Env }>();
 apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1' }));
 
 apiRouter.route('/', collaborationRoutes);
+apiRouter.route('/', secretsRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);
 apiRouter.route('/', ancestryRoutes);

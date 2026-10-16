@@ -137,9 +137,9 @@ describe('migrations converge', () => {
     const names = testEnv.TEST_MIGRATIONS.map((m) => m.name);
     expect(names.length).toBeGreaterThan(EARLY);
     expect([...names].sort()).toEqual(names);
-    names.forEach((name, i) =>
-      expect(name).toMatch(new RegExp(`^${String(i + 1).padStart(4, '0')}_`)),
-    );
+    // numbers strictly increase; parallel branches may reserve later numbers
+    const numbers = names.map((name) => Number(/^(\d{4})_/.exec(name)?.[1]));
+    numbers.forEach((n, i) => expect(n).toBeGreaterThan(i === 0 ? 0 : numbers[i - 1]!));
   });
 
   it('fresh apply and upgrade-with-early-rows end at the same schema', async () => {

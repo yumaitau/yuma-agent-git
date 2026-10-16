@@ -96,6 +96,33 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/ci/runs': 'Queue a CI run',
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': 'Cancel a CI run',
   'GET /api/v1/repos/:repo/ci/runs/:id/log': 'CI run log (`text/plain`)',
+  'GET /ci/oidc/.well-known/openid-configuration': 'CI OIDC discovery document (public)',
+  'GET /ci/oidc/jwks': 'CI OIDC signing keys, current and previous (public)',
+  'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
+  'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
+  'GET /api/v1/repos/:repo/secrets':
+    'Secret names (`?environment=`); values are write-only',
+  'PUT /api/v1/repos/:repo/secrets/:name': 'Set a secret `{value}` (`?environment=`)',
+  'DELETE /api/v1/repos/:repo/secrets/:name': 'Delete a secret (`?environment=`)',
+  'GET /api/v1/repos/:repo/variables': 'Variables with values (`?environment=`)',
+  'PUT /api/v1/repos/:repo/variables/:name': 'Set a variable `{value}` (`?environment=`)',
+  'DELETE /api/v1/repos/:repo/variables/:name': 'Delete a variable (`?environment=`)',
+  'GET /api/v1/repos/:repo/environments': 'Deployment environments and protection rules',
+  'PUT /api/v1/repos/:repo/environments/:env': 'Create or update an environment',
+  'DELETE /api/v1/repos/:repo/environments/:env':
+    'Delete an environment and its secrets and variables',
+  'GET /api/v1/repos/:repo/environment-approvals':
+    'Runs waiting on environments (`?state=`)',
+  'POST /api/v1/repos/:repo/environment-approvals/:id':
+    'Approve or reject a waiting run (listed reviewers, not the requester)',
+  'GET /api/v1/orgs/:org/secrets': 'Org secret names; values are write-only',
+  'PUT /api/v1/orgs/:org/secrets/:name': 'Set an org secret `{value}`',
+  'DELETE /api/v1/orgs/:org/secrets/:name': 'Delete an org secret',
+  'GET /api/v1/orgs/:org/variables': 'Org variables with values',
+  'PUT /api/v1/orgs/:org/variables/:name': 'Set an org variable `{value}`',
+  'DELETE /api/v1/orgs/:org/variables/:name': 'Delete an org variable',
+  'POST /api/v1/admin/secrets/rewrap':
+    'Re-wrap secret data keys under the current KEK (`SECRETS_ADMIN_USER_IDS`)',
   'POST /api/v1/repos/:repo/connect': 'Link the repo to a GitHub repo via the App',
   'GET /api/v1/repos/:repo/diff': 'Server-side diff between two revisions',
   'POST /api/v1/repos/:repo/export/github': 'Queue a push of a revision to GitHub',
@@ -197,6 +224,7 @@ function samplePath(path: string): string {
 function classify(path: string, src: string): { auth: string; perm: string | null } {
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
+  if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',

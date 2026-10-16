@@ -543,6 +543,21 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/scim/tokens': 'scim_token.create',
   'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack': 'ref.move',
+  'POST /ci/oidc/token': 'ci.oidc.token',
+  'PUT /api/v1/repos/:repo{.+}/secrets/:name': 'secret.set',
+  'DELETE /api/v1/repos/:repo{.+}/secrets/:name': 'secret.delete',
+  'PUT /api/v1/repos/:repo{.+}/variables/:name': 'variable.set',
+  'DELETE /api/v1/repos/:repo{.+}/variables/:name': 'variable.delete',
+  'PUT /api/v1/repos/:repo{.+}/environments/:env': 'environment.set',
+  'DELETE /api/v1/repos/:repo{.+}/environments/:env': 'environment.delete',
+  // also environment.approval.reject
+  'POST /api/v1/repos/:repo{.+}/environment-approvals/:id':
+    'environment.approval.approve',
+  'PUT /api/v1/orgs/:org/secrets/:name': 'secret.set',
+  'DELETE /api/v1/orgs/:org/secrets/:name': 'secret.delete',
+  'PUT /api/v1/orgs/:org/variables/:name': 'variable.set',
+  'DELETE /api/v1/orgs/:org/variables/:name': 'variable.delete',
+  'POST /api/v1/admin/secrets/rewrap': 'secret.kek.rewrap',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
