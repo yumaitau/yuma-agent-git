@@ -143,7 +143,7 @@ provenanceRoutes.get(`${REPO}/provenance`, async (c) => {
     // a record names its new head, and lists every changeset the move brought in
     if (cs) {
       where.push('(new_cs = ? OR instr(statement, ?) > 0)');
-      args.push(cs, `"${cs}"`);
+      args.push(cs, `"id":"${cs}"`);
     }
     if (ref) {
       where.push('ref = ?');
