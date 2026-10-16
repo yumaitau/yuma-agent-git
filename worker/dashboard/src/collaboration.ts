@@ -27,7 +27,7 @@ export interface Detection {
 }
 export async function call<T>(
   path: string,
-  method: 'GET' | 'POST' | 'PUT' = 'GET',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
   body?: unknown,
 ): Promise<T> {
   const response = await apiFetch(`/api/v1${path}`, { method, body });

@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { setUnauthorizedHandler } from './api';
 import { CiView, HistoryView, PullsView, PullView } from './views/Collaboration';
+import { CiAccessView } from './views/CiAccess';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
 import { HomeView } from './views/Home';
@@ -56,6 +57,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
                 <Route path="/r/:owner/:name/ci" element={<CiView />} />
+                <Route path="/r/:owner/:name/ci/access" element={<CiAccessView />} />
                 <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
                 <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
                 <Route path="/r/:owner/:name/diff" element={<DiffExplorerView />} />
