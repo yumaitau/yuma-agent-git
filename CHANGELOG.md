@@ -45,6 +45,14 @@ All notable changes to this project are documented here. The format follows
   default branch, owns `refs/agents/<agent-id>/`, and its changesets record the
   agent, the person and the task. Disabling an agent revokes its tokens at once.
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
+- Rulesets (#41) for branches, tags and pushes at repo and org level: no deletion,
+  no force push, pull request only, required approvals, required CI, and push rules
+  for file size, paths and extensions. One evaluator serves API ref moves,
+  `git push`, pull request merges, agent lands and commits; refusals name the
+  ruleset. Evaluate mode logs without blocking, bypass actors (roles, teams, agent
+  tokens, users) are audited with their reason, and ruleset changes are audited.
+  The CI policy's `protect_default`, `required_approvals` and `require_checks`
+  become the "CI policy (default branch)" ruleset, so existing repos behave the same.
 - Dashboard theme in the Yuma IT brand.
 
 ### Fixed

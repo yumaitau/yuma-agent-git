@@ -662,6 +662,38 @@ describe('route sweep — the authz contract future routes must extend', () => {
         expect: { anon: 401, stranger: 404, creator: 201 },
       },
       {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/rulesets',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/rulesets',
+        body: {
+          name: 'protect main',
+          target: 'branch',
+          conditions: { ref_name: { include: ['main'] } },
+          rules: [{ type: 'deletion' }],
+        },
+        expect: { anon: 401, stranger: 404, creator: 201 },
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/rulesets/missing',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such ruleset
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/repos/acme/sweep/rulesets/missing',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such ruleset
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/rulesets/evaluations',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
         method: 'PUT',
         path: '/api/v1/repos/acme/sweep',
         body: {},

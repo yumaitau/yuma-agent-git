@@ -4,8 +4,8 @@ import type { Principal } from '../auth/principal';
 import { agentIdOf, hasScope } from '../auth/principal';
 import type { PathDecider } from '../auth/rbac';
 import { MAX_FILE_BYTES } from '../bridge/import';
-import { settings } from '../ci/config';
 import { agentRefOwner, TAG_PREFIX } from '../core/refs';
+import { actorFor, evaluate, rulesetsFor, type Outcome } from '../policy/rulesets';
 
 /**
  * Pre-receive checks (issue #32): every check sees the whole push before any
@@ -13,8 +13,8 @@ import { agentRefOwner, TAG_PREFIX } from '../core/refs';
  * message `git push` prints. Checks are pure over the parsed push plus a
  * bounded number of D1 reads, so they are deterministic and quick.
  *
- * Rulesets (#41), secret scanning (#66) and agent policy (#62) join this
- * list as further `Check`s when those features exist.
+ * Secret scanning (#66) and agent policy (#62) join this list as further
+ * `Check`s when those features exist.
  */
 
 /** One file change of a pushed commit, relative to its first parent. */
@@ -48,6 +48,8 @@ export interface PushUpdate {
   /** New commits this update makes reachable. */
   commits: string[];
   error?: string;
+  /** Push-ruleset outcome, recorded once the ref has moved. */
+  pushRules?: Outcome;
 }
 
 export interface PreReceiveContext {
@@ -117,14 +119,10 @@ const agentLimits: Check = async (ctx, updates) =>
         return [];
       });
 
-/**
- * The default branch is protected: never deleted, never rewritten, and with
- * the CI policy `protect_default` only changed through a pull request.
- */
+/** The default branch is never deleted or rewritten by a push. */
 const protectedRefs: Check = async (ctx, updates) => {
   const mine = updates.filter((u) => u.name === ctx.repo.default_branch);
   if (mine.length === 0) return [];
-  const config = await settings(ctx.env, ctx.repo.id);
   return mine.flatMap((u): Verdict[] => {
     if (u.deleting) {
       return [
@@ -132,15 +130,6 @@ const protectedRefs: Check = async (ctx, updates) => {
           ref: u.ref,
           rule: 'protected_branch',
           message: 'the default branch cannot be deleted',
-        },
-      ];
-    }
-    if (config?.policy.protect_default) {
-      return [
-        {
-          ref: u.ref,
-          rule: 'protected_branch (protect_default)',
-          message: 'open a pull request to update the protected default branch',
         },
       ];
     }
@@ -155,6 +144,42 @@ const protectedRefs: Check = async (ctx, updates) => {
     }
     return [];
   });
+};
+
+/**
+ * Rulesets (#41): branch and tag rules as the ref-lock Durable Object applies
+ * them on the move (refused here so `git push` names the ruleset and nothing
+ * is stored), and push rules over every file the new commits change.
+ */
+const rulesets: Check = async (ctx, updates) => {
+  const all = await rulesetsFor(ctx.env, ctx.repo);
+  if (all.length === 0) return [];
+  const actor = await actorFor(ctx.env, ctx.repo, ctx.principal, all);
+  const out: Verdict[] = [];
+  for (const u of updates) {
+    const ref = evaluate(all, {
+      repo: ctx.repo,
+      actor,
+      ref: {
+        name: u.name,
+        kind: u.deleting ? 'delete' : u.from === null ? 'create' : 'update',
+        fastForward: u.fastForward,
+      },
+    });
+    u.pushRules = evaluate(all, {
+      repo: ctx.repo,
+      actor,
+      files: changesOf(ctx, u).map((c) => ({ path: c.path, op: c.op, size: c.size })),
+    });
+    const v = ref.blocking[0] ?? u.pushRules.blocking[0];
+    if (v)
+      out.push({
+        ref: u.ref,
+        rule: `ruleset "${v.ruleset}" ${v.rule}`,
+        message: v.message,
+      });
+  }
+  return out;
 };
 
 /** Path rules: `write` on every path the new commits touch and the ref changes. */
@@ -248,6 +273,7 @@ const pathSafety: Check = async (ctx, updates) =>
 export const CHECKS: Check[] = [
   agentRefs,
   agentLimits,
+  rulesets,
   protectedRefs,
   pathRules,
   maxFileSize,

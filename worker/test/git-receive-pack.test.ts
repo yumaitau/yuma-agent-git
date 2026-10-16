@@ -17,6 +17,7 @@ import {
 } from './git-helpers';
 import { createRepo, getRef, listRefs } from '../src/db/repos';
 import { q, run } from '../src/db/client';
+import { ciPolicyRulesetStatement } from '../src/policy/rulesets';
 import { createApiToken } from '../src/auth/tokens';
 import { commitShas } from '../src/git/upload-pack';
 import { changesetForSha1, readGitObject } from '../src/git/mapping';
@@ -214,7 +215,7 @@ describe('git receive-pack', () => {
     expect(await listRefs(dbEnv, repoId)).toEqual([]);
   });
 
-  it('protects the default branch from force pushes and, with protect_default, from pushes', async () => {
+  it('protects the default branch from force pushes and, with a CI policy ruleset, from pushes', async () => {
     const first = await rootCommit();
     await push(
       pushBody([[ZERO, first.head.sha, 'refs/heads/main']], await packOf(first.objects)),
@@ -245,15 +246,12 @@ describe('git receive-pack', () => {
     );
     expect(topic.refs['refs/heads/topic']).toBe('ok');
 
-    await run(
+    await ciPolicyRulesetStatement(
       dbEnv,
-      'INSERT INTO ci_settings (repo_id, version, config, updated_at) VALUES (?, 1, ?, ?)',
-      [
-        repoId,
-        JSON.stringify({ commands: ['npm test'], protect_default: true }),
-        Date.now(),
-      ],
-    );
+      repoId,
+      { protect_default: true, required_approvals: 1, require_checks: true },
+      Date.now(),
+    ).run();
     const ff = await child(first.head.sha, { 'y.txt': 'y\n' }, 'ff\n');
     const blocked = await push(
       pushBody(
@@ -261,8 +259,8 @@ describe('git receive-pack', () => {
         await packOf(ff.objects),
       ),
     );
-    expect(blocked.refs['refs/heads/main']).toMatch(
-      /^protected_branch \(protect_default\): /,
+    expect(blocked.refs['refs/heads/main']).toBe(
+      'ruleset "CI policy (default branch)" update: open a pull request to update main',
     );
     expect(await headSha('main')).toBe(first.head.sha);
   });

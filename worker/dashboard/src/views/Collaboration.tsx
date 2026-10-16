@@ -639,6 +639,10 @@ export function CiView(): ReactElement {
               />{' '}
               Protect the default branch from direct updates
             </label>
+            <span className="small muted">
+              Saving writes these three choices to the &quot;CI policy (default
+              branch)&quot; ruleset. Manage it and other rulesets in Settings.
+            </span>
           </div>
           <p className="cost-note">
             Reserves up to <strong>${((minutes * 60 + 30) * 0.000036).toFixed(3)}</strong>{' '}

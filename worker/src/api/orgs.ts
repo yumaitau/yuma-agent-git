@@ -133,7 +133,7 @@ export async function getOrgBySlug(
 type Need = 'member' | 'manage' | 'owner';
 
 /** Load the org named in the path and check the caller's org role. */
-async function loadOrg(
+export async function loadOrg(
   c: Context<AppEnv>,
   need: Need,
 ): Promise<{ org: OrgRecord; me: OrgMemberRecord }> {

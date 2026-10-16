@@ -78,9 +78,12 @@ A push is checked in full before anything becomes visible:
 2. Each update's new commits are diffed against their first parent.
 3. Pre-receive checks run. Each rejection names the rule, and `git push`
    prints it:
-   - `protected_branch`: the default branch cannot be deleted or force pushed,
-     and with the CI policy `protect_default` it changes only through a pull
-     request.
+   - `ruleset "<name>" <rule>`: a branch, tag or push ruleset (#41) refuses
+     the update, for example `non_fast_forward`, `update` (pull request only;
+     the CI policy's `protect_default` is now this rule in the "CI policy
+     (default branch)" ruleset) or `max_file_size`. The ref-lock Durable
+     Object applies the same rules again when the ref moves.
+   - `protected_branch`: the default branch cannot be deleted or force pushed.
    - `path_rule <id>`: write is denied on a path the push changes, in a new
      commit or in the ref's net change.
    - `agent_ref`: `refs/agents/<id>/` belongs to that agent token.

@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { actorOf } from '../audit/record';
+import { enforcePushRules } from '../policy/rulesets';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { commitChanges, commitRequestSchema } from '../core/commit';
 import { firstParentHistory, getChangeset } from '../core/changesets';
@@ -21,6 +23,7 @@ import { changesetProvenance, recordAgentProvenance } from '../auth/agents';
  *
  * Path rules: a commit needs `write` on every path it touches; reads drop
  * `changed_files` entries the caller may not `read` (`omitted_paths_count`).
+ * Push rulesets (#41) apply to the files a commit changes.
  *
  * Agent tokens (#57) always commit as `{agent: <agent id>}`, and the agent,
  * the human and the task are recorded as the changeset's `provenance`.
@@ -75,8 +78,16 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
       parsed.data.changes.map((change) => change.path),
     );
     if (denied) return denied;
-
     const principal = c.get('principal');
+    await enforcePushRules(
+      c.env,
+      repo,
+      principal,
+      actorOf(principal),
+      parsed.data.changes,
+      'commit',
+    );
+
     const request =
       principal?.kind === 'agent'
         ? { ...parsed.data, author: { agent: principal.agentId } }

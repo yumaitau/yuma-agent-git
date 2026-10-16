@@ -4,10 +4,24 @@ import { getRef, setRef } from '../db/repos';
 import { isAncestorDag } from './ancestry';
 import { ApiError } from './errors';
 import { mutatePullLocked } from '../reviews/pulls';
-import { settings, parsePolicy } from '../ci/config';
-import { run, tx } from '../db/client';
+import { parsePolicy } from '../ci/config';
+import { tx, type RepoRecord } from '../db/client';
 import { getRepo } from '../db/repos';
 import { TAG_PREFIX, validateRefName } from './refs';
+import { actorOf } from '../audit/record';
+import {
+  actorFor,
+  applies,
+  ciPolicyRulesetStatement,
+  violationError,
+  evaluate,
+  principalSchema,
+  recordOutcome,
+  rulesetsFor,
+  type Actor,
+  type Outcome,
+  type Ruleset,
+} from '../policy/rulesets';
 
 const moveSchema = z.object({
   repo_id: z.string().min(1),
@@ -18,7 +32,18 @@ const moveSchema = z.object({
   force: z.boolean().optional(),
   /** Skip the fast-forward check but keep the compare-and-swap (git push). */
   non_ff: z.boolean().optional(),
+  /** Who moves the ref, for rulesets (null: the system, e.g. imports). */
+  actor: principalSchema.nullable().optional(),
+  via: z.string().max(32).optional(),
+  /** Only for putting back a move the same push made (atomic rollback). */
+  skip_rulesets: z.boolean().optional(),
 });
+
+interface Policy {
+  repo: RepoRecord | null;
+  rulesets: Ruleset[];
+  actor: Actor;
+}
 
 function ok(from: string | null, to: string | null): Response {
   return new Response(JSON.stringify({ ok: true, from, to }), {
@@ -63,12 +88,15 @@ export class RefLockDO {
       return this.state.blockConcurrencyWhile(async () => {
         try {
           const config = parsePolicy(input.config);
-          await run(
-            this.env,
-            `INSERT INTO ci_settings (repo_id,version,config,updated_at) VALUES (?,1,?,?)
+          const now = Date.now();
+          // the protection fields live on as the CI policy ruleset (#41)
+          await this.env.DB.batch([
+            this.env.DB.prepare(
+              `INSERT INTO ci_settings (repo_id,version,config,updated_at) VALUES (?,1,?,?)
             ON CONFLICT(repo_id) DO UPDATE SET version = version + 1, config = excluded.config, updated_at = excluded.updated_at`,
-            [input.repo_id, JSON.stringify(config), Date.now()],
-          );
+            ).bind(input.repo_id, JSON.stringify(config), now),
+            ciPolicyRulesetStatement(this.env, input.repo_id, config, now),
+          ]);
           return Response.json({ ok: true });
         } catch (err) {
           if (err instanceof ApiError) return fail(err.status, err.code, err.message);
@@ -109,33 +137,65 @@ export class RefLockDO {
     }
     const args = parsed.data;
 
-    // Fast-forward check runs OUTSIDE the gate: reachability over immutable
-    // changesets never changes, and keeping the D1 walk out of
-    // blockConcurrencyWhile keeps the gate short (it resets the DO on throw
-    // or after 30s). Full-DAG reachability (git semantics: a merge descends
-    // from both parents) — the first-parent skip list alone would reject
-    // moving off a merge's second parent.
+    // Rulesets, actor facts and the fast-forward check all read OUTSIDE the
+    // gate: reachability over immutable changesets never changes, rulesets
+    // are configuration, and keeping D1 walks out of blockConcurrencyWhile
+    // keeps the gate short (it resets the DO on throw or after 30s).
+    let policy: Policy;
+    try {
+      const repo = await getRepo(this.env, args.repo_id);
+      const rulesets =
+        repo && !args.skip_rulesets ? await rulesetsFor(this.env, repo) : [];
+      const actor = repo
+        ? await actorFor(this.env, repo, args.actor ?? null, rulesets)
+        : { principal: null, role: null, teams: [] };
+      policy = { repo, rulesets, actor };
+    } catch (err) {
+      console.error('ref-lock ruleset load failed', err);
+      return fail(500, 'internal_error', 'ruleset load failed');
+    }
+
+    // `fastForward`: `to` descends from `ffBase`. Full-DAG reachability (git
+    // semantics: a merge descends from both parents) — the first-parent skip
+    // list alone would reject moving off a merge's second parent. A forced
+    // move skips the check unless a non_fast_forward rule needs the answer;
+    // then it is taken against the head as read here.
     let fastForward = true;
-    if (
-      !args.force &&
-      !args.non_ff &&
-      args.from !== null &&
-      args.to !== null &&
-      args.to !== args.from
-    ) {
-      try {
+    let ffBase = args.from;
+    try {
+      if (args.non_ff) {
+        fastForward = false;
+      } else if (args.force) {
+        const repo = policy.repo;
+        const needed =
+          repo !== null &&
+          policy.rulesets.some(
+            (r) =>
+              applies(r, repo, args.name) &&
+              r.rules.some((rule) => rule.type === 'non_fast_forward'),
+          );
+        if (needed && args.to !== null) {
+          ffBase = (await getRef(this.env, args.repo_id, args.name))?.head ?? null;
+          if (ffBase !== null && ffBase !== args.to)
+            fastForward = await isAncestorDag(this.env, args.repo_id, ffBase, args.to);
+        }
+      } else if (args.from !== null && args.to !== null && args.to !== args.from) {
         fastForward = await isAncestorDag(this.env, args.repo_id, args.from, args.to);
-      } catch (err) {
-        console.error('ref-lock ancestry check failed', err);
-        return fail(500, 'internal_error', 'ancestry check failed');
       }
+    } catch (err) {
+      console.error('ref-lock ancestry check failed', err);
+      return fail(500, 'internal_error', 'ancestry check failed');
     }
 
     // The CAS itself: blockConcurrencyWhile makes the read-check-write atomic
     // (a DO otherwise interleaves events at await points).
-    return this.state.blockConcurrencyWhile(async () => {
+    let outcome: Outcome | null = null;
+    const response = await this.state.blockConcurrencyWhile(async () => {
       try {
-        return await this.moveRef(args, fastForward);
+        const moved = await this.moveRef(args, fastForward, ffBase, policy);
+        if (moved instanceof Response) return moved;
+        outcome = moved.outcome;
+        return moved.response;
       } catch (err) {
         // Never let an exception escape the gate: it would terminate and
         // reset the whole DO, failing queued moves for this ref.
@@ -146,12 +206,28 @@ export class RefLockDO {
         return fail(500, 'internal_error', 'ref move failed');
       }
     });
+    // recorded after the move, outside the gate: a failed log never fails it
+    if (outcome !== null && policy.repo !== null) {
+      try {
+        await recordOutcome(this.env, outcome, {
+          repo: policy.repo,
+          actor: args.actor ? actorOf(args.actor) : { kind: 'system', id: 'system' },
+          ref: args.name,
+          via: args.via ?? 'system',
+        });
+      } catch (err) {
+        console.error('ref-lock ruleset outcome not recorded', err);
+      }
+    }
+    return response;
   }
 
   private async moveRef(
     args: z.infer<typeof moveSchema>,
     fastForward: boolean,
-  ): Promise<Response> {
+    ffBase: string | null,
+    policy: Policy,
+  ): Promise<Response | { response: Response; outcome: Outcome }> {
     // Defense in depth: never let an unvalidated name reach idFromName callers
     // (or create a "zombie" ref) even if a future call site skips the check.
     validateRefName(args.name);
@@ -160,58 +236,55 @@ export class RefLockDO {
     const current = await getRef(this.env, repoId, name);
 
     if (current === null) {
-      if (from !== null) {
+      if (from !== null || to === null) {
         return fail(409, 'ref_stale', `ref ${name} does not exist`, {
           expected: from,
           actual: null,
         });
       }
-      if (to === null) {
-        return fail(409, 'ref_stale', `ref ${name} does not exist`, {
+    } else {
+      // Tags never move without force, as `git push` treats them.
+      if (name.startsWith(TAG_PREFIX) && !force && to !== null && to !== current.head) {
+        return fail(409, 'tag_exists', `tag ${name} already exists`, {
           expected: from,
-          actual: null,
+          actual: current.head,
         });
       }
-      await setRef(this.env, repoId, name, to);
-      return ok(null, to);
+      if (current.head !== from && !force) {
+        return fail(409, 'ref_stale', `ref ${name} moved`, {
+          expected: from,
+          actual: current.head,
+        });
+      }
+      if (!fastForward && !force && !args.non_ff) {
+        return fail(409, 'ref_not_fast_forward', `ref ${name} is not a fast-forward`, {
+          from,
+          to,
+        });
+      }
     }
 
-    // Tags never move without force, as `git push` treats them.
-    if (name.startsWith(TAG_PREFIX) && !force && to !== null && to !== current.head) {
-      return fail(409, 'tag_exists', `tag ${name} already exists`, {
-        expected: from,
-        actual: current.head,
-      });
+    // Rulesets (#41): the one evaluator for every direct move. Merges go
+    // through mergePullLocked instead, so a direct move is never a merge.
+    // Re-pointing a ref at its own head changes nothing, so no rule applies.
+    const outcome = evaluate(current?.head === to ? [] : policy.rulesets, {
+      repo: policy.repo ?? { slug: '', default_branch: '' },
+      actor: policy.actor,
+      ref: {
+        name,
+        kind: to === null ? 'delete' : current === null ? 'create' : 'update',
+        fastForward: fastForward && current?.head === ffBase,
+      },
+    });
+    if (!outcome.allowed) {
+      const err = violationError(outcome.blocking);
+      return fail(err.status, err.code, err.message, err.details);
     }
 
-    const config = await settings(this.env, repoId);
-    const repo = await getRepo(this.env, repoId);
-    if (
-      config?.policy.protect_default &&
-      name === repo?.default_branch &&
-      to !== current.head
-    ) {
-      return fail(
-        403,
-        'protected_branch',
-        'Open a pull request to update the protected default branch.',
-      );
+    if (current === null) {
+      await setRef(this.env, repoId, name, to as string);
+      return { response: ok(null, to), outcome };
     }
-
-    if (current.head !== from && !force) {
-      return fail(409, 'ref_stale', `ref ${name} moved`, {
-        expected: from,
-        actual: current.head,
-      });
-    }
-
-    if (!fastForward) {
-      return fail(409, 'ref_not_fast_forward', `ref ${name} is not a fast-forward`, {
-        from,
-        to,
-      });
-    }
-
     if (to === null) {
       // a deleted tag takes its annotation with it
       await tx(this.env, (t) => {
@@ -223,10 +296,10 @@ export class RefLockDO {
           ]);
         }
       });
-      return ok(current.head, null);
+      return { response: ok(current.head, null), outcome };
     }
     await setRef(this.env, repoId, name, to);
-    return ok(current.head, to);
+    return { response: ok(current.head, to), outcome };
   }
 }
 

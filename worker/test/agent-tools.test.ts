@@ -8,6 +8,7 @@ import { q1, run } from '../src/db/client';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import { readRefHead } from '../src/core/refs';
+import { ciPolicyRulesetStatement } from '../src/policy/rulesets';
 import { executeTool, toolRegistry, type ToolCtx } from '../src/agents/tools';
 import { newBudget, charge, DEFAULT_BUDGET } from '../src/agents/budget';
 import type { Principal } from '../src/auth/principal';
@@ -217,22 +218,21 @@ describe('agent tools', () => {
 
     // a protected default branch refuses agent lands; the agent must not
     // mistake that for a lost race and merge/retry until its budget dies
-    await run(
+    await ciPolicyRulesetStatement(
       dbEnv,
-      'INSERT INTO ci_settings (repo_id, version, config, updated_at) VALUES (?, 1, ?, ?)',
-      [
-        trunk.id,
-        JSON.stringify({ commands: ['npm test'], protect_default: true }),
-        Date.now(),
-      ],
-    );
+      trunk.id,
+      { protect_default: true, required_approvals: 1, require_checks: true },
+      Date.now(),
+    ).run();
     await executeTool(dbEnv, ctx, 'commit', {
       message: 'second change',
       changes: [{ path: 'c.txt', op: 'add', content_b64: b64('c') }],
     });
     expect(await executeTool(dbEnv, ctx, 'land', {})).toMatchObject({
       landed: false,
-      reason: 'protected_branch',
+      reason: 'ruleset_violation',
+      message:
+        'ruleset "CI policy (default branch)": open a pull request to update release/trunk',
       final: true,
     });
   });
