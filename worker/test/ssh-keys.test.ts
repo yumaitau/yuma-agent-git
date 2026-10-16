@@ -29,10 +29,14 @@ const testEnv = env as unknown as TestEnv;
 const dbEnv = testEnv as unknown as Env;
 const GATEWAY_HOST = 'ssh-gateway.internal.test';
 const GATEWAY_KEY = 'test-gateway-key';
+const OKTA = 'https://idp.example.test';
 const gwEnv = {
   ...testEnv,
   SSH_GATEWAY_HOST: GATEWAY_HOST,
   SSH_GATEWAY_KEY: GATEWAY_KEY,
+  OIDC_PROVIDERS: JSON.stringify([
+    { id: 'okta', name: 'Okta', issuer: OKTA, client_id: 'okta-client' },
+  ]),
 };
 const app = makeApp(gwEnv as unknown as Env);
 const SLUG = 'acme/ssh';
@@ -562,6 +566,51 @@ describe('POST /internal/ssh/authorize', () => {
         })
       ).status,
     ).toBe(403);
+  });
+
+  it("a person's key meets org SSO only when added from an SSO session", async () => {
+    await run(
+      dbEnv,
+      "INSERT INTO orgs (id, slug, display_name, created_at) VALUES ('o1', 'yuma', 'Yuma', 1)",
+    );
+    await run(
+      dbEnv,
+      "INSERT INTO org_members (org_id, user_id, role) VALUES ('o1', ?, 'owner')",
+      [owner.userId],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO org_sso (org_id, protocol, issuer, client_id, enforced, updated_by, updated_at)
+       VALUES ('o1', 'oidc', ?, 'okta-client', 1, ?, 1)`,
+      [OKTA, owner.userId],
+    );
+    await createRepo(dbEnv, {
+      slug: 'yuma/app',
+      visibility: 'private',
+      ownerKind: 'org',
+      ownerId: 'o1',
+      createdBy: owner.userId,
+    });
+    // added from the GitHub session loginAs makes
+    const github = await addKey(owner, await ed25519());
+    const refused = await authorize({
+      fingerprint: github.fingerprint,
+      repo: 'yuma/app',
+      service: 'git-upload-pack',
+    });
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      'sso_required',
+    );
+    const okta = await parseAuthKey(await ed25519());
+    await run(
+      dbEnv,
+      `INSERT INTO ssh_keys (id, user_id, title, public_key, fingerprint, auth_method, created_at)
+       VALUES ('k-okta', ?, 'okta', ?, ?, 'oidc:okta', 1)`,
+      [owner.userId, okta.publicKey, okta.fingerprint],
+    );
+    const t = await token(okta.fingerprint, 'git-upload-pack', 'yuma/app');
+    expect((await advertise(t, 'git-upload-pack', 'yuma/app')).status).toBe(200);
   });
 
   it('tokens last 60 seconds', async () => {
