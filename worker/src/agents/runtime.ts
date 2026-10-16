@@ -8,6 +8,7 @@ import { POST_MERGE_MAX_TOOL_CALLS, newBudget, type TaskBudget } from './budget'
 import { parsePostMergeTask } from './prompt';
 import { r2 } from '../observability/phase';
 import { recordAgent } from '../observability/metrics';
+import { redactDeep } from '../security/secrets/detectors';
 
 /**
  * Agent runtime (issue #17, architecture §4) — agents that consume and produce
@@ -385,7 +386,9 @@ export class YagAgent extends Agent<Env, AgentState> {
    * flushed in 20-entry windows via an append-put (read-modify-write), so the
    * ring never rotates unflushed entries out.
    */
-  private async pushTranscript(entry: TranscriptEntry): Promise<void> {
+  private async pushTranscript(raw: TranscriptEntry): Promise<void> {
+    // secret scanning (#66): no secret reaches the ring, R2 or the model's window
+    const entry = redactDeep(raw);
     const total = (this.state.total ?? 0) + 1;
     const transcript = [...this.state.transcript, entry].slice(-TRANSCRIPT_RING);
     this.setState({ ...this.state, transcript, total });

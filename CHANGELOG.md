@@ -23,6 +23,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Secret scanning with push protection (#66). Pushes, the commit RPC, the agent
+  `commit` tool and applied suggestions refuse files that add AWS, GitHub,
+  Yuma, Cloudflare, Slack or Stripe tokens, private keys or high-entropy
+  values, naming the file and line. A repository admin can bypass with
+  `git push -o secret-scanning.bypass=<false_positive|test_data|will_fix>` (or
+  `secret_scanning_bypass` on the commit RPC); each bypass is audited and
+  raises an alert. Alerts store a SHA-256 of the secret and its location,
+  never the value. `/api/v1/repos/:repo/secret-scanning/alerts` and the
+  repository Security page list and resolve them; history scans run after an
+  import and on request; `secret_scanning_alert` webhooks route new alerts.
+  Agent transcripts are redacted with the same detectors.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

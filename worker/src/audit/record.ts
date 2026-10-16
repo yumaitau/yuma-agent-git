@@ -130,7 +130,10 @@ export type AuditAction =
   | 'oauth_app.create'
   | 'oauth_app.delete'
   | 'oauth.authorize'
-  | 'oauth.token.issue';
+  | 'oauth.token.issue'
+  | 'secret_scanning.bypass'
+  | 'secret_scanning.alert.update'
+  | 'secret_scanning.scan.start';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

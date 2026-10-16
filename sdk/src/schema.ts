@@ -2554,6 +2554,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/secret-scanning/alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Secret scanning alerts (location and detector; never the secret) and the last history scan */
+    get: operations['listSecretScanningAlerts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/secret-scanning/alerts/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Resolve (revoked, false positive, test data, won't fix) or reopen an alert */
+    patch: operations['updateSecretScanningAlert'];
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/secret-scanning/scans': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Queue a history scan for secrets (also started after an import) */
+    post: operations['startSecretScan'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/secrets': {
     parameters: {
       query?: never;
@@ -3963,6 +4014,7 @@ export interface operations {
               | 'issues'
               | 'ci_run'
               | 'work_item'
+              | 'secret_scanning_alert'
             )[];
             /**
              * @default yag
@@ -4208,6 +4260,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'secret_scanning_alert'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -4934,6 +4987,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'secret_scanning_alert'
           )[];
           /**
            * @default yag
@@ -6540,6 +6594,11 @@ export interface operations {
           committer_tz?: string;
           gpgsig?: string;
           git_extra_headers?: [string, string][];
+          secret_scanning_bypass?: {
+            /** @enum {string} */
+            reason: 'false_positive' | 'test_data' | 'will_fix';
+            comment?: string;
+          };
         };
       };
     };
@@ -7368,6 +7427,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'secret_scanning_alert'
           )[];
           /**
            * @default yag
@@ -9229,6 +9289,99 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listSecretScanningAlerts: {
+    parameters: {
+      query?: {
+        state?: 'open' | 'resolved';
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateSecretScanningAlert: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json':
+          | {
+              /** @constant */
+              state: 'resolved';
+              /** @enum {string} */
+              resolution: 'revoked' | 'false_positive' | 'test_data' | 'wont_fix';
+            }
+          | {
+              /** @constant */
+              state: 'open';
+            };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  startSecretScan: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];

@@ -747,6 +747,22 @@ describe('route sweep — the authz contract future routes must extend', () => {
         expect: { anon: 401, stranger: 404, creator: 200 },
       },
       {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/secret-scanning/alerts',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/v1/repos/acme/sweep/secret-scanning/alerts/1',
+        body: { state: 'open' },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such alert
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/secret-scanning/scans',
+        expect: { anon: 401, stranger: 404, creator: 202 },
+      },
+      {
         method: 'PUT',
         path: '/api/v1/repos/acme/sweep',
         body: {},

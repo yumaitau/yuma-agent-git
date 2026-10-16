@@ -567,6 +567,9 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/scim/tokens': 'scim_token.create',
   'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack': 'ref.move',
+  'PATCH /api/v1/repos/:repo{.+}/secret-scanning/alerts/:id':
+    'secret_scanning.alert.update',
+  'POST /api/v1/repos/:repo{.+}/secret-scanning/scans': 'secret_scanning.scan.start',
   'POST /api/v1/repos/:repo{.+}/rulesets': 'ruleset.create',
   'PUT /api/v1/repos/:repo{.+}/rulesets/:id': 'ruleset.update',
   'DELETE /api/v1/repos/:repo{.+}/rulesets/:id': 'ruleset.delete',

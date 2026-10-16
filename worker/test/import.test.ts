@@ -229,6 +229,10 @@ describe('tar-based snapshot import', () => {
     expect(job.status).toBe('done');
     expect(job.commits_done).toBe(1);
     expect((job.checkpoint as { github_sha?: string }).github_sha).toBe('a'.repeat(40));
+    // the imported history is queued for a secret scan (#66)
+    expect(
+      await q1(dbEnv, 'SELECT id FROM secret_scans WHERE repo_id = ?', [repo.id]),
+    ).not.toBeNull();
 
     // main landed at the snapshot root; content byte-identical through the RPC
     const head = (await q1(

@@ -209,6 +209,24 @@ describe.runIf(enabled)('git smart HTTP against wrangler dev (CI smoke)', () => 
     );
   }, 60_000);
 
+  it('refuses a pushed secret with its location; an admin bypasses with -o', async () => {
+    const src = join(dir, 'src');
+    git(src, 'checkout', '-qb', 'leak', 'main');
+    // built at run time so this file holds no key-shaped literal
+    const key = `AKIA${'Q3JXZ7M5N4P6R2TW'}`;
+    await writeFile(join(src, 'deploy.env'), `REGION=ap-southeast-2\nKEY=${key}\n`);
+    git(src, 'add', 'deploy.env');
+    git(src, 'commit', '-qm', 'add deploy settings');
+    const refused = run('git', ['push', 'origin', 'leak'], src);
+    expect(refused.code).not.toBe(0);
+    expect(refused.out).toContain('secret_scanning: AWS access key ID at deploy.env:2');
+    expect(refused.out).not.toContain(key);
+    git(src, 'push', '-q', '-o', 'secret-scanning.bypass=test_data', 'origin', 'leak');
+    expect(git(src, 'ls-remote', 'origin', 'refs/heads/leak').split('\t')[0]).toBe(
+      git(src, 'rev-parse', 'leak'),
+    );
+  }, 60_000);
+
   it('tells protocol v0 clients to use protocol v2', () => {
     const res = run(
       'git',

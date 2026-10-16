@@ -8,6 +8,16 @@ import { agentRefOwner, TAG_PREFIX } from '../core/refs';
 import { actorFor, evaluate, rulesetsFor, type Outcome } from '../policy/rulesets';
 import { isManifest, npmDependencies, type Dependency } from '../policy/engine';
 import { agentKey, guardAgentAction } from '../policy/guardrails';
+import {
+  bypassFromPushOptions,
+  bypassHint,
+  canBypass,
+  describeFindings,
+  scanFile,
+  withoutDismissed,
+  type Bypass,
+  type Located,
+} from '../security/secrets/scan';
 
 /**
  * Pre-receive checks (issue #32): every check sees the whole push before any
@@ -15,8 +25,8 @@ import { agentKey, guardAgentAction } from '../policy/guardrails';
  * message `git push` prints. Checks are pure over the parsed push plus a
  * bounded number of D1 reads, so they are deterministic and quick.
  *
- * Secret scanning (#66) joins this list as a further `Check`. Agent policy
- * (#62) runs last, so only pushes every other check passes ask a human.
+ * Secret scanning (#66) is one of them. Agent policy (#62) runs last, so
+ * only pushes every other check passes ask a human.
  */
 
 /** One file change of a pushed commit, relative to its first parent. */
@@ -24,6 +34,8 @@ export interface GitChange {
   path: string;
   op: 'add' | 'mod' | 'del';
   sha?: string;
+  /** Blob SHA before a `mod`. */
+  oldSha?: string;
   mode?: string;
   /** Inflated size when the blob arrived in this pack. */
   size?: number;
@@ -52,6 +64,8 @@ export interface PushUpdate {
   error?: string;
   /** Push-ruleset outcome, recorded once the ref has moved. */
   pushRules?: Outcome;
+  /** Secrets an admin pushed past, recorded once the ref has moved. */
+  secretBypass?: { bypass: Bypass; found: Located[] };
 }
 
 export interface PreReceiveContext {
@@ -60,6 +74,8 @@ export interface PreReceiveContext {
   principal: Principal;
   decider: PathDecider;
   commits: Map<string, PushCommit>;
+  /** `git push -o` values, when the client sent any. */
+  pushOptions: string[];
   /** Net file changes the ref sees (old head → new head). */
   refChanges(update: PushUpdate): Promise<GitChange[]>;
   /** A blob's bytes from the pack or the store, or null. */
@@ -275,6 +291,49 @@ const pathSafety: Check = async (ctx, updates) =>
   });
 
 /**
+ * Secret scanning (#66): every file the new commits add or change, minus
+ * secrets the file already held. A repository admin may push past findings
+ * with `-o secret-scanning.bypass=<reason>`; agents never can.
+ */
+const secretScanning: Check = async (ctx, updates) => {
+  const out: Verdict[] = [];
+  for (const u of updates) {
+    const scanned = new Set<string>();
+    let found: Located[] = [];
+    for (const sha of u.commits) {
+      for (const c of ctx.commits.get(sha)?.changes ?? []) {
+        if (c.op === 'del' || !c.sha || c.mode === '160000' || scanned.has(c.sha))
+          continue;
+        scanned.add(c.sha);
+        const bytes = await ctx.readBlob(c.sha);
+        if (!bytes) continue;
+        const previous = c.oldSha;
+        for (const f of await scanFile(c.path, bytes, async () =>
+          previous ? ctx.readBlob(previous) : null,
+        ))
+          found.push({ ...f, commit: sha });
+      }
+    }
+    found = await withoutDismissed(ctx.env, ctx.repo.id, found);
+    if (found.length === 0) continue;
+    const bypass = bypassFromPushOptions(ctx.pushOptions);
+    const blocked = (message: string): void => {
+      out.push({ ref: u.ref, rule: 'secret_scanning', message });
+    };
+    if (bypass === null) {
+      blocked(`${describeFindings(found)}; ${bypassHint()}`);
+    } else if (bypass === 'invalid') {
+      blocked(`unknown bypass reason; ${bypassHint()}`);
+    } else if (!(await canBypass(ctx.env, ctx.repo, ctx.principal))) {
+      blocked(`${describeFindings(found)}; only a repository admin can bypass`);
+    } else {
+      u.secretBypass = { bypass, found };
+    }
+  }
+  return out;
+};
+
+/**
  * Agent guardrails (#62): the kill switch and the org policy judge each ref
  * update an agent pushes (`push`, or `release.publish` for tags). A held
  * update names its approval; once a human approves, pushing the same old and
@@ -336,6 +395,7 @@ export const CHECKS: Check[] = [
   pathRules,
   maxFileSize,
   pathSafety,
+  secretScanning,
   agentPolicy,
 ];
 

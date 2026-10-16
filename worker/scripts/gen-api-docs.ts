@@ -388,6 +388,12 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/orgs/:org/teams/:team/repos': 'Grant the team a repo role',
   'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo': 'Remove a team repo grant',
   'GET /api/v1/orgs/:org/repos': 'Org repos the caller can read',
+  'GET /api/v1/repos/:repo/secret-scanning/alerts':
+    'Secret scanning alerts (location and detector; never the secret) and the last history scan',
+  'PATCH /api/v1/repos/:repo/secret-scanning/alerts/:id':
+    "Resolve (revoked, false positive, test data, won't fix) or reopen an alert",
+  'POST /api/v1/repos/:repo/secret-scanning/scans':
+    'Queue a history scan for secrets (also started after an import)',
   'GET /api/v1/orgs/:org/rulesets': 'List org rulesets',
   'POST /api/v1/orgs/:org/rulesets': 'Create an org ruleset',
   'PUT /api/v1/orgs/:org/rulesets/:id': 'Replace an org ruleset',
