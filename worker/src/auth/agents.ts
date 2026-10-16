@@ -13,6 +13,7 @@ import { hasScope, type AppEnv, type Principal } from './principal';
 import { ssoMessage, ssoRequirement } from './sso';
 import { resolveTokenPrincipal } from './tokens';
 import { getPause, INSTANCE_SCOPE, pauseMessage } from '../policy/pause';
+import { RISKS, type Risk } from '../../shared/work';
 
 /**
  * Agent identities (issue #57). An agent is a principal (`agent:<id>`) owned
@@ -43,6 +44,9 @@ export const AGENT_SCOPES = [
   'pulls:write',
   'ci:run',
   'releases:write',
+  // work queue (#59): claim, heartbeat and release; approve marks work ready
+  'queue:claim',
+  'queue:approve',
 ] as const;
 export type AgentScope = (typeof AGENT_SCOPES)[number];
 const DEFAULT_SCOPES: AgentScope[] = ['contents:read', 'contents:write', 'pulls:write'];
@@ -63,6 +67,7 @@ const agentRowSchema = z.object({
   created_by: z.string(),
   created_at: z.number(),
   disabled: z.number(),
+  max_risk: z.enum(RISKS),
   live_tokens: z.number().optional(),
 });
 
@@ -76,6 +81,8 @@ export interface Agent {
   allowed_repos: string[] | null;
   created_at: number;
   disabled: boolean;
+  /** Highest work-queue risk the agent may claim (#59). */
+  max_risk: Risk;
   live_tokens?: number;
 }
 
@@ -92,6 +99,7 @@ function parseAgent(raw: unknown): Agent {
       row.allowed_repos === null ? null : (JSON.parse(row.allowed_repos) as string[]),
     created_at: row.created_at,
     disabled: row.disabled !== 0,
+    max_risk: row.max_risk,
     ...(row.live_tokens === undefined ? {} : { live_tokens: row.live_tokens }),
   };
 }
@@ -431,6 +439,8 @@ export const createAgentSchema = z.object({
   allowed_repos: z.array(z.string().min(1)).max(50).nullable().optional(),
   /** Org slug for an org-owned agent; omitted means owned by the caller. */
   org: z.string().min(1).optional(),
+  /** Highest work-queue risk it may claim; defaults to `low`. */
+  max_risk: z.enum(RISKS).optional(),
 });
 
 agentIdentityRoutes.get('/api/v1/agents', async (c) => {
@@ -511,6 +521,7 @@ agentIdentityRoutes.post('/api/v1/agents', async (c) => {
       allowed_repos: allowed,
       created_at: now,
       disabled: false,
+      max_risk: input.max_risk ?? 'low',
     };
     await recordAudit(
       c,
@@ -524,13 +535,14 @@ agentIdentityRoutes.post('/api/v1/agents', async (c) => {
           kind: agent.kind,
           max_scopes: agent.max_scopes,
           allowed_repos: agent.allowed_repos,
+          max_risk: agent.max_risk,
         },
       },
       [
         c.env.DB.prepare(
           `INSERT INTO agents (id, owner_kind, owner_id, name, kind, max_scopes, allowed_repos,
-                               created_by, created_at, disabled)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+                               created_by, created_at, disabled, max_risk)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
         ).bind(
           agent.id,
           agent.owner_kind,
@@ -541,6 +553,7 @@ agentIdentityRoutes.post('/api/v1/agents', async (c) => {
           allowed === null ? null : JSON.stringify(allowed),
           user.id,
           now,
+          agent.max_risk,
         ),
       ],
     );

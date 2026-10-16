@@ -614,6 +614,10 @@ const AUDITED: Record<string, AuditAction> = {
   'PATCH /api/v1/repos/:repo{.+}/runners/:id': 'runner.update',
   'DELETE /api/v1/repos/:repo{.+}/runners/:id': 'runner.delete',
   'POST /runner/v1/register': 'runner.register',
+  'PUT /api/v1/repos/:repo{.+}/work/:number': 'work.update',
+  'POST /api/v1/repos/:repo{.+}/work/claim': 'work.claim',
+  'POST /api/v1/repos/:repo{.+}/work/:number/release': 'work.release',
+  'POST /api/v1/repos/:repo{.+}/work/import-labels': 'work.import',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -639,6 +643,8 @@ const EXEMPT: Record<string, string> = {
   'POST /runner/v1/jobs/:id/steps/:step': 'job lifecycle on the run row',
   'PUT /runner/v1/jobs/:id/artifacts/:name': 'job lifecycle on the run row',
   'POST /runner/v1/jobs/:id/complete': 'job lifecycle on the run row',
+  'POST /api/v1/repos/:repo{.+}/work/:number/heartbeat':
+    'extends a lease the caller already holds; the claim and its expiry are audited',
 };
 
 describe('audit coverage', () => {

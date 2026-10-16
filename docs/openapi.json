@@ -279,7 +279,9 @@
                         "contents:write",
                         "pulls:write",
                         "ci:run",
-                        "releases:write"
+                        "releases:write",
+                        "queue:claim",
+                        "queue:approve"
                       ]
                     }
                   },
@@ -293,7 +295,8 @@
                       { "type": "null" }
                     ]
                   },
-                  "org": { "type": "string", "minLength": 1 }
+                  "org": { "type": "string", "minLength": 1 },
+                  "max_risk": { "type": "string", "enum": ["low", "medium", "high"] }
                 },
                 "required": ["name", "kind"]
               }
@@ -7721,6 +7724,397 @@
         ],
         "responses": {
           "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work": {
+      "get": {
+        "operationId": "listWork",
+        "summary": "Work queue items and dependencies (`?readiness=&risk=&claimed_by=`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "readiness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "needs-prep",
+                "ready",
+                "claimed",
+                "in-review",
+                "blocked",
+                "done"
+              ]
+            }
+          },
+          {
+            "name": "risk",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["low", "medium", "high"] }
+          },
+          {
+            "name": "claimed_by",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "default": 500, "type": "integer", "minimum": 1, "maximum": 500 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work/{number}": {
+      "get": {
+        "operationId": "getWork",
+        "summary": "One work item and its readiness history",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "updateWork",
+        "summary": "Set work fields; `ready` and risk need triage or `queue:approve`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "readiness": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "needs-prep",
+                      "ready",
+                      "in-review",
+                      "blocked",
+                      "done"
+                    ]
+                  },
+                  "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+                  "size": {
+                    "anyOf": [
+                      { "type": "string", "enum": ["xs", "s", "m", "l", "xl"] },
+                      { "type": "null" }
+                    ]
+                  },
+                  "agent_kind": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["factory", "claude_code", "codex", "grok", "builtin"]
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+                  "plan": { "type": "boolean" },
+                  "depends_on": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "reason": { "type": "string", "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work/{number}/heartbeat": {
+      "post": {
+        "operationId": "heartbeatWork",
+        "summary": "Renew the lease you hold",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lease_seconds": { "type": "integer", "minimum": 30, "maximum": 3600 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work/{number}/release": {
+      "post": {
+        "operationId": "releaseWork",
+        "summary": "End your claim: `ready` (counts an attempt), `in-review`, `blocked` or `done`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "outcome": {
+                    "type": "string",
+                    "enum": ["ready", "in-review", "blocked", "done"]
+                  },
+                  "reason": { "type": "string", "maxLength": 500 }
+                },
+                "required": ["outcome"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work/claim": {
+      "post": {
+        "operationId": "claimWork",
+        "summary": "Atomically claim the best ready item with a lease (agents need `queue:claim`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lease_seconds": { "type": "integer", "minimum": 30, "maximum": 3600 },
+                  "max_risk": { "type": "string", "enum": ["low", "medium", "high"] },
+                  "agent_kind": {
+                    "type": "string",
+                    "enum": ["factory", "claude_code", "codex", "grok", "builtin"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/work/import-labels": {
+      "post": {
+        "operationId": "importWorkLabels",
+        "summary": "Turn Factory `<prefix>:*` labels into work fields (approvers)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prefix": {
+                    "default": "yuma",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._-]{1,40}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }

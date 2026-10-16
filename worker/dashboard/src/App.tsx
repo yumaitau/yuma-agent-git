@@ -5,6 +5,7 @@ import { setUnauthorizedHandler } from './api';
 import { CiView, HistoryView, PullsView, PullView } from './views/Collaboration';
 import { IssuesView, NewIssueView } from './views/Issues';
 import { IssueView } from './views/IssueView';
+import { BoardView } from './views/Board';
 import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
 import { Layout } from './Layout';
@@ -61,6 +62,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/r/:owner/:name/issues" element={<IssuesView />} />
                 <Route path="/r/:owner/:name/issues/new" element={<NewIssueView />} />
                 <Route path="/r/:owner/:name/issues/:number" element={<IssueView />} />
+                <Route path="/r/:owner/:name/board" element={<BoardView />} />
                 <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
                 <Route path="/r/:owner/:name/ci" element={<CiView />} />

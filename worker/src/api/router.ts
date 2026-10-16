@@ -23,6 +23,7 @@ import { reviewsRoutes } from './reviews';
 import { rulesetsRoutes } from './rulesets';
 import { runnerAdminRoutes } from './runners';
 import { secretsRoutes } from './secrets';
+import { workRoutes } from './work';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
 export const apiRouter = new Hono<{ Bindings: Env }>();
@@ -32,6 +33,7 @@ apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1
 apiRouter.route('/', collaborationRoutes);
 apiRouter.route('/', reviewsRoutes);
 apiRouter.route('/', issuesRoutes);
+apiRouter.route('/', workRoutes);
 apiRouter.route('/', secretsRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);

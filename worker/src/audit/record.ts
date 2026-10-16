@@ -110,7 +110,12 @@ export type AuditAction =
   | 'policy.approval.approve'
   | 'policy.approval.reject'
   | 'agents.pause'
-  | 'agents.resume';
+  | 'agents.resume'
+  | 'work.update'
+  | 'work.claim'
+  | 'work.release'
+  | 'work.expire'
+  | 'work.import';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

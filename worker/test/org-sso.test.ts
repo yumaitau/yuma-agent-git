@@ -197,6 +197,21 @@ describe('org SSO enforcement', () => {
     const log = await call(member.cookie, 'GET', '/api/v1/repos/yuma/core/changesets');
     expect(log.status).toBe(403);
     expect((await errorOf(log)).code).toBe('sso_required');
+    // the work queue (#59) too, even for the owner's GitHub session
+    for (const [method, tail] of [
+      ['GET', '/work'],
+      ['POST', '/work/claim'],
+    ] as const) {
+      const body = method === 'POST' ? {} : undefined;
+      const work = await call(
+        owner.cookie,
+        method,
+        `/api/v1/repos/yuma/core${tail}`,
+        body,
+      );
+      expect(work.status).toBe(403);
+      expect((await errorOf(work)).code).toBe('sso_required');
+    }
     const listed = await call(member.cookie, 'GET', '/api/v1/repos');
     expect(
       ((await listed.json()) as { repos: { slug: string }[] }).repos.map((r) => r.slug),
