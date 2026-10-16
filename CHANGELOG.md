@@ -82,6 +82,15 @@ All notable changes to this project are documented here. The format follows
   `release.publish`. Per-owner quota (`REGISTRY_QUOTA_BYTES`), `keep_untagged`
   retention with a cron cleanup, audit events and a `package` webhook event.
   See docs/registry.md.
+- GitHub bulk import (#72): `POST /api/v1/orgs/:org/imports`, `yag import
+github` and the org Import page bring a GitHub org's repos in with the same
+  commit SHAs (fetched over Git smart HTTP into the push path, in resumable
+  chunks), branches and tags, labels, milestones, issues with sub-issues and
+  `yuma:*` work labels, pull requests, comments, reviews and line threads,
+  releases with assets, and LFS objects. Each phase checkpoints, GitHub rate
+  limits pause the job, failed repos resume from their checkpoint, and a re-run
+  adds nothing twice. Accounts match by linked GitHub identity or verified
+  email, else become claimable placeholders.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

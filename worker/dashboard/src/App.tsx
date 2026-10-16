@@ -9,6 +9,7 @@ import { BoardView } from './views/Board';
 import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
 import { MergeQueueView } from './views/MergeQueue';
+import { ImportView } from './views/Import';
 import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
 import { SearchView } from './views/Search';
@@ -65,6 +66,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org/runners" element={<RunnersView />} />
+                <Route path="/orgs/:org/imports" element={<ImportView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />
                 <Route path="/r/:owner/:name/issues" element={<IssuesView />} />
                 <Route path="/r/:owner/:name/issues/new" element={<NewIssueView />} />

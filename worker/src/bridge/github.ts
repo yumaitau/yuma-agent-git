@@ -93,10 +93,16 @@ export async function appJwt(env: Env, now: number = Date.now()): Promise<string
 // Installation tokens (best-effort per-isolate cache)
 // ---------------------------------------------------------------------------
 
-const tokenCache = new Map<number, { token: string; expiresAt: number }>();
+// keyed by installation and requested permissions, so a narrowed token is
+// never served where a broader one was asked for (or the other way round)
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+const cacheKey = (installationId: number, permissions?: Record<string, string>): string =>
+  `${installationId}:${permissions ? JSON.stringify(permissions) : ''}`;
 
 export function clearInstallationToken(installationId: number): void {
-  tokenCache.delete(installationId);
+  for (const key of tokenCache.keys()) {
+    if (key.startsWith(`${installationId}:`)) tokenCache.delete(key);
+  }
 }
 
 export async function installationToken(
@@ -105,7 +111,7 @@ export async function installationToken(
   permissions?: Record<string, string>,
   now: number = Date.now(),
 ): Promise<string> {
-  const cached = tokenCache.get(installationId);
+  const cached = tokenCache.get(cacheKey(installationId, permissions));
   if (cached && cached.expiresAt - 5 * 60_000 > now) return cached.token;
 
   const jwt = await appJwt(env, now);
@@ -126,37 +132,41 @@ export async function installationToken(
     throw new Error(`installation token mint failed: ${res.status}`);
   }
   const body = (await res.json()) as { token: string; expires_at: string };
-  tokenCache.set(installationId, {
+  tokenCache.set(cacheKey(installationId, permissions), {
     token: body.token,
     expiresAt: Date.parse(body.expires_at),
   });
   return body.token;
 }
 
-/** Authenticated GitHub API call as the app installation (re-auths on 401). */
+/**
+ * Authenticated GitHub API call as the app installation (re-auths on 401).
+ * `permissions` narrows the installation token (the importer reads only).
+ */
 export async function githubApi(
   env: Env,
   installationId: number,
   path: string,
   init: RequestInit = {},
+  permissions?: Record<string, string>,
 ): Promise<Response> {
   const call = async (token: string): Promise<Response> =>
     fetch(`https://api.github.com${path}`, {
       ...init,
       headers: {
+        accept: 'application/vnd.github+json',
         ...(init.headers as Record<string, string> | undefined),
         authorization: `Bearer ${token}`,
-        accept: 'application/vnd.github+json',
         'x-github-api-version': GITHUB_API_VERSION,
         'user-agent': USER_AGENT,
       },
     });
 
-  let res = await call(await installationToken(env, installationId));
+  let res = await call(await installationToken(env, installationId, permissions));
   if (res.status === 401) {
     // stale cache entry — always re-fetch on 401
     clearInstallationToken(installationId);
-    res = await call(await installationToken(env, installationId));
+    res = await call(await installationToken(env, installationId, permissions));
   }
   return res;
 }

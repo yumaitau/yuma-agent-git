@@ -9,6 +9,7 @@ import { treeFiles } from './fastimport';
 import { RequestValidationError } from '../core/errors';
 import { ulid } from '../core/ids';
 import { githubApi } from './github';
+import type { BulkImportMessage } from './bulk-import';
 
 /**
  * GitHub contents-sync bridge (issue #16) — the "agents land work back to
@@ -37,7 +38,8 @@ export type GitImportMessage =
       ref: string;
       after: string;
     }
-  | { type: 'export_job'; job_id: string; cursor?: ExportCursor };
+  | { type: 'export_job'; job_id: string; cursor?: ExportCursor }
+  | BulkImportMessage;
 
 /** Continuation state for a multi-batch export, carried by the queued message. */
 export interface ExportCursor {

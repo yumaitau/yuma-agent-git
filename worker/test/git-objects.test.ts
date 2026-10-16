@@ -1,11 +1,23 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, instrumentDb, instrumentQueues, seedSchema } from './helpers';
+import {
+  cleanDb,
+  instrumentDb,
+  instrumentQueues,
+  loginAs,
+  makeApp,
+  seedSchema,
+} from './helpers';
+import { capturedQueue, driveImport, fakeGithub, installFakeGithub } from './github-fake';
+import { startBulkImport } from '../src/bridge/bulk-import';
+import { getOrgBySlug } from '../src/api/orgs';
+import { createApiToken } from '../src/auth/tokens';
+import { commitShas } from '../src/git/upload-pack';
 import type { TestEnv } from './helpers';
 import { q, q1, run } from '../src/db/client';
 import { C, T } from '../src/db/schema';
-import { createRepo } from '../src/db/repos';
+import { createRepo, getRef, getRepoBySlug, setRef } from '../src/db/repos';
 import { putBlob } from '../src/core/blobs';
 import { putTree, type TreeEntry } from '../src/core/trees';
 import { commitChanges } from '../src/core/commit';
@@ -576,18 +588,115 @@ describe('changeset IDs with Git metadata', () => {
 });
 
 /**
- * Import → export round trip of a real Git history (issue #30 acceptance).
- * The mapping can represent all of these; the GitHub import path
- * (bridge/import.ts, reworked in #72) does not capture them yet, so a source
- * commit's SHA cannot be reproduced. Each gap, with its reason:
+ * Import → export round trip of a real Git history (issue #30 acceptance,
+ * closed by the #72 importer). The source is the shared fixture served by our
+ * own upload-pack as a fake github.com repo; the bulk importer fetches it over
+ * smart HTTP and stores it through the push path. `GIT_HISTORY_HEAD_SHA1` is
+ * what real Git computes for the fixture (CLI Git smoke), so matching it
+ * proves authors (agent identity included), committers, time zones, merges,
+ * executable and symlink modes, Git sort order and an empty commit all
+ * survive; a signed commit with extra headers rides on top.
  */
-describe('import → export SHA round trip (known gaps, #72)', () => {
-  it.todo('author identity: snapshot imports use the fixed yag-import author');
-  it.todo(
-    'committer and time zones: the GitHub commits API path keeps author name/date only',
-  );
-  it.todo('merges: full_history imports merges single-parent (checkpoint flag)');
-  it.todo('executable bits and symlinks: imported trees store mode 100644');
-  it.todo('gpgsig and extra headers: the REST commits API does not return raw headers');
-  it.todo('fixture tarball: no hermetic Git history fixture for the import path yet');
+describe('import → export SHA round trip (#30, #72)', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('a GitHub import reproduces every commit SHA, chunked or in one fetch', async () => {
+    await seedSchema(testEnv);
+    await cleanDb(testEnv);
+    const { env: qEnv } = capturedQueue(dbEnv);
+    const app = makeApp(qEnv);
+    const gh = fakeGithub('acme-gh');
+    restore = installFakeGithub(gh, app);
+    const owner = await loginAs(testEnv, 1, 'owner');
+    const orgRes = await app(
+      new Request('https://x/api/v1/orgs', {
+        method: 'POST',
+        headers: { ...owner.headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ slug: 'acme' }),
+      }),
+    );
+    expect(orgRes.status).toBe(201);
+    await run(
+      dbEnv,
+      `INSERT INTO installations (installation_id, account_login, account_id, repos, updated_at)
+       VALUES (77, 'acme-gh', 9, '[]', 0)`,
+    );
+
+    const source = await createRepo(dbEnv, { slug: 'src/hist', createdBy: owner.userId });
+    const byKey = await seedHistory(source.id);
+    const c4 = byKey.get('c4') as Changeset;
+    const c5 = byKey.get('c5') as Changeset;
+    const signed = await createChangeset(dbEnv, source.id, {
+      first_parent: c5.id,
+      parents: [c5.id],
+      author,
+      message: 'signed\n',
+      changed_files: [],
+      created_at: 1_700_000_600_000,
+      root_tree: c5.root_tree,
+      committer: { name: 'Carol', email: 'carol@example.com', at: 1_700_000_700_000 },
+      author_tz: '+0530',
+      committer_tz: '-0800',
+      gpgsig: '-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----',
+      git_extra_headers: [['encoding', 'ISO-8859-1']],
+    });
+    await setRef(dbEnv, source.id, 'main', c5.id);
+    await setRef(dbEnv, source.id, 'signed', signed.id);
+    await setRef(dbEnv, source.id, 'refs/tags/merge', c4.id);
+    const token = await createApiToken(dbEnv, owner.userId, { label: 'source' });
+    const authorization = `Basic ${btoa(`git:${token.raw}`)}`;
+    const sourceShas = await commitShas(dbEnv, source.id, [
+      ...[...byKey.values()].map((cs) => cs.id),
+      signed.id,
+    ]);
+    expect(sourceShas.get(c5.id)).toBe(GIT_HISTORY_HEAD_SHA1);
+    gh.lists['/orgs/acme-gh/repos'] = [
+      {
+        id: 1,
+        name: 'chunked',
+        full_name: 'acme-gh/chunked',
+        owner: { login: 'acme-gh' },
+      },
+      { id: 2, name: 'whole', full_name: 'acme-gh/whole', owner: { login: 'acme-gh' } },
+    ];
+    gh.git.chunked = { slug: source.slug, authorization };
+    gh.git.whole = { slug: source.slug, authorization };
+    const org = (await getOrgBySlug(qEnv, 'acme'))!;
+
+    for (const [name, noFilter] of [
+      ['chunked', false],
+      ['whole', true],
+    ] as const) {
+      gh.noFilter = noFilter;
+      const job = await startBulkImport(qEnv, org, owner.userId, {
+        source: 'github',
+        github_org: 'acme-gh',
+        installation_id: 77,
+        repos: [name],
+      });
+      expect(await driveImport(qEnv, job.id, { chunk: 2 })).toBe('done');
+      const target = (await getRepoBySlug(qEnv, `acme/${name}`))!;
+      const head = (await getRef(qEnv, target.id, 'main'))!.head;
+      expect((await commitIdsFor(qEnv, target.id, head))?.sha1).toBe(
+        GIT_HISTORY_HEAD_SHA1,
+      );
+      for (const sha of sourceShas.values()) {
+        expect(await changesetForSha1(qEnv, target.id, sha)).not.toBeNull();
+      }
+      const imported = (await getChangeset(
+        qEnv,
+        target.id,
+        (await getRef(qEnv, target.id, 'signed'))!.head,
+      ))!;
+      expect(imported).toMatchObject({
+        author_tz: '+0530',
+        committer_tz: '-0800',
+        gpgsig: signed.gpgsig,
+        git_extra_headers: [['encoding', 'ISO-8859-1']],
+      });
+      const merge = (await getRef(qEnv, target.id, 'refs/tags/merge'))!.head;
+      expect((await getChangeset(qEnv, target.id, merge))!.parents).toHaveLength(2);
+    }
+  });
 });

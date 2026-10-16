@@ -439,6 +439,75 @@ audit
     for (const [org, head] of Object.entries(result.heads)) console.log(`${org} ${head}`);
   });
 
+const importCmd = program.command('import').description('Bulk imports (#72)');
+
+async function importClient(api?: string): Promise<{ api: string; token?: string }> {
+  const config = api ? null : await loadConfig(process.cwd());
+  return {
+    api: api ?? config?.api ?? '',
+    token: process.env.YAG_TOKEN ?? config?.token,
+  };
+}
+
+importCmd
+  .command('github')
+  .description(
+    'Import a GitHub org (history with the same SHAs, issues, pulls, releases, LFS) into a yag org',
+  )
+  .requiredOption('--org <github-org>', 'GitHub organisation to import')
+  .requiredOption('--into <org>', 'yag org that receives the repos')
+  .requiredOption('--installation <id>', 'GitHub App installation id on the GitHub org')
+  .option('--repo <name...>', 'only these repos (default: all the installation reaches)')
+  .option('--wait', 'follow progress until the import finishes')
+  .option('--api <url>', 'server URL (default: from .yag/config.json)')
+  .action(
+    async (opts: {
+      org: string;
+      into: string;
+      installation: string;
+      repo?: string[];
+      wait?: boolean;
+      api?: string;
+    }) => {
+      const { formatReport, startImport, waitForImport } = await import('./import.js');
+      const { numberOption } = await import('./work.js');
+      const client = await importClient(opts.api);
+      const started = await startImport(client, opts.into, {
+        source: 'github',
+        github_org: opts.org,
+        installation_id: numberOption.parse(opts.installation),
+        ...(opts.repo ? { repos: opts.repo } : {}),
+      });
+      console.log(`import ${started.id} queued`);
+      if (!opts.wait) return;
+      let last = '';
+      const report = await waitForImport(client, opts.into, started.id, {
+        onProgress: (r) => {
+          const line = formatReport(r)[0] as string;
+          if (line !== last) console.error(line);
+          last = line;
+        },
+      });
+      for (const line of formatReport(report)) console.log(line);
+      if (report.status !== 'done') process.exitCode = 1;
+    },
+  );
+
+importCmd
+  .command('status')
+  .description('Show an import and its per-repo report')
+  .argument('<org>', 'yag org')
+  .argument('<id>', 'import id')
+  .option('--resume', 'retry failed repos from their checkpoints first')
+  .option('--api <url>', 'server URL (default: from .yag/config.json)')
+  .action(async (org: string, id: string, opts: { resume?: boolean; api?: string }) => {
+    const { formatReport, importStatus, resumeImport } = await import('./import.js');
+    const client = await importClient(opts.api);
+    if (opts.resume) await resumeImport(client, org, id);
+    for (const line of formatReport(await importStatus(client, org, id)))
+      console.log(line);
+  });
+
 const policy = program.command('policy').description('Agent policy tools (#62)');
 policy
   .command('test')

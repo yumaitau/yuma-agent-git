@@ -1,6 +1,8 @@
 import type { Env } from '../env';
 import { markJobFailed, runImportMessage } from '../bridge/import';
 import { runExportJob, type GitImportMessage } from '../bridge/exportPush';
+import { runBulkStep } from '../bridge/bulk-import';
+import { run } from '../db/client';
 import { recordImport, recordQueue } from '../observability/metrics';
 
 /**
@@ -17,6 +19,8 @@ export async function importQueue(
     try {
       if (message.body.type === 'export_job') {
         await runExportJob(env, message.body.job_id, message.body.cursor);
+      } else if (message.body.type === 'bulk_import') {
+        await runBulkStep(env, message.body);
       } else {
         await recordImport(env, 'active');
         await runImportMessage(env, message.body);
@@ -31,6 +35,13 @@ export async function importQueue(
             : null;
         if (jobId && message.body.type === 'import_job')
           await markJobFailed(env, jobId, err);
+        if (message.body.type === 'bulk_import') {
+          await run(
+            env,
+            "UPDATE bulk_imports SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+            [String(err).slice(0, 500), Date.now(), message.body.job_id],
+          );
+        }
         console.error(
           'git-import: giving up',
           JSON.stringify({ attempts: message.attempts }),

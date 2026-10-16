@@ -509,6 +509,8 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:owner/:name/initialize': 'repo.initialize',
   'POST /api/v1/repos/:repo{.+}/connect': 'repo.connect',
   'POST /api/v1/repos/:repo{.+}/import': 'repo.import',
+  'POST /api/v1/orgs/:org/imports': 'org.import',
+  'POST /api/v1/orgs/:org/imports/:id/resume': 'org.import.resume',
   'POST /api/v1/repos/:repo{.+}/export/github': 'repo.export',
   'PUT /api/v1/repos/:repo{.+}/members': 'member.set',
   'DELETE /api/v1/repos/:repo{.+}/members/:userId': 'member.remove',

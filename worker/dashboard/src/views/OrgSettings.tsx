@@ -314,7 +314,8 @@ function OrgDetail({ slug }: { slug: string }): ReactElement {
         {canManage && (
           <>
             {' '}
-            · <Link to={`/orgs/${org.slug}/runners`}>Self-hosted runners</Link>
+            · <Link to={`/orgs/${org.slug}/runners`}>Self-hosted runners</Link> ·{' '}
+            <Link to={`/orgs/${org.slug}/imports`}>Import from GitHub</Link>
           </>
         )}
       </div>

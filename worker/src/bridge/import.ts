@@ -521,7 +521,7 @@ async function fileContentAt(
 }
 
 /** `Link` header → the rel="next" API path, or null on the last page. */
-function nextPage(link: string | null): string | null {
+export function nextPage(link: string | null): string | null {
   const match = link
     ? /<https:\/\/api\.github\.com([^>]+)>;\s*rel="next"/.exec(link)
     : null;

@@ -134,7 +134,7 @@ export async function advertiseReceivePack(
 }
 
 /** Git ref → forge ref name; branches drop `refs/heads/`. */
-function forgeRefName(ref: string, mode: RefsMode): string {
+export function forgeRefName(ref: string, mode: RefsMode): string {
   if (ref.startsWith('refs/heads/'))
     return validateBranchName(ref.slice('refs/heads/'.length), mode);
   if (ref.startsWith(TAG_PREFIX) || ref.startsWith(AGENT_PREFIX)) {
@@ -288,6 +288,20 @@ async function newCommits(push: Push, sha: string): Promise<string[]> {
     order.push(top.sha);
   }
   return order;
+}
+
+/** One new commit's file changes against its first parent, capped. */
+async function planCommit(push: Push, sha: string): Promise<PushCommit> {
+  const commit = packCommit(push, sha) as ParsedCommit;
+  const first = commit.parents[0];
+  const entry: PushCommit = { sha, changes: [], trees: [] };
+  await diffTrees(push, first ? await treeOf(push, first) : null, commit.tree, '', entry);
+  if (entry.changes.length > MAX_CHANGED_FILES) {
+    throw new PushError(
+      `commit ${sha} changes ${entry.changes.length} paths; at most ${MAX_CHANGED_FILES} per commit can be stored`,
+    );
+  }
+  return entry;
 }
 
 /** Whether changeset `from` is an ancestor of commit `sha` (pushed or stored). */
@@ -452,23 +466,7 @@ export async function receivePack(
         throw new PushError(`${u.newSha} is not a commit`);
       u.commits = await newCommits(push, u.newSha);
       for (const sha of u.commits) {
-        if (commits.has(sha)) continue;
-        const commit = packCommit(push, sha) as ParsedCommit;
-        const first = commit.parents[0];
-        const entry: PushCommit = { sha, changes: [], trees: [] };
-        await diffTrees(
-          push,
-          first ? await treeOf(push, first) : null,
-          commit.tree,
-          '',
-          entry,
-        );
-        if (entry.changes.length > MAX_CHANGED_FILES) {
-          throw new PushError(
-            `commit ${sha} changes ${entry.changes.length} paths; at most ${MAX_CHANGED_FILES} per commit can be stored`,
-          );
-        }
-        commits.set(sha, entry);
+        if (!commits.has(sha)) commits.set(sha, await planCommit(push, sha));
       }
       if (u.from !== null) u.fastForward = await descendsFrom(push, u.from, u.newSha);
     } catch (err) {
@@ -658,6 +656,44 @@ export async function receivePack(
     }
   }
   return statusReport(updates, 'ok', useSideband, messages);
+}
+
+/**
+ * Store every commit reachable from `tips` that the repo does not hold yet,
+ * parents first, without checks or ref moves: the bulk importer's way in
+ * (issue #72). It is the push path from step 4 on, so each changeset keeps
+ * its Git SHA (author, committer, time zones, signature, modes, merges).
+ * Returns each tip's changeset and the pack's objects (for LFS pointers).
+ */
+export async function ingestPack(
+  env: Env,
+  repoId: string,
+  pack: Uint8Array,
+  tips: string[],
+): Promise<{ heads: Map<string, string>; objects: Map<string, PackedObject> }> {
+  const push: Push = {
+    env,
+    repoId,
+    objects: new Map(),
+    parsed: new Map(),
+    csOf: new Map(),
+    trees: new Map(),
+  };
+  if (pack.length > 0) {
+    push.objects = await readPack(pack, PUSH_LIMITS, async (sha) => {
+      const object = await readGitObject(env, repoId, sha);
+      return object ? { type: object.type, body: object.body } : null;
+    });
+  }
+  const heads = new Map<string, string>();
+  for (const tip of tips) {
+    for (const sha of await newCommits(push, tip)) {
+      if (push.csOf.has(sha)) continue;
+      push.csOf.set(sha, await storeCommit(push, sha, await planCommit(push, sha)));
+    }
+    heads.set(tip, (await existingCommit(push, tip)) as string);
+  }
+  return { heads, objects: push.objects };
 }
 
 /** Create the changeset for one pushed commit and check it rebuilds to `sha`. */
