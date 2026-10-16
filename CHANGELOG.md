@@ -29,6 +29,11 @@ All notable changes to this project are documented here. The format follows
 - Arbitrary branches and tags (#33), including annotated tags and agent work refs
   under `refs/agents/<token-id>/` that only that agent can write.
 - Deterministic Git commit, tree and blob ids for every changeset (#30).
+- Git over HTTPS (#31, #32): `git clone`, `fetch` (protocol v2, shallow and
+  `blob:none` / `tree:0` partial clones) and `git push` with token auth, a `git`
+  rate-limit bucket, pre-receive checks (protected default branch, path rules,
+  file size, unsafe paths) and one ref compare-and-swap per update. Pushed
+  commits keep their SHAs. See `docs/git-http.md`.
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
 - Dashboard theme in the Yuma IT brand.
 

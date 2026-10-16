@@ -9,7 +9,7 @@
     "directory": "./dashboard/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/healthz"],
+    "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/healthz", "/*.git/*"],
   },
   "observability": {
     "enabled": true,

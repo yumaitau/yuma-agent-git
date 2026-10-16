@@ -221,8 +221,9 @@ describe('fast-import export', () => {
       await collect(ranged.body as ReadableStream<Uint8Array>),
     );
     expect(rangedText.match(/commit refs\/heads\/main/g)).toHaveLength(2);
-    expect(rangedText).toContain('c1');
-    expect(rangedText).not.toContain('c0');
+    expect(rangedText).toMatch(/^c1$/m);
+    // whole lines: the `from <sha1>` line can contain "c0" by chance
+    expect(rangedText).not.toMatch(/^c0$/m);
   });
 
   it('full mode keeps merges; ranged mode names outside parents by stored Git ID', async () => {

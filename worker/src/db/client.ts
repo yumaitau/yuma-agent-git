@@ -78,6 +78,8 @@ export const fileChangeSchema = z.object({
   op: z.enum(['add', 'mod', 'del']),
   hash: z.string().optional(),
   size: z.number().optional(),
+  /** Git file mode when not `100644` (executable or symlink, issue #32). */
+  mode: z.string().optional(),
 });
 export type FileChange = z.infer<typeof fileChangeSchema>;
 

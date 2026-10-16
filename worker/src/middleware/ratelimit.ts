@@ -11,7 +11,8 @@ import { timePhase } from '../observability/phase';
  * storage with a 60s alarm-based sweep.
  *
  * Buckets (per minute): api_read 600, api_write 120, agent_run 20,
- * object_fetch 2000, auth 10. Webhooks are **exempt** — HMAC is the gate.
+ * object_fetch 2000, auth 10, git 300 (smart HTTP, issue #31). Webhooks are
+ * **exempt** — HMAC is the gate.
  */
 
 export const BUCKETS = {
@@ -20,6 +21,7 @@ export const BUCKETS = {
   agent_run: 20,
   object_fetch: 2000,
   auth: 10,
+  git: 300,
 } as const;
 
 export type Bucket = keyof typeof BUCKETS;
@@ -111,6 +113,10 @@ export function shardOf(key: string): number {
 
 export function bucketFor(method: string, path: string): Bucket | null {
   if (path.startsWith('/webhooks/')) return null; // HMAC is the gate
+  // before /auth/: an owner may be called `auth`
+  if (/^\/[^/]+\/[^/]+\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.test(path)) {
+    return 'git';
+  }
   if (path.startsWith('/auth/')) return 'auth';
   if (path.includes('/agents/mcp') || path.includes('/agents/tasks')) return 'agent_run';
   if (path.includes('/fetch-objects') || path.includes('/object/')) return 'object_fetch';

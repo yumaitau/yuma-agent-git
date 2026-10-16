@@ -186,3 +186,123 @@ export async function gitCommitId(commit: GitCommit): Promise<GitIds> {
   ]);
   return { sha1, sha256 };
 }
+
+// ---------------------------------------------------------------------------
+// Decoding (pushed objects, issue #32)
+// ---------------------------------------------------------------------------
+
+export interface GitTreeItem {
+  mode: string;
+  name: string;
+  sha: string;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ignoreBOM keeps a leading BOM in the text, so the bytes round-trip
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/** SHA-1 tree body → entries in stored order. Throws on a malformed body. */
+export function parseTree(body: Uint8Array): GitTreeItem[] {
+  const out: GitTreeItem[] = [];
+  let pos = 0;
+  while (pos < body.length) {
+    const space = body.indexOf(0x20, pos);
+    const nul = space < 0 ? -1 : body.indexOf(0, space);
+    if (space < 0 || nul < 0 || nul + 21 > body.length) {
+      throw new Error('malformed tree entry');
+    }
+    out.push({
+      mode: utf8.decode(body.subarray(pos, space)),
+      name: utf8.decode(body.subarray(space + 1, nul)),
+      sha: bytesToHex(body.subarray(nul + 1, nul + 21)),
+    });
+    pos = nul + 21;
+  }
+  return out;
+}
+
+/** A commit as pushed: object IDs are SHA-1 hex. */
+export interface ParsedCommit {
+  tree: string;
+  parents: string[];
+  author: GitSignature;
+  committer: GitSignature;
+  extraHeaders: [string, string][];
+  gpgsig?: string;
+  message: string;
+}
+
+const SIGNATURE_RE = /^(.*) <([^<>\n]*)> (\d+) ([+-]\d{4})$/;
+const SHA1_RE = /^[0-9a-f]{40}$/;
+
+export function parseSignature(text: string): GitSignature {
+  const m = SIGNATURE_RE.exec(text);
+  if (!m) throw new Error(`malformed ident: ${JSON.stringify(text)}`);
+  return {
+    name: m[1] as string,
+    email: m[2] as string,
+    seconds: Number(m[3]),
+    tz: m[4] as string,
+  };
+}
+
+/**
+ * Commit body → fields in the layout `encodeCommit` writes back. Anything
+ * that layout cannot reproduce (headers out of order, a header after the
+ * signature) throws, so a pushed commit either round-trips or is refused.
+ */
+export function parseCommit(body: Uint8Array): ParsedCommit {
+  const text = utf8.decode(body);
+  const split = text.indexOf('\n\n');
+  if (split < 0) throw new Error('commit has no message separator');
+  const headers: [string, string][] = [];
+  for (const line of text.slice(0, split).split('\n')) {
+    if (line.startsWith(' ')) {
+      const last = headers[headers.length - 1];
+      if (!last) throw new Error('continuation line without a header');
+      last[1] += `\n${line.slice(1)}`;
+      continue;
+    }
+    const space = line.indexOf(' ');
+    if (space <= 0) throw new Error(`malformed commit header: ${JSON.stringify(line)}`);
+    headers.push([line.slice(0, space), line.slice(space + 1)]);
+  }
+
+  let i = 0;
+  const take = (key: string): string => {
+    const header = headers[i];
+    if (!header || header[0] !== key) throw new Error(`commit is missing ${key}`);
+    i++;
+    return header[1];
+  };
+  const tree = take('tree');
+  const parents: string[] = [];
+  while (headers[i]?.[0] === 'parent') parents.push(take('parent'));
+  const author = parseSignature(take('author'));
+  const committer = parseSignature(take('committer'));
+  const extraHeaders: [string, string][] = [];
+  let gpgsig: string | undefined;
+  for (; i < headers.length; i++) {
+    const [key, value] = headers[i] as [string, string];
+    if (gpgsig !== undefined) throw new Error('commit has a header after gpgsig');
+    if (key === 'gpgsig') gpgsig = value;
+    else if (['tree', 'parent', 'author', 'committer'].includes(key)) {
+      throw new Error(`commit header ${key} out of order`);
+    } else extraHeaders.push([key, value]);
+  }
+  for (const sha of [tree, ...parents]) {
+    if (!SHA1_RE.test(sha)) throw new Error(`malformed object id ${JSON.stringify(sha)}`);
+  }
+  return {
+    tree,
+    parents,
+    author,
+    committer,
+    extraHeaders,
+    gpgsig,
+    message: text.slice(split + 2),
+  };
+}
