@@ -88,6 +88,19 @@ const historyResultSchema = z.object({
   complete: z.boolean().optional(),
 });
 
+const workItemSchema = z.object({
+  number: z.number(),
+  title: z.string(),
+  readiness: z.string(),
+  risk: z.string(),
+  priority: z.number(),
+  claimed_by: z.string().nullable(),
+  lease_expires_at: z.number().nullable(),
+  attempts: z.number(),
+  waiting_on: z.array(z.number()),
+});
+export type WorkItem = z.infer<typeof workItemSchema>;
+
 export interface UploadBlobResult {
   sha256: string;
   size: number;
@@ -229,6 +242,52 @@ export class YagApi {
         `/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&text=1`,
       ),
     );
+  }
+
+  async listWork(query: QueryParams<'listWork'> = {}): Promise<{ items: WorkItem[] }> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    const qs = params.toString();
+    return z
+      .object({ items: z.array(workItemSchema) })
+      .parse(await this.json(`/work${qs ? `?${qs}` : ''}`));
+  }
+
+  async claimWork(body: RequestBody<'claimWork'>): Promise<WorkItem | null> {
+    const result = await this.json('/work/claim', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return z.object({ item: workItemSchema.nullable() }).parse(result).item;
+  }
+
+  async heartbeatWork(
+    number: number,
+    body: RequestBody<'heartbeatWork'>,
+  ): Promise<{ lease_expires_at: number }> {
+    const result = await this.json(`/work/${number}/heartbeat`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return z.object({ lease_expires_at: z.number() }).parse(result);
+  }
+
+  async releaseWork(number: number, body: RequestBody<'releaseWork'>): Promise<WorkItem> {
+    const result = await this.json(`/work/${number}/release`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return z.object({ item: workItemSchema }).parse(result).item;
+  }
+
+  async updateWork(number: number, body: RequestBody<'updateWork'>): Promise<WorkItem> {
+    const result = await this.json(`/work/${number}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    return z.object({ item: workItemSchema }).parse(result).item;
   }
 
   async history(

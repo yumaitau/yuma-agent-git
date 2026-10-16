@@ -113,6 +113,100 @@ ci.command('status').action(async () => {
     console.log(`${job.id} ${job.head_cs.slice(0, 8)} ${job.state}`);
 });
 
+const work = program
+  .command('work')
+  .description('Work queue: list, claim, heartbeat and release issues');
+work
+  .command('list')
+  .option('--readiness <readiness>', 'only items with this readiness')
+  .option('--risk <risk>', 'only items with this risk')
+  .action(async (opts: { readiness?: string; risk?: string }) => {
+    const { readinessOption, riskOption, formatWorkItem } = await import('./work.js');
+    const { api } = await client();
+    const { items } = await api.listWork({
+      readiness: opts.readiness ? readinessOption.parse(opts.readiness) : undefined,
+      risk: opts.risk ? riskOption.parse(opts.risk) : undefined,
+    });
+    for (const item of items) console.log(formatWorkItem(item));
+  });
+work
+  .command('claim')
+  .description('Claim the best ready item; exits 2 when nothing is ready')
+  .option('--lease <seconds>', 'lease length (30 to 3600)')
+  .option('--max-risk <risk>', 'highest risk to take')
+  .action(async (opts: { lease?: string; maxRisk?: string }) => {
+    const { formatWorkItem, riskOption, secondsOption } = await import('./work.js');
+    const { api } = await client();
+    const item = await api.claimWork({
+      lease_seconds: opts.lease ? secondsOption.parse(opts.lease) : undefined,
+      max_risk: opts.maxRisk ? riskOption.parse(opts.maxRisk) : undefined,
+    });
+    if (!item) {
+      console.error('Nothing ready to claim.');
+      process.exitCode = 2;
+      return;
+    }
+    console.log(formatWorkItem(item));
+  });
+work
+  .command('heartbeat')
+  .argument('<number>', 'issue number you hold')
+  .option('--lease <seconds>', 'new lease length (30 to 3600)')
+  .action(async (number: string, opts: { lease?: string }) => {
+    const { numberOption, secondsOption } = await import('./work.js');
+    const { api } = await client();
+    const result = await api.heartbeatWork(numberOption.parse(number), {
+      lease_seconds: opts.lease ? secondsOption.parse(opts.lease) : undefined,
+    });
+    console.log(`lease until ${new Date(result.lease_expires_at).toISOString()}`);
+  });
+work
+  .command('release')
+  .argument('<number>', 'issue number you hold')
+  .requiredOption('--outcome <outcome>', 'ready, in-review, blocked or done')
+  .option('--reason <reason>', 'why, for the history')
+  .action(async (number: string, opts: { outcome: string; reason?: string }) => {
+    const { formatWorkItem, numberOption, outcomeOption } = await import('./work.js');
+    const { api } = await client();
+    const item = await api.releaseWork(numberOption.parse(number), {
+      outcome: outcomeOption.parse(opts.outcome),
+      reason: opts.reason,
+    });
+    console.log(formatWorkItem(item));
+  });
+work
+  .command('set')
+  .argument('<number>', 'issue number')
+  .option('--readiness <readiness>', 'new readiness (ready needs approval rights)')
+  .option('--risk <risk>', 'low, medium or high (needs approval rights)')
+  .option('--priority <n>', 'higher is claimed first')
+  .option('--depends-on <numbers...>', 'issue numbers this waits on')
+  .option('--reason <reason>', 'why, for the history')
+  .action(
+    async (
+      number: string,
+      opts: {
+        readiness?: string;
+        risk?: string;
+        priority?: string;
+        dependsOn?: string[];
+        reason?: string;
+      },
+    ) => {
+      const { formatWorkItem, numberOption, readinessOption, riskOption } =
+        await import('./work.js');
+      const { api } = await client();
+      const item = await api.updateWork(numberOption.parse(number), {
+        readiness: opts.readiness ? readinessOption.parse(opts.readiness) : undefined,
+        risk: opts.risk ? riskOption.parse(opts.risk) : undefined,
+        priority: opts.priority === undefined ? undefined : Number(opts.priority),
+        depends_on: opts.dependsOn?.map((n) => numberOption.parse(n)),
+        reason: opts.reason,
+      });
+      console.log(formatWorkItem(item));
+    },
+  );
+
 const audit = program.command('audit').description('Audit log tools');
 audit
   .command('verify')
