@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "docs:openapi": "npm run docs:api -w worker && npm run generate -w @yuma/agent-git-sdk",
-    "test": "npm test -w worker"
+    "test": "npm test -w worker",
+    "test:e2e": "npm run build -w worker && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
