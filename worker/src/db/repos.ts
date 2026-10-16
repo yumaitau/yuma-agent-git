@@ -49,7 +49,7 @@ export async function createRepo(
     // column defaults (migration 0023), so the record matches the stored row
     merge_methods: '["merge","squash","rebase"]',
     default_merge_method: 'merge' as const,
-    // set by the fork route (migration 0045); older schemas lack the column
+    // set by the fork route (migration 0044); older schemas lack the column
     fork_of: input.forkOf ?? null,
   };
   await run(

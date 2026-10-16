@@ -50,7 +50,7 @@ All notable changes to this project are documented here. The format follows
   the org's limit. `matrix: { shard: N }` splits a job and sets
   `YAG_SHARD_INDEX` and `YAG_SHARD_TOTAL`. Freed slots go to the repo with the
   fewest active jobs. Budget alerts at 50%, 80% and 100% are audited once a
-  month. The `ci-runs` consumer runs up to 20 jobs at once. Migration 0040.
+  month. The `ci-runs` consumer runs up to 20 jobs at once. Migration 0039.
 - CI artifacts and caches (#51): jobs upload and download run artifacts
   (kept 14 days, listed and downloadable on the CI page) and save and restore
   dependency caches through `YAG_RUNTIME_URL` with `YAG_RUNTIME_TOKEN`, in the

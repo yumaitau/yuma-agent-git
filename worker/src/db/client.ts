@@ -188,7 +188,7 @@ export const repoRowSchema = z.object({
   /** Allowed pull request merge methods and the default (migration 0023). */
   merge_methods: jsonOf(z.array(z.enum(MERGE_METHODS))).optional(),
   default_merge_method: z.enum(MERGE_METHODS).optional(),
-  /** The repo this one was forked from (migration 0045, issue #36). */
+  /** The repo this one was forked from (migration 0044, issue #36). */
   fork_of: z.string().nullable().optional(),
 });
 export type RepoRecord = z.infer<typeof repoRowSchema>;
