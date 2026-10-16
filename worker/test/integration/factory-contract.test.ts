@@ -569,7 +569,7 @@ describe('Yuma Factory provider contract (#63)', () => {
     const opened = await json<{ pull: Pull; ci: { status: string } }>(
       await call('POST', repo('/pulls'), agent, {
         title: 'Fix add() for negative numbers',
-        body: `Work item #${number}, implemented by Yuma Factory.`,
+        body: `Closes #${number}. Implemented by Yuma Factory.`,
         head_cs: ref.head,
       }),
       201,
@@ -719,6 +719,11 @@ describe('Yuma Factory provider contract (#63)', () => {
       await call('GET', repo(`/work/${number}`), agent),
     );
     expect(work.item).toMatchObject({ risk: 'low', readiness: 'in-review' });
+    // the pull request's risk takes the work item it closes into account
+    const risk = await json<{ risk: { level: string; work_item: string | null } }>(
+      await call('GET', repo(`/pulls/${pullId}/agent-review`), agent),
+    );
+    expect(risk.risk).toMatchObject({ level: 'low', work_item: 'low' });
 
     // agent tokens never merge (#57): Factory merges with the run token, as the operator
     pull = await current();
@@ -746,7 +751,12 @@ describe('Yuma Factory provider contract (#63)', () => {
     const mergedCs = merged.pull.merged_cs!;
     expect(mergedCs).not.toBe(fixed.head);
 
-    // 12. close the issue
+    // 12. close the issue: `Closes #N` already did on merge, so Factory's own
+    // close (kept for pull requests without the keyword) changes nothing
+    const landed = await json<{ issue: { state: string } }>(
+      await call('GET', repo(`/issues/${number}`), agent),
+    );
+    expect(landed.issue.state).toBe('closed');
     const closed = await json<{ issue: { state: string; state_reason: string } }>(
       await call('PATCH', repo(`/issues/${number}`), agent, {
         state: 'closed',
@@ -754,6 +764,18 @@ describe('Yuma Factory provider contract (#63)', () => {
       }),
     );
     expect(closed.issue).toMatchObject({ state: 'closed', state_reason: 'completed' });
+    // and the work item is done, so the queue never offers it again
+    const done = await json<{ item: WorkItem }>(
+      await call('PUT', repo(`/work/${number}`), agent, {
+        readiness: 'done',
+        reason: `merged in pull request #${opened.pull.number}`,
+      }),
+    );
+    expect(done.item.readiness).toBe('done');
+    const empty = await json<{ items: WorkItem[] }>(
+      await call('GET', repo('/work?readiness=ready'), agent),
+    );
+    expect(empty.items).toEqual([]);
 
     // 13. provenance: a signed record of the merge, naming the agent and its task
     const provenance = await json<{
@@ -805,7 +827,7 @@ describe('Yuma Factory provider contract (#63)', () => {
       await hmac(hookSecret, await sample.text()),
     );
 
-    // every Factory call is in the audit log as the agent, acting for the operator
+    // every Factory call is in the audit log as the agent or the run token, for the operator
     const audit = await q<{ action: string; actor_kind: string }>(
       testEnv,
       `SELECT action, actor_kind FROM audit_events
@@ -818,7 +840,8 @@ describe('Yuma Factory provider contract (#63)', () => {
       { action: 'work.claim', actor_kind: 'agent' },
       { action: 'pull.create', actor_kind: 'agent' },
       { action: 'pull.merge', actor_kind: 'token' },
-      { action: 'issue.update', actor_kind: 'agent' },
+      // `Closes #N`, as part of the merge
+      { action: 'issue.update', actor_kind: 'token' },
     ]);
   });
 });

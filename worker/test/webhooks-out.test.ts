@@ -581,6 +581,38 @@ describe('repository webhooks', () => {
     ]);
   });
 
+  it('a closing keyword that lands sends issues closed (#63)', async () => {
+    await createHook({ url: 'https://hooks.example.com/yag', events: ['issues'] });
+    await api(`${repoPath}/issues`, 'POST', { title: 'Ticket' });
+    const fix = (
+      await commitChanges(testEnv, repo.id, {
+        first_parent: head,
+        message: 'fix\n\nCloses #1',
+        author: { name: 'Ada', email: 'ada@example.com' },
+        changes: [{ path: 'b.txt', op: 'add', content_b64: btoa('b') }],
+      })
+    ).changeset.id;
+    expect(
+      (await api(`${repoPath}/refs/main`, 'PUT', { from: head, to: fix })).status,
+    ).toBe(200);
+    await drain();
+    const bodies = await Promise.all(
+      received.map(
+        async (r) =>
+          JSON.parse(await r.text()) as {
+            action: string;
+            issue: { state: string };
+            source?: unknown;
+          },
+      ),
+    );
+    expect(bodies.map((b) => b.action)).toEqual(['opened', 'closed']);
+    expect(bodies[1]).toMatchObject({
+      issue: { state: 'closed' },
+      source: { kind: 'changeset', ref: fix },
+    });
+  });
+
   it('queues a ci_run event for a run', async () => {
     await createHook({ url: 'https://hooks.example.com/ci', events: ['ci_run'] });
     await run(
