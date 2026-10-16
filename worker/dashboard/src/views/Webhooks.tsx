@@ -46,6 +46,7 @@ const EVENTS = [
   'ci_run',
   'work_item',
   'secret_scanning_alert',
+  'release',
 ];
 const STATUS_KIND = {
   pending: 'info',

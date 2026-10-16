@@ -22,6 +22,10 @@ export async function seedSchema(env: TestEnv): Promise<void> {
 const WIPE_ORDER = [
   'secret_alerts',
   'secret_scans',
+  'release_attestations',
+  'release_assets',
+  'releases',
+  'org_release_settings',
   'approvals',
   'agent_pauses',
   'agent_policies',

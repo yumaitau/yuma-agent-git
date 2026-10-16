@@ -639,6 +639,14 @@ const AUDITED: Record<string, AuditAction> = {
   'PATCH /api/v1/hooks/:id': 'webhook.update',
   'DELETE /api/v1/hooks/:id': 'webhook.delete',
   'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'webhook.redeliver',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases': 'release.create',
+  'PATCH /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id': 'release.update',
+  'DELETE /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id': 'release.delete',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id/assets': 'release.asset.upload',
+  'DELETE /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id/assets/:asset':
+    'release.asset.delete',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id/attestations': 'release.attest',
+  'PUT /api/v1/orgs/:org/release-settings': 'org.release_settings.set',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -648,6 +656,10 @@ const EXEMPT: Record<string, string> = {
   'PUT /api/v1/repos/:repo{.+}/blob': 'content-addressed blob upload; same as changesets',
   'POST /api/v1/repos/:repo{.+}/fetch-objects': 'read-only batch fetch',
   'POST /api/v1/policy/test': 'pure policy evaluation; nothing is stored',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases/generate-notes':
+    'returns draft notes; nothing is stored',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/attestations/verify':
+    'pure signature check; nothing is stored',
   'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack': 'read-only Git fetch',
   'POST /api/v1/me/passkeys/options': 'issues a one-time challenge; enrolment is audited',
   'POST /api/v1/me/totp':

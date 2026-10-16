@@ -542,7 +542,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 10,
+                        "maxItems": 11,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -556,7 +556,8 @@
                             "ci_run",
                             "work_item",
                             "secret_scanning_alert",
-                            "merge_group"
+                            "merge_group",
+                            "release"
                           ]
                         }
                       },
@@ -761,7 +762,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 10,
+                    "maxItems": 11,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -775,7 +776,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
-                        "merge_group"
+                        "merge_group",
+                        "release"
                       ]
                     }
                   },
@@ -1609,7 +1611,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 10,
+                    "maxItems": 11,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1623,7 +1625,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
-                        "merge_group"
+                        "merge_group",
+                        "release"
                       ]
                     }
                   },
@@ -1925,6 +1928,72 @@
             "schema": { "type": "string" }
           }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/release-settings": {
+      "get": {
+        "operationId": "getOrgReleaseSettings",
+        "summary": "Release asset size cap for the org",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org member",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "putOrgReleaseSettings",
+        "summary": "Set the org release asset size cap",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "asset_max_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5368709120
+                  }
+                },
+                "required": ["asset_max_bytes"]
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",
@@ -3628,6 +3697,80 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/attestations/verify": {
+      "post": {
+        "operationId": "verifyAttestation",
+        "summary": "Verify a DSSE envelope against the published CI keys (optional `sha256` subject)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "envelope": {
+                    "type": "object",
+                    "properties": {
+                      "payloadType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "payload": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000000
+                      },
+                      "signatures": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "keyid": { "type": "string", "maxLength": 128 },
+                            "sig": { "type": "string", "minLength": 1, "maxLength": 4096 }
+                          },
+                          "required": ["keyid", "sig"]
+                        }
+                      }
+                    },
+                    "required": ["payloadType", "payload", "signatures"]
+                  },
+                  "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                },
+                "required": ["envelope"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/blame": {
       "get": {
         "operationId": "getBlame",
@@ -5272,7 +5415,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 10,
+                    "maxItems": 11,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5286,7 +5429,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
-                        "merge_group"
+                        "merge_group",
+                        "release"
                       ]
                     }
                   },
@@ -7825,6 +7969,540 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases": {
+      "get": {
+        "operationId": "listReleases",
+        "summary": "List releases, newest first (drafts only for writers; cursor paged)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createRelease",
+        "summary": "Create a release from an existing tag (draft, prerelease, generated notes)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tag": { "type": "string", "minLength": 1, "maxLength": 245 },
+                  "name": { "type": "string", "maxLength": 200 },
+                  "body": { "type": "string", "maxLength": 125000 },
+                  "draft": { "type": "boolean" },
+                  "prerelease": { "type": "boolean" },
+                  "generate_notes": { "type": "boolean" },
+                  "previous_tag": { "type": "string", "minLength": 1, "maxLength": 245 }
+                },
+                "required": ["tag"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/{id}": {
+      "get": {
+        "operationId": "getRelease",
+        "summary": "One release with its assets and attestations",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "updateRelease",
+        "summary": "Edit notes or flags; clearing `draft` publishes it",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "maxLength": 200 },
+                  "body": { "type": "string", "maxLength": 125000 },
+                  "draft": { "type": "boolean" },
+                  "prerelease": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRelease",
+        "summary": "Delete a release and its assets (the tag stays)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/{id}/assets": {
+      "post": {
+        "operationId": "uploadReleaseAsset",
+        "summary": "Upload an asset (`?name=`, Content-Length, SHA-256 computed; org size cap)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,254}$"
+            }
+          },
+          {
+            "name": "sha256",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Expected digest; the upload is refused if the bytes differ",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/{id}/assets/{asset}": {
+      "get": {
+        "operationId": "downloadReleaseAsset",
+        "summary": "Download an asset, checked against its stored SHA-256 while streaming",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "asset",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteReleaseAsset",
+        "summary": "Delete a release asset",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "asset",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/{id}/attestations": {
+      "get": {
+        "operationId": "listReleaseAttestations",
+        "summary": "Build provenance attestations (DSSE envelopes) for a release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createReleaseAttestation",
+        "summary": "Sign SLSA provenance for assets from a CI ID token (`audience=yag:attest`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id_token": { "type": "string", "minLength": 1, "maxLength": 16384 },
+                  "assets": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,254}$"
+                    }
+                  }
+                },
+                "required": ["id_token"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/generate-notes": {
+      "post": {
+        "operationId": "generateReleaseNotes",
+        "summary": "Markdown notes from merged pull requests and commits since the previous release",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tag": { "type": "string", "minLength": 1, "maxLength": 245 },
+                  "previous_tag": { "type": "string", "minLength": 1, "maxLength": 245 }
+                },
+                "required": ["tag"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/latest": {
+      "get": {
+        "operationId": "getLatestRelease",
+        "summary": "The newest published release that is not a prerelease",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/releases/tags/{tag}": {
+      "get": {
+        "operationId": "getReleaseByTag",
+        "summary": "The release for a tag",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tag",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Success",

@@ -12,6 +12,7 @@ import { MergeQueueView } from './views/MergeQueue';
 import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
 import { SearchView } from './views/Search';
+import { ReleasesView } from './views/Releases';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
@@ -80,6 +81,7 @@ function AppRoutes(): ReactElement {
                   path="/r/:owner/:name/secret-scanning"
                   element={<SecretScanningView />}
                 />
+                <Route path="/r/:owner/:name/releases" element={<ReleasesView />} />
                 <Route path="/oauth/authorize" element={<OAuthAuthorizeView />} />
                 <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
                 <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />

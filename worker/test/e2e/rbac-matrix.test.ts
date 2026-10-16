@@ -250,6 +250,20 @@ const EXEMPT: Record<string, string> = {
   'DELETE /api/v1/repos/:repo{.+}/runners/:id': 'ci-runners.test.ts',
   'GET /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
   'POST /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases': 'releases.test.ts',
+  'POST /api/v1/repos/:repo{.+}/releases': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases/latest': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases/tags/:tag{.+}': 'releases.test.ts',
+  'POST /api/v1/repos/:repo{.+}/releases/generate-notes': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases/:id': 'releases.test.ts',
+  'PATCH /api/v1/repos/:repo{.+}/releases/:id': 'releases.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/releases/:id': 'releases.test.ts',
+  'POST /api/v1/repos/:repo{.+}/releases/:id/assets': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases/:id/assets/:asset': 'releases.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/releases/:id/assets/:asset': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
+  'POST /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
+  'POST /api/v1/repos/:repo{.+}/attestations/verify': 'releases.test.ts',
 };
 
 /**

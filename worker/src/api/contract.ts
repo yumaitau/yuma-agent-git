@@ -78,6 +78,16 @@ import { decisionBody, environmentBody, secretBody, variableBody } from './secre
 import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
 import {
+  attestSchema,
+  createReleaseSchema,
+  generateNotesSchema,
+  listReleasesQuery,
+  releaseSettingsSchema,
+  updateReleaseSchema,
+  uploadAssetQuery,
+  verifyAttestationSchema,
+} from './releases';
+import {
   applySuggestionsInput,
   createThreadInput,
   replyInput,
@@ -789,6 +799,41 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: releaseWork,
   },
   'POST /api/v1/repos/:repo/tags': { id: 'createTag', body: createTagSchema },
+  'GET /api/v1/repos/:repo/releases': { id: 'listReleases', query: listReleasesQuery },
+  'POST /api/v1/repos/:repo/releases': { id: 'createRelease', body: createReleaseSchema },
+  'GET /api/v1/repos/:repo/releases/latest': { id: 'getLatestRelease' },
+  'GET /api/v1/repos/:repo/releases/tags/:tag': { id: 'getReleaseByTag' },
+  'POST /api/v1/repos/:repo/releases/generate-notes': {
+    id: 'generateReleaseNotes',
+    body: generateNotesSchema,
+  },
+  'GET /api/v1/repos/:repo/releases/:id': { id: 'getRelease' },
+  'PATCH /api/v1/repos/:repo/releases/:id': {
+    id: 'updateRelease',
+    body: updateReleaseSchema,
+  },
+  'DELETE /api/v1/repos/:repo/releases/:id': { id: 'deleteRelease' },
+  'POST /api/v1/repos/:repo/releases/:id/assets': {
+    id: 'uploadReleaseAsset',
+    rawBody: 'application/octet-stream',
+    query: uploadAssetQuery,
+  },
+  'GET /api/v1/repos/:repo/releases/:id/assets/:asset': { id: 'downloadReleaseAsset' },
+  'DELETE /api/v1/repos/:repo/releases/:id/assets/:asset': { id: 'deleteReleaseAsset' },
+  'GET /api/v1/repos/:repo/releases/:id/attestations': { id: 'listReleaseAttestations' },
+  'POST /api/v1/repos/:repo/releases/:id/attestations': {
+    id: 'createReleaseAttestation',
+    body: attestSchema,
+  },
+  'POST /api/v1/repos/:repo/attestations/verify': {
+    id: 'verifyAttestation',
+    body: verifyAttestationSchema,
+  },
+  'GET /api/v1/orgs/:org/release-settings': { id: 'getOrgReleaseSettings' },
+  'PUT /api/v1/orgs/:org/release-settings': {
+    id: 'putOrgReleaseSettings',
+    body: releaseSettingsSchema,
+  },
   'GET /api/v1/repos/:repo/tree': {
     id: 'getTree',
     query: z.object({

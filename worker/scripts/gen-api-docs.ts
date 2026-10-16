@@ -343,6 +343,33 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/repos/:owner/:name': 'Change the default branch or ref naming mode',
   'GET /api/v1/repos/:repo/tags': 'List tags with annotations (keyset paged)',
   'POST /api/v1/repos/:repo/tags': 'Create a lightweight or annotated tag',
+  'GET /api/v1/repos/:repo/releases':
+    'List releases, newest first (drafts only for writers; cursor paged)',
+  'POST /api/v1/repos/:repo/releases':
+    'Create a release from an existing tag (draft, prerelease, generated notes)',
+  'GET /api/v1/repos/:repo/releases/latest':
+    'The newest published release that is not a prerelease',
+  'GET /api/v1/repos/:repo/releases/tags/:tag': 'The release for a tag',
+  'POST /api/v1/repos/:repo/releases/generate-notes':
+    'Markdown notes from merged pull requests and commits since the previous release',
+  'GET /api/v1/repos/:repo/releases/:id': 'One release with its assets and attestations',
+  'PATCH /api/v1/repos/:repo/releases/:id':
+    'Edit notes or flags; clearing `draft` publishes it',
+  'DELETE /api/v1/repos/:repo/releases/:id':
+    'Delete a release and its assets (the tag stays)',
+  'POST /api/v1/repos/:repo/releases/:id/assets':
+    'Upload an asset (`?name=`, Content-Length, SHA-256 computed; org size cap)',
+  'GET /api/v1/repos/:repo/releases/:id/assets/:asset':
+    'Download an asset, checked against its stored SHA-256 while streaming',
+  'DELETE /api/v1/repos/:repo/releases/:id/assets/:asset': 'Delete a release asset',
+  'GET /api/v1/repos/:repo/releases/:id/attestations':
+    'Build provenance attestations (DSSE envelopes) for a release',
+  'POST /api/v1/repos/:repo/releases/:id/attestations':
+    'Sign SLSA provenance for assets from a CI ID token (`audience=yag:attest`)',
+  'POST /api/v1/repos/:repo/attestations/verify':
+    'Verify a DSSE envelope against the published CI keys (optional `sha256` subject)',
+  'GET /api/v1/orgs/:org/release-settings': 'Release asset size cap for the org',
+  'PUT /api/v1/orgs/:org/release-settings': 'Set the org release asset size cap',
   'GET /api/v1/repos/:repo/work':
     'Work queue items and dependencies (`?readiness=&risk=&claimed_by=`)',
   'POST /api/v1/repos/:repo/work/claim':

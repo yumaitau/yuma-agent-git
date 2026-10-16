@@ -24,6 +24,7 @@ export const WEBHOOK_EVENTS = [
   'work_item',
   'secret_scanning_alert',
   'merge_group',
+  'release',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

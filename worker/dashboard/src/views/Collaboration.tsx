@@ -89,6 +89,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
           ['Merge queue', '/queue'],
           ['CI', '/ci'],
           ['Security', '/secret-scanning'],
+          ['Releases', '/releases'],
         ].map(([name, tail]) => (
           <Link
             key={name}

@@ -61,6 +61,17 @@ All notable changes to this project are documented here. The format follows
   reverts, then reopens, a group whose post-land checks fail. Webhooks get
   `merge_group` events and `enqueued`/`dequeued` pull request actions; MCP
   gets `pr_enqueue`, `pr_dequeue` and `merge_queue_get`.
+- Releases (#54): a release names an existing tag, with Markdown notes
+  (optionally generated from merged pull requests and commits since the
+  previous release), draft and prerelease flags and a `latest` pointer. Drafts
+  are hidden from readers without write. Assets live in R2 with a SHA-256
+  computed on upload and checked on every download, under a per-org size cap
+  (`/api/v1/orgs/:org/release-settings`, default 100 MiB). A CI job's ID token
+  (`audience=yag:attest`) turns into a signed SLSA provenance attestation
+  (in-toto statement in a DSSE envelope, verifiable against `/ci/oidc/jwks`).
+  Releases have API routes, a dashboard page, `yag release` (create, upload,
+  publish, download, attest, verify) and the `release` webhook event. Agents
+  need `releases:write`; publishing is judged as `release.publish`.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

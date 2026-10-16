@@ -207,6 +207,203 @@ work
     },
   );
 
+const release = program
+  .command('release')
+  .description('Releases: tags with notes, checksummed assets and build provenance');
+release.command('list').action(async () => {
+  const { formatRelease } = await import('./release.js');
+  const { api } = await client();
+  for (const r of await api.listReleases()) console.log(formatRelease(r));
+});
+release
+  .command('view')
+  .argument('<tag>')
+  .action(async (tag: string) => {
+    const { formatRelease } = await import('./release.js');
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    console.log(formatRelease(r));
+    for (const a of r.assets) console.log(`  ${a.name} ${a.size} sha256:${a.sha256}`);
+    if (r.body) console.log(`\n${r.body}`);
+  });
+release
+  .command('create')
+  .description('Create a release from an existing tag and upload files as assets')
+  .argument('<tag>')
+  .argument('[files...]', 'asset files to upload')
+  .option('--name <name>', 'release title (default: the tag)')
+  .option('--notes <markdown>', 'release notes')
+  .option('--notes-file <path>', 'read release notes from a file')
+  .option(
+    '--generate-notes',
+    'append notes from pull requests and commits since the previous release',
+  )
+  .option('--previous-tag <tag>', 'start generated notes from this tag')
+  .option('--draft', 'keep it hidden from readers until published')
+  .option('--prerelease', 'never mark it as latest')
+  .action(
+    async (
+      tag: string,
+      files: string[],
+      opts: {
+        name?: string;
+        notes?: string;
+        notesFile?: string;
+        generateNotes?: boolean;
+        previousTag?: string;
+        draft?: boolean;
+        prerelease?: boolean;
+      },
+    ) => {
+      const { readFile } = await import('node:fs/promises');
+      const { basename } = await import('node:path');
+      const { formatRelease, sha256Hex } = await import('./release.js');
+      const { api } = await client();
+      const created = await api.createRelease({
+        tag,
+        name: opts.name,
+        body: opts.notesFile ? await readFile(opts.notesFile, 'utf8') : opts.notes,
+        generate_notes: opts.generateNotes,
+        previous_tag: opts.previousTag,
+        draft: opts.draft,
+        prerelease: opts.prerelease,
+      });
+      for (const file of files) {
+        const bytes = await readFile(file);
+        const asset = await api.uploadAsset(
+          created.id,
+          basename(file),
+          bytes,
+          await sha256Hex(bytes),
+        );
+        console.log(`uploaded ${asset.name} sha256:${asset.sha256}`);
+      }
+      console.log(formatRelease({ ...created, assets: files }));
+    },
+  );
+release
+  .command('upload')
+  .argument('<tag>')
+  .argument('<files...>')
+  .action(async (tag: string, files: string[]) => {
+    const { readFile } = await import('node:fs/promises');
+    const { basename } = await import('node:path');
+    const { sha256Hex } = await import('./release.js');
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    for (const file of files) {
+      const bytes = await readFile(file);
+      const asset = await api.uploadAsset(
+        r.id,
+        basename(file),
+        bytes,
+        await sha256Hex(bytes),
+      );
+      console.log(`uploaded ${asset.name} sha256:${asset.sha256}`);
+    }
+  });
+release
+  .command('publish')
+  .description('Publish a draft release')
+  .argument('<tag>')
+  .action(async (tag: string) => {
+    const { formatRelease } = await import('./release.js');
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    console.log(formatRelease(await api.updateRelease(r.id, { draft: false })));
+  });
+release
+  .command('delete')
+  .description('Delete a release and its assets (the tag stays)')
+  .argument('<tag>')
+  .action(async (tag: string) => {
+    const { api } = await client();
+    await api.deleteRelease((await api.getRelease(tag)).id);
+    console.log(`deleted release ${tag}`);
+  });
+release
+  .command('download')
+  .description(
+    'Download assets and check each against its SHA-256; exits 1 on a mismatch',
+  )
+  .argument('<tag>')
+  .option('--dir <dir>', 'where to write the files', '.')
+  .action(async (tag: string, opts: { dir: string }) => {
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { sha256Hex } = await import('./release.js');
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    await mkdir(opts.dir, { recursive: true });
+    for (const asset of r.assets) {
+      const bytes = await api.downloadAsset(r.id, asset.id);
+      if ((await sha256Hex(bytes)) !== asset.sha256) {
+        console.error(`${asset.name}: SHA-256 mismatch, not written`);
+        process.exitCode = 1;
+        continue;
+      }
+      await writeFile(join(opts.dir, asset.name), bytes);
+      console.log(`${asset.name} ok sha256:${asset.sha256}`);
+    }
+  });
+release
+  .command('attest')
+  .description(
+    'Inside a CI job with permissions.id_token: write, sign build provenance for the assets',
+  )
+  .argument('<tag>')
+  .option('--asset <names...>', 'only these assets (default: all)')
+  .action(async (tag: string, opts: { asset?: string[] }) => {
+    const { ATTEST_AUDIENCE } = await import('./release.js');
+    const url = process.env.YAG_ID_TOKEN_REQUEST_URL;
+    const request = process.env.YAG_ID_TOKEN_REQUEST_TOKEN;
+    if (!url || !request)
+      throw new Error(
+        'Run this in a CI job whose pipeline has permissions.id_token: write',
+      );
+    const res = await fetch(
+      `${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(ATTEST_AUDIENCE)}`,
+      { method: 'POST', headers: { authorization: `Bearer ${request}` } },
+    );
+    if (!res.ok) throw new Error(`ID token request failed: HTTP ${res.status}`);
+    const { value } = (await res.json()) as { value: string };
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    const attestation = await api.attestRelease(r.id, {
+      id_token: value,
+      assets: opts.asset,
+    });
+    console.log(`attestation ${attestation.id} from run ${attestation.run_id}`);
+  });
+release
+  .command('verify')
+  .description(
+    'Verify build provenance offline against the published keys; exits 1 if any asset is not covered',
+  )
+  .argument('<tag>')
+  .action(async (tag: string) => {
+    const { envelopeSchema, jwksSchema, uncovered, verifyEnvelope } =
+      await import('./release.js');
+    const { api } = await client();
+    const r = await api.getRelease(tag);
+    const jwks = jwksSchema.parse(await api.jwks());
+    const statements = [];
+    for (const a of await api.listAttestations(r.id)) {
+      const result = await verifyEnvelope(envelopeSchema.parse(a.envelope), jwks);
+      if (result.ok) statements.push(result.statement);
+      else console.error(`attestation ${a.id}: ${result.reason}`);
+    }
+    const missing = uncovered(r.assets, statements);
+    for (const name of missing) console.error(`${name}: no verified provenance`);
+    if (missing.length > 0 || r.assets.length === 0) {
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `provenance ok: ${r.assets.length} assets, ${statements.length} attestations`,
+    );
+  });
+
 const audit = program.command('audit').description('Audit log tools');
 audit
   .command('verify')
