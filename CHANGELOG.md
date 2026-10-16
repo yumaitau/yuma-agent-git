@@ -26,6 +26,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Yuma Factory on the forge (#63): a provider contract test that runs one
+  low-risk ticket end to end (`worker/test/integration/factory-contract.test.ts`)
+  and an integration guide with a `ForgeProvider` proposal
+  (`docs/integrations/yuma-factory.md`). Setting an issue's labels now sends
+  `issues` `labeled` and `unlabeled` webhooks, one per label, and a `Closes #N`
+  that lands sends `issues` `closed`. An agent review verdict's `threads` now
+  counts threads, not twice as many.
 - Wave 4a seams. GitHub Actions translation (#49) maps `actions/cache`,
   `upload-artifact`, `download-artifact` and `codeql-action/upload-sarif` onto
   job caches and artifacts (#51) and code scanning (#67). Notifications (#44)
