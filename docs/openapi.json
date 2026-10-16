@@ -8952,6 +8952,166 @@
         }
       }
     },
+    "/api/v1/search/code": {
+      "get": {
+        "operationId": "searchCode",
+        "summary": "Search file contents across readable repos (text or regex; repo, path, lang, rev filters)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Text, or a regular expression with `regex=1`"
+            }
+          },
+          {
+            "name": "regex",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "const": "1" }
+          },
+          {
+            "name": "case",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "`1` matches case exactly",
+              "type": "string",
+              "const": "1"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only this repository (`owner/name`)",
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Path prefix, or a glob when it holds `*` or `?`",
+              "type": "string"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Language, for example `typescript`",
+              "type": "string"
+            }
+          },
+          {
+            "name": "rev",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Revision to search (needs `repo`); default branch when omitted",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/search/paths": {
+      "get": {
+        "operationId": "searchPaths",
+        "summary": "Find files by path across readable repos (fuzzy file finder)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Characters of the path, in order"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only this repository (`owner/name`)",
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Path prefix, or a glob when it holds `*` or `?`",
+              "type": "string"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Language, for example `typescript`",
+              "type": "string"
+            }
+          },
+          {
+            "name": "rev",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Revision to list (needs `repo`); default branch when omitted",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/tokens": {
       "get": {
         "operationId": "listTokens",

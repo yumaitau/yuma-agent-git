@@ -259,7 +259,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-260 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+262 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                                       | Auth                    | Permission                                                                      | Rate bucket  | Purpose                                                                                                                                                                       |
 | ------ | ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -477,6 +477,8 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/scim/tokens`                                      | session                 | —                                                                               | api_read     | List SCIM tokens (SCIM admins)                                                                                                                                                |
 | POST   | `/api/v1/scim/tokens`                                      | session                 | —                                                                               | api_write    | Create a SCIM token (raw value returned once)                                                                                                                                 |
 | DELETE | `/api/v1/scim/tokens/:id`                                  | session                 | —                                                                               | api_write    | Revoke a SCIM token                                                                                                                                                           |
+| GET    | `/api/v1/search/code`                                      | any                     | —                                                                               | api_read     | Search file contents across readable repos (text or regex; repo, path, lang, rev filters)                                                                                     |
+| GET    | `/api/v1/search/paths`                                     | any                     | —                                                                               | api_read     | Find files by path across readable repos (fuzzy file finder)                                                                                                                  |
 | GET    | `/api/v1/tokens`                                           | session                 | —                                                                               | api_read     | List your API tokens (metadata only)                                                                                                                                          |
 | POST   | `/api/v1/tokens`                                           | session                 | —                                                                               | api_write    | Create an API token (raw value returned once)                                                                                                                                 |
 | DELETE | `/api/v1/tokens/:id`                                       | session                 | —                                                                               | api_write    | Revoke one of your API tokens                                                                                                                                                 |
@@ -549,6 +551,29 @@ github_repo_id}`.
   commits `README.md` (`# owner/name`) as the root changeset and points the default
   branch at it. Returns `201 {changeset}`, or `409 repo_initialized` if any ref already
   exists.
+
+### Code search
+
+`GET /api/v1/search/code?q=` searches file contents in every repo the caller
+can read, at each default branch; `repo=owner/name` narrows to one repo and
+`rev=` (a changeset id or ref, needs `repo`) searches that revision. `q` is
+text unless `regex=1`; `case=1` matches case exactly. `path` is a prefix, or a
+glob when it holds `*` or `?`; `lang` is a language name such as `typescript`.
+Each result names the repo, path, language, changeset and up to 20 matching
+lines with `[start, end)` match ranges. `GET /api/v1/search/paths?q=` is the
+file finder: the characters of `q` in order, best matches first.
+
+Each repo is decided with `can()` and each file with its path rules before
+anything is read, so a file the caller may not read never appears.
+
+Limits: `q` up to 200 characters; nested quantifiers such as `(a+)+` are
+refused (`400 unsafe_pattern`); a pattern that matches an empty line is
+refused (`400 invalid_pattern`); each line is matched on its first 1000
+characters; files over 1 MiB and binary files are found by name only; one
+search spans up to 200 repos (`repos_truncated`) and reads at most 2000 files
+or 32 MiB. `truncated: true` means more files match than were returned;
+`partial: true` means files not yet indexed were left unread, so matches may
+be missing. A repo with more than 100,000 files is listed in `skipped_repos`.
 
 ### API tokens
 

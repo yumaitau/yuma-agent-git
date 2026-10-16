@@ -2797,6 +2797,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/search/code': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Search file contents across readable repos (text or regex; repo, path, lang, rev filters) */
+    get: operations['searchCode'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/search/paths': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Find files by path across readable repos (fuzzy file finder) */
+    get: operations['searchPaths'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tokens': {
     parameters: {
       query?: never;
@@ -9784,6 +9818,66 @@ export interface operations {
       path: {
         id: string;
       };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  searchCode: {
+    parameters: {
+      query: {
+        q: string;
+        regex?: '1';
+        case?: '1';
+        repo?: string;
+        path?: string;
+        lang?: string;
+        rev?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  searchPaths: {
+    parameters: {
+      query: {
+        q: string;
+        repo?: string;
+        path?: string;
+        lang?: string;
+        rev?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;

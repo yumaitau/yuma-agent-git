@@ -23,6 +23,7 @@ import { refsRoutes } from './refs';
 import { reviewsRoutes } from './reviews';
 import { rulesetsRoutes } from './rulesets';
 import { runnerAdminRoutes } from './runners';
+import { searchRoutes } from './search';
 import { secretsRoutes } from './secrets';
 import { workRoutes } from './work';
 
@@ -36,6 +37,7 @@ apiRouter.route('/', reviewsRoutes);
 apiRouter.route('/', issuesRoutes);
 apiRouter.route('/', workRoutes);
 apiRouter.route('/', hooksRoutes);
+apiRouter.route('/', searchRoutes);
 apiRouter.route('/', secretsRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);

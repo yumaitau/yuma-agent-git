@@ -21,6 +21,7 @@ import {
 } from '../src/core/derived';
 import { derivedQueue } from '../src/queues/derived';
 import { GIT_IDS } from '../src/core/derived/gitIds';
+import { CODE_SEARCH } from '../src/core/derived/codeSearch';
 import type { DerivedMessage } from '../src/core/derived';
 
 const testEnv = env as unknown as TestEnv;
@@ -189,9 +190,11 @@ describe('derived-data framework', () => {
       `SELECT ${C.derivedData.kind} AS kind FROM ${T.derivedData} WHERE ${C.derivedData.csId} = ?`,
       [root.changeset.id],
     );
-    // (+ git_ids, which the commit hook computes for small changes, issue #30)
+    // (+ git_ids and code_search, which the commit hook computes for small
+    // changes, issues #30 and #45)
     expect(rows.map((r) => (r as { kind: string }).kind).sort()).toEqual([
       CHANGED_PATHS,
+      CODE_SEARCH,
       GIT_IDS,
       SKIP_LIST,
     ]);
