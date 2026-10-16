@@ -62,6 +62,11 @@ All notable changes to this project are documented here. The format follows
   The CI policy's `protect_default`, `required_approvals` and `require_checks`
   become the "CI policy (default branch)" ruleset, so existing repos behave the same.
 - Dashboard theme in the Yuma IT brand.
+- Pipeline spec v2 (#47): YAML pipelines in `.yuma/pipelines/*.yml` with jobs,
+  `needs`, matrices, services, concurrency groups and push (from `git push`),
+  pull request, manual and scheduled triggers. Invalid files report line-numbered
+  errors and the CI page shows each run's job graph. Repositories without spec
+  files keep the settings pipeline. See `docs/pipelines.md`.
 
 ### Fixed
 

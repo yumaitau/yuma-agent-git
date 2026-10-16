@@ -1,6 +1,13 @@
 import { ApiError, apiFetch } from './api';
-import type { CiPolicy, CiRun, Pull, Review } from '../../shared/collaboration';
-export type { CiPolicy, CiRun, Pull, Review };
+import type {
+  CiPolicy,
+  CiRun,
+  PipelineJob,
+  PipelineRun,
+  Pull,
+  Review,
+} from '../../shared/collaboration';
+export type { CiPolicy, CiRun, PipelineJob, PipelineRun, Pull, Review };
 export interface CiOverview {
   can_admin: boolean;
   can_write: boolean;

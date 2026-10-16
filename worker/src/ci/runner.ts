@@ -6,6 +6,8 @@ import { getBlob } from '../core/blobs';
 import { getTree } from '../core/trees';
 import { tarEntry, tarEnd } from '../bridge/tar';
 import { storeArtifact } from './artifacts';
+import { advancePipelines } from './planner';
+import { runnerServices } from './spec';
 import {
   MAX_IMAGE_BYTES,
   MAX_LOG_BYTES,
@@ -69,6 +71,25 @@ export class CiRunnerDO extends DurableObject<Env> {
       await this.command(['tar', '-xf', '-', '-C', '/workspace', '--no-same-owner'], {
         stdin: source,
       });
+      for (const service of runnerServices(job.config)) {
+        await this.assertRunning(id, deadline);
+        this.append(`\nStarting service ${service.name} (${service.image})…\n`);
+        await this.checkpoint(job);
+        // Same VM and host network as the steps, so a service listens on localhost.
+        await this.command([
+          'docker',
+          '--host',
+          'unix:///var/run/docker.sock',
+          'run',
+          '-d',
+          '--rm',
+          '--network=host',
+          '--name',
+          `yag-svc-${service.name}`,
+          ...Object.entries(service.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+          service.image,
+        ]);
+      }
       for (const command of policy.commands) {
         await this.assertRunning(id, deadline);
         this.append(`\n$ ${command}\n`);
@@ -176,8 +197,21 @@ export class CiRunnerDO extends DurableObject<Env> {
         [state, Date.now(), logKey, state === 'passed' ? published : null, error, id],
       );
       await this.ctx.storage.deleteAlarm();
+      await this.advance();
     }
     return Response.json({ ok: true });
+  }
+
+  /** A finished run frees a slot and may unblock pipeline jobs; cron retries on failure. */
+  private async advance(): Promise<void> {
+    try {
+      await advancePipelines(this.env);
+    } catch (err) {
+      console.warn(
+        'CI pipeline advance failed',
+        err instanceof Error ? err.message : 'unknown error',
+      );
+    }
   }
 
   async alarm(): Promise<void> {
@@ -205,6 +239,7 @@ export class CiRunnerDO extends DurableObject<Env> {
         ],
       );
     });
+    await this.advance();
   }
 
   private async start(id: string, deadline: number): Promise<void> {

@@ -6,6 +6,7 @@ import { derivedQueue } from './queues/derived';
 import { importQueue } from './queues/import';
 import { agentJobsQueue } from './queues/agentJobs';
 import { ciQueue } from './ci/runs';
+import { sweepPipelines } from './ci/triggers';
 import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
@@ -24,7 +25,7 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs and pipelines. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
@@ -66,6 +67,7 @@ export default {
       "UPDATE ci_runs SET state = 'failed', finished_at = ?, error = 'Queue delivery expired; retry manually' WHERE state = 'queued' AND created_at < ?",
       [Date.now(), Date.now() - 15 * 60_000],
     );
+    await sweepPipelines(env);
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {

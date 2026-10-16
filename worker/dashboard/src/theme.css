@@ -823,6 +823,35 @@ summary {
 .table-scroll {
   overflow: auto;
 }
+.pipeline-run {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.job-graph {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  padding: 0;
+}
+.job-stage {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 180px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.job-node {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+}
 .build-log {
   max-height: 540px;
   overflow: auto;
