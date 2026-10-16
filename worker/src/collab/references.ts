@@ -5,7 +5,7 @@ import type { Principal } from '../auth/principal';
 import { can, pathDecider, restrictingDecision } from '../auth/rbac';
 import type { RepoRecord } from '../db/client';
 import { getRepoBySlug } from '../db/repos';
-import { firstParentHistory } from '../core/changesets';
+import { firstParentHistory, getChangeset } from '../core/changesets';
 import { recordAudit } from '../audit/record';
 import { parseReferences } from '../../shared/markdown';
 import { actorKey, eventStatement, getIssueRow } from './issues';
@@ -117,6 +117,31 @@ export async function linkLanded(
     }
   } catch (err) {
     console.error('linking landed references failed', err);
+  }
+}
+
+/**
+ * Changesets a push made reachable from a branch other than the default link
+ * the issues their messages name; they close nothing until they land.
+ */
+export async function linkPushed(
+  c: Context,
+  repo: RepoRecord,
+  changesetIds: string[],
+): Promise<void> {
+  try {
+    for (const id of changesetIds.slice(0, MAX_LANDED)) {
+      const cs = await getChangeset(c.env as Env, repo.id, id);
+      if (!cs) continue;
+      await linkReferences(
+        c,
+        repo,
+        { kind: 'changeset', repo: repo.slug, ref: cs.id },
+        cs.message,
+      );
+    }
+  } catch (err) {
+    console.error('linking pushed references failed', err);
   }
 }
 

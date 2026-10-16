@@ -516,6 +516,43 @@ jobs:
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ event: 'push', ref: 'main', state: 'running' });
   });
+
+  it('starts no push pipeline when a ruleset refuses the push', async () => {
+    const created = await api('/rulesets', 'POST', {
+      name: 'Small files',
+      target: 'push',
+      rules: [{ type: 'max_file_size', max_bytes: 10 }],
+    });
+    expect(created.status).toBe(201);
+    const yml = await blob(
+      'on:\n  push:\n    branches: [main]\njobs:\n  a:\n    steps: [{run: "true"}]\n',
+    );
+    const pipelinesDir = await tree([{ name: 'ci.yml', sha: yml.sha }]);
+    const yuma = await tree([dir('pipelines', pipelinesDir)]);
+    const root = await tree([dir('.yuma', yuma)]);
+    const head = await gitCommit(root.sha, [], 'ci\n');
+    const token = await createApiToken(testEnv, owner.userId, { label: 'git' });
+    const res = await makeApp(ci())(
+      new Request('https://x/team/project.git/git-receive-pack', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-git-receive-pack-request',
+          authorization: `Basic ${btoa(`git:${token.raw}`)}`,
+        },
+        body: pushBody(
+          [[ZERO, head.sha, 'refs/heads/main']],
+          await packOf([head, root, yuma, pipelinesDir, yml]),
+        ),
+      }),
+    );
+    const report = parseReport(new Uint8Array(await res.arrayBuffer()));
+    expect(report.refs['refs/heads/main']).toMatch(
+      /^ruleset "Small files" max_file_size/,
+    );
+    expect(report.messages).not.toContain('CI');
+    expect(await pipelines()).toEqual([]);
+    expect(sends).toEqual([]);
+  });
 });
 
 describe('pipeline API access', () => {

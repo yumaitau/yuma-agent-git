@@ -371,7 +371,7 @@ async function addSubIssue(
 // Issues
 // ---------------------------------------------------------------------------
 
-const listQuery = z.object({
+export const listQuery = z.object({
   state: z.enum(['open', 'closed', 'all']).default('open'),
   label: z.string().max(500).optional(),
   assignee: z.string().max(200).optional(),
@@ -450,7 +450,7 @@ issuesRoutes.get(`${base}/issues`, async (c) => {
   }
 });
 
-const createIssue = z.object({
+export const createIssue = z.object({
   title: z.string().trim().min(1).max(256),
   body: z.string().max(65536).default(''),
   labels: z.array(z.string().min(1).max(50)).max(50).default([]),
@@ -619,7 +619,20 @@ issuesRoutes.get(`${base}/issues/:number`, async (c) => {
   }
 });
 
-const updateIssue = z.object({
+export const commentInput = z.object({ body: z.string().trim().min(1).max(65536) });
+export const labelsInput = z.object({
+  labels: z.array(z.string().min(1).max(50)).max(50),
+});
+export const assigneesInput = z.object({
+  assignees: z.array(z.string().min(1).max(200)).max(10),
+});
+export const flagInput = z.object({ on: z.boolean() });
+export const subIssueInput = z.object({ number: z.number().int().positive() });
+export const subIssueOrderInput = z.object({
+  order: z.array(z.number().int().positive()).max(MAX_SUB_ISSUES),
+});
+
+export const updateIssue = z.object({
   title: z.string().trim().min(1).max(256).optional(),
   body: z.string().max(65536).optional(),
   state: z.enum(['open', 'closed']).optional(),
@@ -762,10 +775,7 @@ issuesRoutes.post(`${base}/issues/:number/comments`, async (c) => {
     requireWriteScope(c);
     const repo = loaded.repo;
     const issue = await loadIssue(c, repo);
-    const { body } = parse(
-      z.object({ body: z.string().trim().min(1).max(65536) }),
-      await readJsonBody(c),
-    );
+    const { body } = parse(commentInput, await readJsonBody(c));
     if (issue.locked && !(await can(c.env, repo, principalOf(c), 'triage')))
       throw new ApiError(423, 'issue_locked', 'This issue is locked to triagers');
     const now = Date.now();
@@ -803,10 +813,7 @@ issuesRoutes.put(`${base}/issues/:number/labels`, async (c) => {
     const loaded = await loadTriageRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const issue = await loadIssue(c, loaded.repo);
-    const { labels } = parse(
-      z.object({ labels: z.array(z.string().min(1).max(50)).max(50) }),
-      await readJsonBody(c),
-    );
+    const { labels } = parse(labelsInput, await readJsonBody(c));
     await setLabels(c, loaded.repo, issue, labels);
     const [hydrated] = await hydrateIssues(c.env, [issue]);
     return c.json({ issue: hydrated });
@@ -820,10 +827,7 @@ issuesRoutes.put(`${base}/issues/:number/assignees`, async (c) => {
     const loaded = await loadTriageRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const issue = await loadIssue(c, loaded.repo);
-    const { assignees } = parse(
-      z.object({ assignees: z.array(z.string().min(1).max(200)).max(10) }),
-      await readJsonBody(c),
-    );
+    const { assignees } = parse(assigneesInput, await readJsonBody(c));
     await setAssignees(c, loaded.repo, issue, assignees);
     const [hydrated] = await hydrateIssues(c.env, [issue]);
     return c.json({ issue: hydrated });
@@ -841,7 +845,7 @@ for (const flag of ['lock', 'pin'] as const) {
       if (!loaded.ok) return loaded.response;
       const repo = loaded.repo;
       const issue = await loadIssue(c, repo);
-      const { on } = parse(z.object({ on: z.boolean() }), await readJsonBody(c));
+      const { on } = parse(flagInput, await readJsonBody(c));
       const was = flag === 'lock' ? issue.locked === 1 : issue.pinned_at !== null;
       if (on !== was) {
         if (flag === 'pin' && on) {
@@ -888,10 +892,7 @@ issuesRoutes.post(`${base}/issues/:number/sub-issues`, async (c) => {
     const loaded = await loadTriageRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const parent = await loadIssue(c, loaded.repo);
-    const { number } = parse(
-      z.object({ number: z.number().int().positive() }),
-      await readJsonBody(c),
-    );
+    const { number } = parse(subIssueInput, await readJsonBody(c));
     await addSubIssue(
       c,
       loaded.repo,
@@ -953,10 +954,7 @@ issuesRoutes.put(`${base}/issues/:number/sub-issues`, async (c) => {
     const loaded = await loadTriageRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const parent = await loadIssue(c, loaded.repo);
-    const { order } = parse(
-      z.object({ order: z.array(z.number().int().positive()).max(MAX_SUB_ISSUES) }),
-      await readJsonBody(c),
-    );
+    const { order } = parse(subIssueOrderInput, await readJsonBody(c));
     const children = await q<{ id: number; number: number }>(
       c.env,
       `SELECT i.id, i.number FROM issue_links k JOIN issues i ON i.id = k.child_id
@@ -1018,7 +1016,7 @@ issuesRoutes.get(`${base}/labels`, async (c) => {
   }
 });
 
-const createLabel = z.object({
+export const createLabel = z.object({
   name: z
     .string()
     .trim()
@@ -1100,7 +1098,7 @@ issuesRoutes.get(`${base}/milestones`, async (c) => {
   }
 });
 
-const milestoneInput = z.object({
+export const milestoneInput = z.object({
   title: z.string().trim().min(1).max(100),
   description: z.string().max(2000).default(''),
   due_at: z.number().int().positive().nullable().default(null),
@@ -1145,7 +1143,7 @@ issuesRoutes.post(`${base}/milestones`, async (c) => {
 });
 
 // Keys are fixed by the schema, so they are safe to name in the UPDATE.
-const updateMilestone = z
+export const updateMilestone = z
   .object({
     title: z.string().trim().min(1).max(100).optional(),
     description: z.string().max(2000).optional(),

@@ -28,7 +28,7 @@ pipelineRoutes.get(base, async (c) => {
   }
 });
 
-const manual = z.object({
+export const manual = z.object({
   pipeline: z.string().min(1).max(300),
   head: z.string().min(1).max(300).optional(),
 });

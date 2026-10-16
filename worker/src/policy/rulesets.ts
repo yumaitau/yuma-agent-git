@@ -72,7 +72,10 @@ const conditionsSchema = z.object({
   repository_name: patternsSchema.optional(),
 });
 
-/** role:admin|write (that role or higher), team:<slug>, agent:<token id>, user:<id>. */
+/**
+ * role:admin|write (that role or higher), team:<slug>, agent:<token id or
+ * agent identity id>, user:<id>.
+ */
 const BYPASS_RE =
   /^(role:(admin|write)|team:[a-z0-9-]+|agent:[A-Za-z0-9_-]+|user:[A-Za-z0-9_-]+)$/;
 
@@ -200,9 +203,12 @@ function matchesAny(
   return patterns.some((p) => special.get(p) ?? globMatch(p, value));
 }
 
+const AGENT_REFS = 'refs/agents/';
+
 /** The name a ruleset's ref patterns see, or null when the target does not cover the ref. */
 function refKey(target: Target, ref: string): string | null {
-  if (target === 'branch') return ref.startsWith('refs/') ? null : ref;
+  if (target === 'branch')
+    return ref.startsWith('refs/') && !ref.startsWith(AGENT_REFS) ? null : ref;
   if (target === 'tag') return ref.startsWith('refs/tags/') ? ref.slice(10) : null;
   return null;
 }
@@ -236,10 +242,13 @@ export function applies(
     ['~ALL', true],
     ['~DEFAULT_BRANCH', ruleset.target === 'branch' && key === repo.default_branch],
   ]);
+  // Agent refs (#57) match by full name, only patterns that spell `refs/agents/`.
+  const own = (p: string): boolean =>
+    !key.startsWith(AGENT_REFS) || p.startsWith(AGENT_REFS);
   const names = ruleset.conditions.ref_name;
   return (
-    matchesAny((names?.include ?? []).map(strip), key, special) &&
-    !matchesAny((names?.exclude ?? []).map(strip), key, special)
+    matchesAny((names?.include ?? []).map(strip).filter(own), key, special) &&
+    !matchesAny((names?.exclude ?? []).map(strip).filter(own), key, special)
   );
 }
 
@@ -256,6 +265,15 @@ export const principalSchema = z.union([
     tokenId: z.string(),
     scopes: z.array(z.string()),
     repoId: z.string().nullable(),
+  }),
+  z.object({
+    kind: z.literal('agent'),
+    userId: z.string(),
+    agentId: z.string(),
+    jti: z.string(),
+    taskId: z.string().nullable(),
+    scopes: z.array(z.string()),
+    repoIds: z.array(z.string()),
   }),
 ]);
 
@@ -319,6 +337,8 @@ const ROLE_RANK: Record<Role, number> = { read: 1, triage: 2, write: 3, admin: 4
 export function canBypass(ruleset: Ruleset, actor: Actor): boolean {
   const p = actor.principal;
   if (p === null) return false;
+  // An agent identity (#57) bypasses only when named; never as its human.
+  if (p.kind === 'agent') return ruleset.bypass.includes(`agent:${p.agentId}`);
   return ruleset.bypass.some((entry) => {
     const [kind, id] = entry.split(':') as [string, string];
     if (kind === 'role')

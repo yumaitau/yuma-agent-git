@@ -231,7 +231,7 @@ export const agentIdentityRoutes = new Hono<AppEnv>();
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
-const exchangeSchema = z.object({
+export const exchangeSchema = z.object({
   grant_type: z.string(),
   subject_token: z.string().min(1),
   subject_token_type: z.literal(ACCESS_TOKEN_TYPE),
@@ -379,7 +379,7 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
   }
 });
 
-const createAgentSchema = z.object({
+export const createAgentSchema = z.object({
   name: z.string().trim().min(1).max(80),
   kind: z.enum(AGENT_KINDS),
   max_scopes: z.array(z.enum(AGENT_SCOPES)).min(1).optional(),
@@ -532,7 +532,7 @@ async function loadManaged(
   return { ok: true, agent };
 }
 
-const patchAgentSchema = z.object({ disabled: z.boolean() });
+export const patchAgentSchema = z.object({ disabled: z.boolean() });
 
 /** Kill switch: disabling an agent also deletes every token it holds. */
 agentIdentityRoutes.patch('/api/v1/agents/:id', async (c) => {

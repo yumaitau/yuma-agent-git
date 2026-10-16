@@ -540,7 +540,7 @@ scimRoutes.get('/scim/v2/Groups/:id', async (c) => {
   }
 });
 
-const createGroupSchema = z
+export const createGroupSchema = z
   .object({
     displayName: z.string().trim().min(1).max(256),
     externalId: z.string().max(256).optional(),

@@ -3,7 +3,14 @@ import { commitRequestSchema } from '../core/commit';
 import { policySchema } from '../ci/config';
 import { pathRuleInputSchema } from '../auth/rbac';
 import { createTokenSchema } from '../auth/tokens';
-import { createScimTokenSchema, createUserSchema, patchSchema } from '../auth/scim';
+import {
+  createGroupSchema,
+  createScimTokenSchema,
+  createUserSchema,
+  patchSchema,
+} from '../auth/scim';
+import { createAgentSchema, exchangeSchema, patchAgentSchema } from '../auth/agents';
+import { rulesetInputSchema } from '../policy/rulesets';
 import { assertionSchema, registrationSchema } from '../auth/webauthn';
 import { codeSchema } from '../auth/totp';
 import { connectSchema } from '../bridge/github';
@@ -15,7 +22,22 @@ import { memberSchema } from './admin';
 import { createTaskSchema, superfanSchema } from './agents';
 import { querySchema as auditQuerySchema } from './audit';
 import { createPull, createRunSchema } from './collaboration';
+import {
+  assigneesInput,
+  commentInput,
+  createIssue,
+  createLabel,
+  flagInput,
+  labelsInput,
+  listQuery as issueListQuery,
+  milestoneInput,
+  subIssueInput,
+  subIssueOrderInput,
+  updateIssue,
+  updateMilestone,
+} from './issues';
 import { fetchObjectsSchema } from './objects';
+import { putSsoSchema } from './org-sso';
 import {
   createOrgSchema,
   createTeamSchema,
@@ -24,6 +46,7 @@ import {
   putMemberSchema,
   userRefSchema,
 } from './orgs';
+import { manual as manualPipelineRun } from './pipelines';
 import { createTagSchema, moveRefSchema } from './refs';
 import { createRepoSchema, updateRepoSchema } from './repos';
 
@@ -75,6 +98,14 @@ const reviewPullSchema = z.object({
 const mergePullSchema = z.object({ head_cs: z.string(), revision: z.int() });
 
 const ancestryQuery = z.object({ a: rev, b: rev });
+const scimListQuery = {
+  filter: z.string().optional(),
+  startIndex: z.int().min(1).optional(),
+  count: z.int().min(0).max(200).optional(),
+};
+const evaluationsQuery = z.object({
+  before: z.int().min(1).optional().describe('Evaluation id cursor (`next_cursor`)'),
+});
 
 export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /healthz': { id: 'getHealth' },
@@ -119,6 +150,18 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /scim/v2/Users/:id': { id: 'scimGetUser' },
   'PATCH /scim/v2/Users/:id': { id: 'scimPatchUser', body: patchSchema },
   'DELETE /scim/v2/Users/:id': { id: 'scimDeleteUser' },
+  'GET /scim/v2/Groups': {
+    id: 'scimListGroups',
+    query: z.object({
+      ...scimListQuery,
+      excludedAttributes: z.string().optional().describe('`members` omits members'),
+    }),
+  },
+  'POST /scim/v2/Groups': { id: 'scimCreateGroup', body: createGroupSchema },
+  'GET /scim/v2/Groups/:id': { id: 'scimGetGroup' },
+  'PATCH /scim/v2/Groups/:id': { id: 'scimPatchGroup', body: patchSchema },
+  'DELETE /scim/v2/Groups/:id': { id: 'scimDeleteGroup' },
+  'POST /oauth/token': { id: 'exchangeAgentToken', body: exchangeSchema },
   'GET /:owner/:repo.git/info/refs': {
     id: 'gitInfoRefs',
     query: z.object({ service: z.enum(['git-upload-pack', 'git-receive-pack']) }),
@@ -158,6 +201,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/tokens': { id: 'createToken', body: createTokenSchema },
   'DELETE /api/v1/tokens/:id': { id: 'deleteToken' },
 
+  'GET /api/v1/agents': { id: 'listAgents' },
+  'POST /api/v1/agents': { id: 'createAgent', body: createAgentSchema },
+  'PATCH /api/v1/agents/:id': { id: 'updateAgent', body: patchAgentSchema },
+  'DELETE /api/v1/agents/:id/tokens': { id: 'revokeAgentTokens' },
   'GET /api/v1/agents/tasks/:id': { id: 'getAgentTask' },
   'POST /api/v1/agents/tasks/:id/cancel': { id: 'cancelAgentTask' },
   'GET /api/v1/agents/tasks/:id/transcript': {
@@ -174,6 +221,20 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'PUT /api/v1/orgs/:org/members': { id: 'putOrgMember', body: putMemberSchema },
   'DELETE /api/v1/orgs/:org/members/:userId': { id: 'deleteOrgMember' },
   'GET /api/v1/orgs/:org/repos': { id: 'listOrgRepos' },
+  'GET /api/v1/orgs/:org/rulesets': { id: 'listOrgRulesets' },
+  'POST /api/v1/orgs/:org/rulesets': { id: 'createOrgRuleset', body: rulesetInputSchema },
+  'PUT /api/v1/orgs/:org/rulesets/:id': {
+    id: 'replaceOrgRuleset',
+    body: rulesetInputSchema,
+  },
+  'DELETE /api/v1/orgs/:org/rulesets/:id': { id: 'deleteOrgRuleset' },
+  'GET /api/v1/orgs/:org/rulesets/evaluations': {
+    id: 'listOrgRulesetEvaluations',
+    query: evaluationsQuery,
+  },
+  'GET /api/v1/orgs/:org/sso': { id: 'getOrgSso' },
+  'PUT /api/v1/orgs/:org/sso': { id: 'putOrgSso', body: putSsoSchema },
+  'DELETE /api/v1/orgs/:org/sso': { id: 'deleteOrgSso' },
   'GET /api/v1/orgs/:org/teams': { id: 'listTeams' },
   'POST /api/v1/orgs/:org/teams': { id: 'createTeam', body: createTeamSchema },
   'GET /api/v1/orgs/:org/teams/:team': { id: 'getTeam' },
@@ -259,6 +320,15 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/ci': { id: 'getCi' },
   'PUT /api/v1/repos/:repo/ci': { id: 'putCiPolicy', body: policySchema },
   'GET /api/v1/repos/:repo/ci/detect': { id: 'detectCi' },
+  'GET /api/v1/repos/:repo/ci/pipelines': {
+    id: 'listPipelines',
+    query: z.object({ head: rev.optional() }),
+  },
+  'POST /api/v1/repos/:repo/ci/pipelines/runs': {
+    id: 'runPipeline',
+    body: manualPipelineRun,
+  },
+  'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': { id: 'cancelPipelineRun' },
   'POST /api/v1/repos/:repo/ci/runs': { id: 'createCiRun', body: createRunSchema },
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': { id: 'cancelCiRun' },
   'GET /api/v1/repos/:repo/ci/runs/:id/log': { id: 'getCiRunLog' },
@@ -311,10 +381,50 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     }),
   },
   'POST /api/v1/repos/:repo/import': { id: 'startImport', body: importRequestSchema },
+  'GET /api/v1/repos/:repo/issue-templates': { id: 'listIssueTemplates' },
+  'GET /api/v1/repos/:repo/issues': { id: 'listIssues', query: issueListQuery },
+  'POST /api/v1/repos/:repo/issues': { id: 'createIssue', body: createIssue },
+  'GET /api/v1/repos/:repo/issues/:number': { id: 'getIssue' },
+  'PATCH /api/v1/repos/:repo/issues/:number': { id: 'updateIssue', body: updateIssue },
+  'DELETE /api/v1/repos/:repo/issues/:number': { id: 'deleteIssue' },
+  'PUT /api/v1/repos/:repo/issues/:number/assignees': {
+    id: 'setIssueAssignees',
+    body: assigneesInput,
+  },
+  'POST /api/v1/repos/:repo/issues/:number/comments': {
+    id: 'commentOnIssue',
+    body: commentInput,
+  },
+  'PUT /api/v1/repos/:repo/issues/:number/labels': {
+    id: 'setIssueLabels',
+    body: labelsInput,
+  },
+  'PUT /api/v1/repos/:repo/issues/:number/lock': { id: 'lockIssue', body: flagInput },
+  'PUT /api/v1/repos/:repo/issues/:number/pin': { id: 'pinIssue', body: flagInput },
+  'POST /api/v1/repos/:repo/issues/:number/sub-issues': {
+    id: 'addSubIssue',
+    body: subIssueInput,
+  },
+  'PUT /api/v1/repos/:repo/issues/:number/sub-issues': {
+    id: 'reorderSubIssues',
+    body: subIssueOrderInput,
+  },
+  'DELETE /api/v1/repos/:repo/issues/:number/sub-issues/:child': {
+    id: 'removeSubIssue',
+  },
+  'GET /api/v1/repos/:repo/labels': { id: 'listLabels' },
+  'POST /api/v1/repos/:repo/labels': { id: 'createLabel', body: createLabel },
+  'DELETE /api/v1/repos/:repo/labels/:name': { id: 'deleteLabel' },
   'GET /api/v1/repos/:repo/import/:job_id': { id: 'getImport' },
   'GET /api/v1/repos/:repo/members': { id: 'listRepoMembers' },
   'PUT /api/v1/repos/:repo/members': { id: 'putRepoMember', body: memberSchema },
   'DELETE /api/v1/repos/:repo/members/:userId': { id: 'deleteRepoMember' },
+  'GET /api/v1/repos/:repo/milestones': { id: 'listMilestones' },
+  'POST /api/v1/repos/:repo/milestones': { id: 'createMilestone', body: milestoneInput },
+  'PATCH /api/v1/repos/:repo/milestones/:id': {
+    id: 'updateMilestone',
+    body: updateMilestone,
+  },
   'GET /api/v1/repos/:repo/object/blob/:hash': {
     id: 'getBlobObject',
     query: z.object({ encoding: z.enum(['zstd', 'identity']).optional() }),
@@ -347,6 +457,17 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   },
   'GET /api/v1/repos/:repo/refs/:name': { id: 'getRef' },
   'PUT /api/v1/repos/:repo/refs/:name': { id: 'moveRef', body: moveRefSchema },
+  'GET /api/v1/repos/:repo/rulesets': { id: 'listRulesets' },
+  'POST /api/v1/repos/:repo/rulesets': { id: 'createRuleset', body: rulesetInputSchema },
+  'PUT /api/v1/repos/:repo/rulesets/:id': {
+    id: 'replaceRuleset',
+    body: rulesetInputSchema,
+  },
+  'DELETE /api/v1/repos/:repo/rulesets/:id': { id: 'deleteRuleset' },
+  'GET /api/v1/repos/:repo/rulesets/evaluations': {
+    id: 'listRulesetEvaluations',
+    query: evaluationsQuery,
+  },
   'GET /api/v1/repos/:repo/tags': { id: 'listTags', query: z.object(page) },
   'POST /api/v1/repos/:repo/tags': { id: 'createTag', body: createTagSchema },
   'GET /api/v1/repos/:repo/tree': {

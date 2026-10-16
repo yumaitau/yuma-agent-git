@@ -161,6 +161,133 @@
         }
       }
     },
+    "/api/v1/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "summary": "Agent identities you manage, with live token counts",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createAgent",
+        "summary": "Create an agent identity (you or an org own it)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["factory", "claude_code", "codex", "grok", "builtin"]
+                  },
+                  "max_scopes": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "contents:read",
+                        "contents:write",
+                        "pulls:write",
+                        "ci:run",
+                        "releases:write"
+                      ]
+                    }
+                  },
+                  "allowed_repos": {
+                    "anyOf": [
+                      {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 }
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "org": { "type": "string", "minLength": 1 }
+                },
+                "required": ["name", "kind"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/agents/{id}": {
+      "patch": {
+        "operationId": "updateAgent",
+        "summary": "Disable (kill switch, revokes tokens) or enable an agent",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "disabled": { "type": "boolean" } },
+                "required": ["disabled"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/agents/{id}/tokens": {
+      "delete": {
+        "operationId": "revokeAgentTokens",
+        "summary": "Revoke every live token of an agent",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/agents/tasks/{id}": {
       "get": {
         "operationId": "getAgentTask",
@@ -799,6 +926,400 @@
         "security": [{ "session": [] }],
         "x-yag-permission": "org member",
         "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/rulesets": {
+      "get": {
+        "operationId": "listOrgRulesets",
+        "summary": "List org rulesets",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createOrgRuleset",
+        "summary": "Create an org ruleset",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "target": { "type": "string", "enum": ["branch", "tag", "push"] },
+                  "enforcement": {
+                    "default": "active",
+                    "type": "string",
+                    "enum": ["active", "evaluate", "disabled"]
+                  },
+                  "conditions": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "ref_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      },
+                      "repository_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "rules": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {}
+                  },
+                  "bypass": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(role:(admin|write)|team:[a-z0-9-]+|agent:[A-Za-z0-9_-]+|user:[A-Za-z0-9_-]+)$"
+                    }
+                  }
+                },
+                "required": ["name", "target", "rules"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/rulesets/{id}": {
+      "put": {
+        "operationId": "replaceOrgRuleset",
+        "summary": "Replace an org ruleset",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "target": { "type": "string", "enum": ["branch", "tag", "push"] },
+                  "enforcement": {
+                    "default": "active",
+                    "type": "string",
+                    "enum": ["active", "evaluate", "disabled"]
+                  },
+                  "conditions": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "ref_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      },
+                      "repository_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "rules": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {}
+                  },
+                  "bypass": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(role:(admin|write)|team:[a-z0-9-]+|agent:[A-Za-z0-9_-]+|user:[A-Za-z0-9_-]+)$"
+                    }
+                  }
+                },
+                "required": ["name", "target", "rules"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrgRuleset",
+        "summary": "Delete an org ruleset",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/rulesets/evaluations": {
+      "get": {
+        "operationId": "listOrgRulesetEvaluations",
+        "summary": "Evaluate-mode log for org rulesets",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Evaluation id cursor (`next_cursor`)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/sso": {
+      "get": {
+        "operationId": "getOrgSso",
+        "summary": "Org SSO settings and whether the caller meets them",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org member",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "putOrgSso",
+        "summary": "Set org SSO (owners, recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "protocol": { "type": "string", "enum": ["oidc", "saml"] },
+                  "issuer": { "type": "string", "format": "uri" },
+                  "client_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "enforced": { "type": "boolean" },
+                  "allowed_domains": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                },
+                "required": ["protocol", "issuer", "client_id", "enforced"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrgSso",
+        "summary": "Remove org SSO (owners, recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner",
+        "x-yag-rate-bucket": "api_write",
         "parameters": [
           {
             "name": "org",
@@ -2153,6 +2674,124 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/ci/pipelines": {
+      "get": {
+        "operationId": "listPipelines",
+        "summary": "Pipeline runs with their jobs and spec errors (`?head=`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "head",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Revision: changeset id, `ref:<name>` or a ref name"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/ci/pipelines/runs": {
+      "post": {
+        "operationId": "runPipeline",
+        "summary": "Start a pipeline with a manual trigger",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pipeline": { "type": "string", "minLength": 1, "maxLength": 300 },
+                  "head": { "type": "string", "minLength": 1, "maxLength": 300 }
+                },
+                "required": ["pipeline"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/ci/pipelines/runs/{id}/cancel": {
+      "post": {
+        "operationId": "cancelPipelineRun",
+        "summary": "Cancel a pipeline run",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/ci/runs": {
       "post": {
         "operationId": "createCiRun",
@@ -2820,6 +3459,853 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/issue-templates": {
+      "get": {
+        "operationId": "listIssueTemplates",
+        "summary": "Issue templates and forms from `.yuma/` and `.github/ISSUE_TEMPLATE`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues": {
+      "get": {
+        "operationId": "listIssues",
+        "summary": "List issues (`?state=&label=a,b&assignee=&milestone=&before=`) plus pinned issues",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "type": "string",
+              "enum": ["open", "closed", "all"]
+            }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 500 }
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          {
+            "name": "milestone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                { "type": "string", "const": "none" },
+                { "type": "integer", "exclusiveMinimum": 0, "maximum": 9007199254740991 }
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "exclusiveMinimum": 0, "maximum": 999999999 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createIssue",
+        "summary": "Open an issue; labels, assignees, milestone and parent apply with `triage`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "body": { "default": "", "type": "string", "maxLength": 65536 },
+                  "labels": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 50 }
+                  },
+                  "assignees": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+                  },
+                  "milestone_id": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "parent": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}": {
+      "get": {
+        "operationId": "getIssue",
+        "summary": "Issue with comments, timeline, sub-issues and milestone",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "updateIssue",
+        "summary": "Edit, close (with reason) or reopen (author or `triage`); milestone needs `triage`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "body": { "type": "string", "maxLength": 65536 },
+                  "state": { "type": "string", "enum": ["open", "closed"] },
+                  "state_reason": {
+                    "type": "string",
+                    "enum": ["completed", "not_planned", "duplicate"]
+                  },
+                  "milestone_id": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteIssue",
+        "summary": "Delete an issue (its number is not reused)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/assignees": {
+      "put": {
+        "operationId": "setIssueAssignees",
+        "summary": "Replace assignees (logins, `user:`, `team:` or `agent:` principals)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assignees": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+                  }
+                },
+                "required": ["assignees"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/comments": {
+      "post": {
+        "operationId": "commentOnIssue",
+        "summary": "Comment on an issue (`triage` when locked)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": { "type": "string", "minLength": 1, "maxLength": 65536 }
+                },
+                "required": ["body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/labels": {
+      "put": {
+        "operationId": "setIssueLabels",
+        "summary": "Replace an issue's labels",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labels": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 50 }
+                  }
+                },
+                "required": ["labels"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/lock": {
+      "put": {
+        "operationId": "lockIssue",
+        "summary": "Lock or unlock comments (`{on}`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "on": { "type": "boolean" } },
+                "required": ["on"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/pin": {
+      "put": {
+        "operationId": "pinIssue",
+        "summary": "Pin or unpin (at most 3 per repo)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "on": { "type": "boolean" } },
+                "required": ["on"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/sub-issues": {
+      "post": {
+        "operationId": "addSubIssue",
+        "summary": "Add a sub-issue (`{number}`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["number"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "reorderSubIssues",
+        "summary": "Reorder sub-issues (`{order}`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "order": {
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "required": ["order"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/sub-issues/{child}": {
+      "delete": {
+        "operationId": "removeSubIssue",
+        "summary": "Remove a sub-issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "triage",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "child",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/labels": {
+      "get": {
+        "operationId": "listLabels",
+        "summary": "List labels",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createLabel",
+        "summary": "Create a label",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50,
+                    "pattern": "^[^,]+$"
+                  },
+                  "color": { "type": "string", "pattern": "^#?[0-9a-fA-F]{6}$" },
+                  "description": { "default": "", "type": "string", "maxLength": 100 }
+                },
+                "required": ["name", "color"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/labels/{name}": {
+      "delete": {
+        "operationId": "deleteLabel",
+        "summary": "Delete a label and remove it from issues",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/members": {
       "get": {
         "operationId": "listRepoMembers",
@@ -2879,7 +4365,10 @@
                 "properties": {
                   "user_id": { "type": "string", "minLength": 1 },
                   "user_login": { "type": "string", "minLength": 1 },
-                  "role": { "type": "string", "enum": ["admin", "write", "read"] }
+                  "role": {
+                    "type": "string",
+                    "enum": ["admin", "write", "triage", "read"]
+                  }
                 },
                 "required": ["role"]
               }
@@ -2972,6 +4461,150 @@
             }
           }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/milestones": {
+      "get": {
+        "operationId": "listMilestones",
+        "summary": "List milestones with open and closed counts",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createMilestone",
+        "summary": "Create a milestone",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "description": { "default": "", "type": "string", "maxLength": 2000 },
+                  "due_at": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/milestones/{id}": {
+      "patch": {
+        "operationId": "updateMilestone",
+        "summary": "Edit, close or reopen a milestone",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "description": { "type": "string", "maxLength": 2000 },
+                  "due_at": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "state": { "type": "string", "enum": ["open", "closed"] }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",
@@ -3531,7 +5164,7 @@
         "operationId": "moveRef",
         "summary": "Compare-and-swap move a ref",
         "security": [{ "session": [] }, { "bearer": [] }],
-        "x-yag-permission": "write (whole repo) + `agent:run`",
+        "x-yag-permission": "write (whole repo) + agent identity for `refs/agents/<id>/`",
         "x-yag-rate-bucket": "api_write",
         "parameters": [
           {
@@ -3576,6 +5209,337 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/rulesets": {
+      "get": {
+        "operationId": "listRulesets",
+        "summary": "Repo rulesets plus the org rulesets that reach it",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createRuleset",
+        "summary": "Create a branch, tag or push ruleset",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "target": { "type": "string", "enum": ["branch", "tag", "push"] },
+                  "enforcement": {
+                    "default": "active",
+                    "type": "string",
+                    "enum": ["active", "evaluate", "disabled"]
+                  },
+                  "conditions": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "ref_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      },
+                      "repository_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "rules": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {}
+                  },
+                  "bypass": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(role:(admin|write)|team:[a-z0-9-]+|agent:[A-Za-z0-9_-]+|user:[A-Za-z0-9_-]+)$"
+                    }
+                  }
+                },
+                "required": ["name", "target", "rules"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/rulesets/{id}": {
+      "put": {
+        "operationId": "replaceRuleset",
+        "summary": "Replace a repo ruleset",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "target": { "type": "string", "enum": ["branch", "tag", "push"] },
+                  "enforcement": {
+                    "default": "active",
+                    "type": "string",
+                    "enum": ["active", "evaluate", "disabled"]
+                  },
+                  "conditions": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "ref_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      },
+                      "repository_name": {
+                        "type": "object",
+                        "properties": {
+                          "include": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          },
+                          "exclude": {
+                            "default": [],
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "rules": {
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {}
+                  },
+                  "bypass": {
+                    "default": [],
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(role:(admin|write)|team:[a-z0-9-]+|agent:[A-Za-z0-9_-]+|user:[A-Za-z0-9_-]+)$"
+                    }
+                  }
+                },
+                "required": ["name", "target", "rules"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRuleset",
+        "summary": "Delete a repo ruleset",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/rulesets/evaluations": {
+      "get": {
+        "operationId": "listRulesetEvaluations",
+        "summary": "Evaluate-mode log for this repo",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Evaluation id cursor (`next_cursor`)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -3751,7 +5715,8 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "label": { "type": "string", "minLength": 1, "maxLength": 120 }
+                  "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+                  "org": { "type": "string", "minLength": 1, "maxLength": 39 }
                 },
                 "required": ["label"]
               }
@@ -4251,6 +6216,181 @@
         }
       }
     },
+    "/oauth/token": {
+      "post": {
+        "operationId": "exchangeAgentToken",
+        "summary": "RFC 8693 token exchange: an `agent:run` API token delegates to an agent",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "grant_type": { "type": "string" },
+                  "subject_token": { "type": "string", "minLength": 1 },
+                  "subject_token_type": {
+                    "type": "string",
+                    "const": "urn:ietf:params:oauth:token-type:access_token"
+                  },
+                  "agent_id": { "type": "string", "minLength": 1 },
+                  "resource": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  },
+                  "scope": { "type": "string" },
+                  "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600 }
+                },
+                "required": [
+                  "grant_type",
+                  "subject_token",
+                  "subject_token_type",
+                  "agent_id",
+                  "resource"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/scim/v2/Groups": {
+      "get": {
+        "operationId": "scimListGroups",
+        "summary": "SCIM: list groups (`displayName eq` filter)",
+        "security": [{ "scimBearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "startIndex",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 0, "maximum": 200 }
+          },
+          {
+            "name": "excludedAttributes",
+            "in": "query",
+            "required": false,
+            "schema": { "description": "`members` omits members", "type": "string" }
+          }
+        ],
+        "responses": { "2XX": { "description": "Success" } }
+      },
+      "post": {
+        "operationId": "scimCreateGroup",
+        "summary": "SCIM: create a group as a team in the token's org",
+        "security": [{ "scimBearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "externalId": { "type": "string", "maxLength": 256 },
+                  "members": {}
+                },
+                "required": ["displayName"],
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": { "2XX": { "description": "Success" } }
+      }
+    },
+    "/scim/v2/Groups/{id}": {
+      "get": {
+        "operationId": "scimGetGroup",
+        "summary": "SCIM: one group and its members",
+        "security": [{ "scimBearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "2XX": { "description": "Success" } }
+      },
+      "patch": {
+        "operationId": "scimPatchGroup",
+        "summary": "SCIM: change group members or name",
+        "security": [{ "scimBearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "Operations": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "op": { "type": "string" },
+                        "path": { "type": "string" },
+                        "value": {}
+                      },
+                      "required": ["op"]
+                    }
+                  }
+                },
+                "required": ["Operations"],
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": { "2XX": { "description": "Success" } }
+      },
+      "delete": {
+        "operationId": "scimDeleteGroup",
+        "summary": "SCIM: delete a group and its team",
+        "security": [{ "scimBearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "2XX": { "description": "Success" } }
+      }
+    },
     "/scim/v2/Users": {
       "get": {
         "operationId": "scimListUsers",
@@ -4358,7 +6498,7 @@
                         "path": { "type": "string" },
                         "value": {}
                       },
-                      "required": ["op", "value"]
+                      "required": ["op"]
                     }
                   }
                 },

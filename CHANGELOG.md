@@ -56,6 +56,7 @@ All notable changes to this project are documented here. The format follows
   default branch. Issues and pull requests share one number sequence per repo. A
   new `triage` repo role labels, assigns and closes issues without code access.
   Markdown is rendered escape-first by one shared module (`worker/shared/markdown.ts`).
+  Commits pushed to other branches link (never close) the issues they name.
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
 - Rulesets (#41) for branches, tags and pushes at repo and org level: no deletion,
   no force push, pull request only, required approvals, required CI, and push rules
@@ -65,6 +66,8 @@ All notable changes to this project are documented here. The format follows
   tokens, users) are audited with their reason, and ruleset changes are audited.
   The CI policy's `protect_default`, `required_approvals` and `require_checks`
   become the "CI policy (default branch)" ruleset, so existing repos behave the same.
+  Branch rulesets reach agent refs only through patterns that name `refs/agents/`,
+  and an agent identity bypasses only as `agent:<agent id>`, never as its human.
 - Dashboard theme in the Yuma IT brand.
 - Pipeline spec v2 (#47): YAML pipelines in `.yuma/pipelines/*.yml` with jobs,
   `needs`, matrices, services, concurrency groups and push (from `git push`),

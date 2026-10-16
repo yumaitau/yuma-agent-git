@@ -7,6 +7,15 @@ import { createRepo, getRef, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import { q, run } from '../src/db/client';
 import type { Pull } from '../shared/collaboration';
+import {
+  blob,
+  commit as gitCommit,
+  packOf,
+  parseReport,
+  pushBody,
+  tree,
+  ZERO,
+} from './git-helpers';
 import type { Issue, IssueDetail, IssueTemplate } from '../shared/issues';
 
 const testEnv = env as unknown as TestEnv;
@@ -519,6 +528,68 @@ describe('cross-references', () => {
       kind: 'closed',
       payload: { source: { kind: 'changeset', ref: first } },
     });
+  });
+
+  it('links pushed commit messages on any branch and closes only on the default branch', async () => {
+    const slug = 'team/pushed';
+    await createRepo(testEnv, { slug, createdBy: owner.userId });
+    const token = (
+      await createApiToken(testEnv, owner.userId, {
+        label: 'git',
+        scopes: ['repo:read', 'repo:write'],
+      })
+    ).raw;
+    async function push(old: string, message: string, ref: string, parents: string[]) {
+      const file = await blob(message);
+      const root = await tree([{ name: 'a.txt', sha: file.sha }]);
+      const head = await gitCommit(root.sha, parents, `${message}\n`);
+      const res = await makeApp(testEnv)(
+        new Request(`https://x/${slug}.git/git-receive-pack`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-git-receive-pack-request',
+            authorization: `Basic ${btoa(`git:${token}`)}`,
+          },
+          body: pushBody([[old, head.sha, ref]], await packOf([head, root, file])),
+        }),
+      );
+      expect(parseReport(new Uint8Array(await res.arrayBuffer())).refs[ref]).toBe('ok');
+      return head.sha;
+    }
+    const issue = (
+      await json<{ issue: Issue }>(
+        await call(owner, 'POST', '/issues', { title: 'Bug' }, slug),
+        201,
+      )
+    ).issue;
+    const root = await push(ZERO, 'root', 'refs/heads/main', []);
+    const fix = await push(ZERO, `Fixes #${issue.number}`, 'refs/heads/feature', [root]);
+    const pushed = await json<IssueDetail>(
+      await call(owner, 'GET', `/issues/${issue.number}`, undefined, slug),
+    );
+    expect(pushed.issue.state).toBe('open');
+    expect(pushed.events).toMatchObject([
+      { kind: 'referenced', payload: { source: { kind: 'changeset' } } },
+    ]);
+    // the same commit landing on main closes it, without a second reference
+    const res = await makeApp(testEnv)(
+      new Request(`https://x/${slug}.git/git-receive-pack`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-git-receive-pack-request',
+          authorization: `Basic ${btoa(`git:${token}`)}`,
+        },
+        body: pushBody([[root, fix, 'refs/heads/main']], null),
+      }),
+    );
+    expect(
+      parseReport(new Uint8Array(await res.arrayBuffer())).refs['refs/heads/main'],
+    ).toBe('ok');
+    const landed = await json<IssueDetail>(
+      await call(owner, 'GET', `/issues/${issue.number}`, undefined, slug),
+    );
+    expect(landed.issue.state).toBe('closed');
+    expect(landed.events.map((e) => e.kind)).toEqual(['referenced', 'closed']);
   });
 
   it('records references from comments once, and skips repos the actor cannot read', async () => {

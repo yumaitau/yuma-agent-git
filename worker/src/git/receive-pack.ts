@@ -7,7 +7,7 @@ import { recordAgentProvenance } from '../auth/agents';
 import { pathDecider, restrictingDecision } from '../auth/rbac';
 import { actorOf, recordAudit } from '../audit/record';
 import { ciReady, pushPipelines } from '../ci/triggers';
-import { linkLanded } from '../collab/references';
+import { linkLanded, linkPushed } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
@@ -573,11 +573,17 @@ export async function receivePack(
       });
     }
   }
-  // Commit messages landing on the default branch link and close issues (#38).
+  // Commit messages link issues (#38); landing on the default branch closes them.
   for (const u of moved) {
     const to = push.csOf.get(u.newSha);
-    if (u.name === repo.default_branch && !u.deleting && to)
-      await linkLanded(c, repo, u.from, to);
+    if (u.deleting || !to) continue;
+    if (u.name === repo.default_branch) await linkLanded(c, repo, u.from, to);
+    else
+      await linkPushed(
+        c,
+        repo,
+        u.commits.flatMap((sha) => push.csOf.get(sha) ?? []),
+      );
   }
 
   // 6. push-triggered pipelines; CI reads the whole tree, as for API-started runs

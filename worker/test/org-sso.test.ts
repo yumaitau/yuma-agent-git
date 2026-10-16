@@ -241,6 +241,58 @@ describe('org SSO enforcement', () => {
     );
   });
 
+  it('covers issue, pipeline and ruleset routes and agent token exchange', async () => {
+    const delegate = async (cookie: string) => {
+      const res = await call(cookie, 'POST', '/api/v1/tokens', {
+        label: 'delegate',
+        scopes: ['repo:read', 'repo:write', 'agent:run'],
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { token: string }).token;
+    };
+    const githubToken = await delegate(owner.cookie);
+    const agent = await call(ownerOkta, 'POST', '/api/v1/agents', {
+      name: 'Codex',
+      kind: 'codex',
+    });
+    expect(agent.status).toBe(201);
+    const agentId = ((await agent.json()) as { id: string }).id;
+    const exchange = (token: string) =>
+      app('/oauth/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+          subject_token: token,
+          subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+          agent_id: agentId,
+          resource: 'yuma/core',
+        }),
+      });
+    expect((await call(ownerOkta, 'PUT', '/api/v1/orgs/yuma/sso', OKTA_SSO)).status).toBe(
+      200,
+    );
+
+    const routes = [
+      '/api/v1/repos/yuma/core/issues',
+      '/api/v1/repos/yuma/core/labels',
+      '/api/v1/repos/yuma/core/ci/pipelines',
+      '/api/v1/repos/yuma/core/rulesets',
+      '/api/v1/orgs/yuma/rulesets',
+    ];
+    for (const path of routes) {
+      const refused = await call(owner.cookie, 'GET', path);
+      expect(refused.status, path).toBe(403);
+      expect((await errorOf(refused)).code, path).toBe('sso_required');
+      expect((await call(ownerOkta, 'GET', path)).status, path).toBe(200);
+    }
+    // a delegation minted without SSO cannot hand an agent the org's repo
+    const refused = await exchange(githubToken);
+    expect(refused.status).toBe(400);
+    expect((await errorOf(refused)).code).toBe('invalid_target');
+    expect((await exchange(await delegate(ownerOkta))).status).toBe(200);
+  });
+
   it('does nothing while SSO is configured but not enforced', async () => {
     expect(
       (

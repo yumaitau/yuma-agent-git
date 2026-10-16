@@ -12,7 +12,8 @@ import {
   type Ruleset,
   type RulesetInput,
 } from '../policy/rulesets';
-import { errorResponse, readJsonBody } from './errors';
+import { ssoMessage, unmetSso } from '../auth/sso';
+import { apiError, errorResponse, readJsonBody } from './errors';
 import { loadOrg } from './orgs';
 
 /**
@@ -241,6 +242,19 @@ function mount(
   rulesetsRoutes.on(method, `/orgs/:org/rulesets${tail}`, async (c) => {
     try {
       const { org } = await loadOrg(c, 'manage');
+      // org rulesets reach org repos, so they need the org's SSO like those repos (#27)
+      const sso = (await unmetSso(c.env, c.get('principal'))).get(org.id);
+      if (sso) {
+        return apiError(
+          c,
+          403,
+          'sso_required',
+          ssoMessage(sso, new URL(c.req.url).origin),
+          {
+            ...sso,
+          },
+        );
+      }
       return await handler(c, { scope: 'org', id: org.id, audit: { orgId: org.slug } });
     } catch (err) {
       return errorResponse(c, err);

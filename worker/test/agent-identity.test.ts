@@ -295,6 +295,54 @@ describe('agent identities (#57)', () => {
     );
   });
 
+  it('applies rulesets to agent refs, and lets an agent bypass only when named', async () => {
+    const agentId = await createAgent(owner, {});
+    const token = await agentToken({
+      subject_token: ownerToken,
+      agent_id: agentId,
+      resource: 'acme/app',
+    });
+    const ref = `refs/agents/${agentId}/wip`;
+    const rules = {
+      name: 'Agent refs',
+      target: 'branch',
+      conditions: { ref_name: { include: ['refs/agents/**'] } },
+      rules: [{ type: 'non_fast_forward' }],
+    };
+    const created = await call('/api/v1/repos/acme/app/rulesets', {
+      method: 'POST',
+      headers: owner.headers,
+      body: rules,
+    });
+    expect(created.status).toBe(201);
+    const { id } = ((await created.json()) as { ruleset: { id: string } }).ruleset;
+
+    const first = await change(mainSha, 'a');
+    expect(
+      (await push(token, [[ZERO, first.head.sha, ref]], first.objects)).refs[ref],
+    ).toBe('ok');
+    const rewrite = await change(mainSha, 'b');
+    const forced = async () =>
+      (await push(token, [[first.head.sha, rewrite.head.sha, ref]], rewrite.objects))
+        .refs[ref];
+    expect(await forced()).toBe(
+      `ruleset "Agent refs" non_fast_forward: force pushes to ${ref} are not allowed`,
+    );
+    // the human's admin role does not carry over to the agent
+    const bypass = async (entry: string) => {
+      const res = await call(`/api/v1/repos/acme/app/rulesets/${id}`, {
+        method: 'PUT',
+        headers: owner.headers,
+        body: { ...rules, bypass: [entry] },
+      });
+      expect(res.status).toBe(200);
+    };
+    await bypass('role:admin');
+    expect(await forced()).toMatch(/^ruleset "Agent refs" non_fast_forward/);
+    await bypass(`agent:${agentId}`);
+    expect(await forced()).toBe('ok');
+  });
+
   it('intersects the agent grant with the human role', async () => {
     const reader = await loginAs(testEnv, 2, 'reader');
     await run(

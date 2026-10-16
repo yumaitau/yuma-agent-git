@@ -28,7 +28,7 @@ export const orgSsoRoutes = new Hono<AppEnv>();
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
-const putSsoSchema = z.object({
+export const putSsoSchema = z.object({
   protocol: z.enum(['oidc', 'saml']),
   issuer: z.url(),
   client_id: z.string().min(1).max(256),

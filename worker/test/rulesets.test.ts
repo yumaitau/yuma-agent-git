@@ -161,6 +161,18 @@ describe('the evaluator', () => {
     expect(applies(r, repo, 'feature')).toBe(false);
     expect(applies(r, repo, 'refs/tags/main')).toBe(false);
     expect(applies(r, repo, 'refs/agents/a/main')).toBe(false);
+    // agent refs (#57) only match patterns that name refs/agents/
+    const agents = ruleset({
+      conditions: { ref_name: { include: ['refs/agents/**'] } },
+      rules: [{ type: 'deletion' }],
+    });
+    expect(applies(agents, repo, 'refs/agents/a/main')).toBe(true);
+    expect(applies(agents, repo, 'main')).toBe(false);
+    const all = ruleset({
+      conditions: { ref_name: { include: ['~ALL'] } },
+      rules: [{ type: 'deletion' }],
+    });
+    expect(applies(all, repo, 'refs/agents/a/main')).toBe(false);
     const tag = ruleset({
       target: 'tag',
       conditions: { ref_name: { include: ['refs/tags/v*'] } },
@@ -230,6 +242,19 @@ describe('the evaluator', () => {
       repoId: null,
     };
     expect(canBypass(r, { ...nobody, principal: token })).toBe(true);
+    // an agent identity (#57) never bypasses as its human, only when named
+    const agent = {
+      kind: 'agent' as const,
+      userId: 'u9',
+      agentId: 'a1',
+      jti: 'j',
+      taskId: null,
+      scopes: [],
+      repoIds: [],
+    };
+    expect(canBypass(r, { principal: agent, role: 'admin', teams: ['ops'] })).toBe(false);
+    const named = ruleset({ rules: [{ type: 'deletion' }], bypass: ['agent:a1'] });
+    expect(canBypass(named, { ...nobody, principal: agent })).toBe(true);
     expect(canBypass(r, { principal: null, role: null, teams: [] })).toBe(false);
     const write = ruleset({ rules: [{ type: 'deletion' }], bypass: ['role:write'] });
     expect(canBypass(write, { ...nobody, role: 'admin' })).toBe(true);
