@@ -362,6 +362,7 @@ describe('agent review loops and risk gates (#60)', () => {
           findings: [{ severity: 'high', path: 'README.md', line: 2, body: 'Typo.' }],
         }),
         usage: { prompt_tokens: 1200, completion_tokens: 80 },
+        tool_calls: [],
       };
     });
     const stub = testEnv.AGENT.get(testEnv.AGENT.idFromName(task!.id)) as unknown as {

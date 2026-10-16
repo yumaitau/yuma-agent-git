@@ -228,6 +228,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/agents/{id}/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage and cost of one agent identity (CSV too) */
+    get: operations['getAgentUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/agents/tasks/{id}': {
     parameters: {
       query?: never;
@@ -1152,6 +1169,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/orgs/{org}/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Token, CI and storage usage and cost for the org (CSV too) */
+    get: operations['getOrgUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orgs/{org}/variables': {
     parameters: {
       query?: never;
@@ -1252,6 +1286,41 @@ export interface paths {
     /** Seed `README.md` on an empty repo default branch */
     post: operations['initializeRepo'];
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/agent-reviewers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Agent reviewers registered for the repo */
+    get: operations['listAgentReviewers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/agent-reviewers/{agent}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Register or change an agent reviewer */
+    put: operations['setAgentReviewer'];
+    post?: never;
+    /** Remove an agent reviewer */
+    delete: operations['deleteAgentReviewer'];
     options?: never;
     head?: never;
     patch?: never;
@@ -2468,6 +2537,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/agent-review': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Agent review rounds, verdicts, escalation and change risk */
+    get: operations['getAgentReview'];
+    put?: never;
+    /** A registered agent reviewer's verdict on the current revision */
+    post: operations['submitAgentVerdict'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/pulls/{id}/codeowners': {
     parameters: {
       query?: never;
@@ -3077,6 +3164,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Token, CI and storage usage and cost for the repo (CSV too) */
+    get: operations['getRepoUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/variables': {
     parameters: {
       query?: never;
@@ -3314,6 +3418,58 @@ export interface paths {
     post?: never;
     /** Revoke one of your API tokens */
     delete: operations['deleteToken'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Report model token usage for work on a repo */
+    post: operations['reportUsage'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/usage/budgets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Budgets of an org or agent with use so far and alerts */
+    get: operations['listUsageBudgets'];
+    /** Set an org or agent budget (soft alert, hard stop) */
+    put: operations['setUsageBudget'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/usage/budgets/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove a budget */
+    delete: operations['deleteUsageBudget'];
     options?: never;
     head?: never;
     patch?: never;
@@ -4567,6 +4723,34 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getAgentUsage: {
+    parameters: {
+      query?: {
+        from?: string;
+        to?: string;
+        group_by?:
+          'day' | 'repo' | 'agent' | 'model' | 'kind' | 'ticket' | 'pull' | 'task';
+        format?: 'json' | 'csv';
+      };
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getAgentTask: {
     parameters: {
       query?: never;
@@ -4702,6 +4886,8 @@ export interface operations {
               | 'merge_group'
               | 'release'
               | 'package'
+              | 'agent_review'
+              | 'usage_budget'
             )[];
             /**
              * @default yag
@@ -4951,6 +5137,8 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'agent_review'
+            | 'usage_budget'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -5681,6 +5869,8 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'agent_review'
+            | 'usage_budget'
           )[];
           /**
            * @default yag
@@ -6722,6 +6912,34 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getOrgUsage: {
+    parameters: {
+      query?: {
+        from?: string;
+        to?: string;
+        group_by?:
+          'day' | 'repo' | 'agent' | 'model' | 'kind' | 'ticket' | 'pull' | 'task';
+        format?: 'json' | 'csv';
+      };
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listOrgVariables: {
     parameters: {
       query?: never;
@@ -6984,6 +7202,97 @@ export interface operations {
       path: {
         owner: string;
         repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listAgentReviewers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setAgentReviewer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        agent: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /**
+           * @default revision
+           * @enum {string}
+           */
+          trigger?: 'revision' | 'manual';
+          /** @default true */
+          required?: boolean;
+          /** @default 0.8 */
+          min_confidence?: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteAgentReviewer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        agent: string;
       };
       cookie?: never;
     };
@@ -8359,6 +8668,8 @@ export interface operations {
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'agent_review'
+            | 'usage_budget'
           )[];
           /**
            * @default yag
@@ -9727,6 +10038,80 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getAgentReview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  submitAgentVerdict: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          head_cs: string;
+          revision: number;
+          /** @enum {string} */
+          verdict: 'pass' | 'fail';
+          confidence: number;
+          /** @default  */
+          summary?: string;
+          findings?: {
+            /**
+             * @default medium
+             * @enum {string}
+             */
+            severity?: 'high' | 'medium' | 'low';
+            body: string;
+            path?: string;
+            line?: number;
+          }[];
+        };
+      };
+    };
     responses: {
       /** @description Success */
       '2XX': {
@@ -11264,6 +11649,35 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getRepoUsage: {
+    parameters: {
+      query?: {
+        from?: string;
+        to?: string;
+        group_by?:
+          'day' | 'repo' | 'agent' | 'model' | 'kind' | 'ticket' | 'pull' | 'task';
+        format?: 'json' | 'csv';
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listRepoVariables: {
     parameters: {
       query?: {
@@ -11769,6 +12183,147 @@ export interface operations {
     };
   };
   deleteToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  reportUsage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          repo: string;
+          /**
+           * @default tokens
+           * @enum {string}
+           */
+          kind?: 'tokens' | 'ci_seconds';
+          model?: string;
+          /**
+           * @default metered
+           * @enum {string}
+           */
+          billing?: 'metered' | 'subscription';
+          /** @default 0 */
+          input_tokens?: number;
+          /** @default 0 */
+          output_tokens?: number;
+          /** @default 0 */
+          cached_tokens?: number;
+          /** @default 0 */
+          quantity?: number;
+          usd_micros?: number;
+          agent_id?: string;
+          task_id?: string;
+          run_id?: string;
+          ticket?: string;
+          pull?: number;
+          correction_of?: string;
+          at?: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listUsageBudgets: {
+    parameters: {
+      query?: {
+        org?: string;
+        agent?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setUsageBudget: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          org?: string;
+          agent?: string;
+          /** @enum {string} */
+          metric: 'tokens' | 'usd_micros';
+          /** @enum {string} */
+          period: 'day' | 'month';
+          /** @default null */
+          soft_limit?: number | null;
+          /** @default null */
+          hard_limit?: number | null;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteUsageBudget: {
     parameters: {
       query?: never;
       header?: never;

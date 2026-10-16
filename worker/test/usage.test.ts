@@ -185,6 +185,7 @@ describe('usage accounting (#61)', () => {
     setChatProvider(async () => ({
       content: 'ok',
       usage: { prompt_tokens: 100, completion_tokens: 50 },
+      tool_calls: [],
     }));
     for (let i = 0; i < 3; i++)
       await chat(

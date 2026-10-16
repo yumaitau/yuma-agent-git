@@ -99,7 +99,7 @@ export const usageReportQuery = z.object({
   format: z.enum(['json', 'csv']).default('json'),
 });
 
-const budgetQuery = z.object({
+export const budgetQuery = z.object({
   org: z.string().min(1).max(100).optional(),
   agent: z.string().min(1).max(64).optional(),
 });

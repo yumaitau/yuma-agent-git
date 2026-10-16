@@ -662,6 +662,12 @@ const AUDITED: Record<string, AuditAction> = {
   // when the sync moved a ref or failed; a no-op sync changes nothing
   'POST /api/v1/repos/:repo{.+}/mirrors/:id/sync': 'mirror.sync',
   'POST /api/v1/repos/:repo{.+}/migration': 'repo.migration',
+  'PUT /api/v1/repos/:repo{.+}/agent-reviewers/:agent': 'agent_reviewer.set',
+  'DELETE /api/v1/repos/:repo{.+}/agent-reviewers/:agent': 'agent_reviewer.delete',
+  // also pull.agent_review.escalate when the round limit passes
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/agent-review': 'pull.agent_review',
+  'PUT /api/v1/usage/budgets': 'usage.budget.set',
+  'DELETE /api/v1/usage/budgets/:id': 'usage.budget.delete',
 };
 const EXEMPT: Record<string, string> = {
   'POST /v2/token':
@@ -703,6 +709,8 @@ const EXEMPT: Record<string, string> = {
     'extends a lease the caller already holds; the claim and its expiry are audited',
   'POST /mcp': 'each tool calls an /api route, which audits its own change',
   'DELETE /mcp': 'ends a protocol session; no repository or credential change',
+  'POST /api/v1/usage':
+    'append-only usage ledger row naming its reporter; budget changes and alerts are audited',
 };
 
 describe('audit coverage', () => {

@@ -412,6 +412,56 @@
         }
       }
     },
+    "/api/v1/agents/{id}/usage": {
+      "get": {
+        "operationId": "getAgentUsage",
+        "summary": "Usage and cost of one agent identity (CSV too)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "type": "string",
+              "enum": ["day", "repo", "agent", "model", "kind", "ticket", "pull", "task"]
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": { "default": "json", "type": "string", "enum": ["json", "csv"] }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/agents/tasks/{id}": {
       "get": {
         "operationId": "getAgentTask",
@@ -544,7 +594,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 12,
+                        "maxItems": 14,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -560,7 +610,9 @@
                             "secret_scanning_alert",
                             "merge_group",
                             "release",
-                            "package"
+                            "package",
+                            "agent_review",
+                            "usage_budget"
                           ]
                         }
                       },
@@ -765,7 +817,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -781,7 +833,9 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "agent_review",
+                        "usage_budget"
                       ]
                     }
                   },
@@ -1615,7 +1669,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1631,7 +1685,9 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "agent_review",
+                        "usage_budget"
                       ]
                     }
                   },
@@ -3032,6 +3088,56 @@
         }
       }
     },
+    "/api/v1/orgs/{org}/usage": {
+      "get": {
+        "operationId": "getOrgUsage",
+        "summary": "Token, CI and storage usage and cost for the org (CSV too)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "type": "string",
+              "enum": ["day", "repo", "agent", "model", "kind", "ticket", "pull", "task"]
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": { "default": "json", "type": "string", "enum": ["json", "csv"] }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/orgs/{org}/variables": {
       "get": {
         "operationId": "listOrgVariables",
@@ -3404,6 +3510,133 @@
           },
           {
             "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/agent-reviewers": {
+      "get": {
+        "operationId": "listAgentReviewers",
+        "summary": "Agent reviewers registered for the repo",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/agent-reviewers/{agent}": {
+      "put": {
+        "operationId": "setAgentReviewer",
+        "summary": "Register or change an agent reviewer",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "agent",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "trigger": {
+                    "default": "revision",
+                    "type": "string",
+                    "enum": ["revision", "manual"]
+                  },
+                  "required": { "default": true, "type": "boolean" },
+                  "min_confidence": {
+                    "default": 0.8,
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAgentReviewer",
+        "summary": "Remove an agent reviewer",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "agent",
             "in": "path",
             "required": true,
             "schema": { "type": "string" }
@@ -5554,7 +5787,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5570,7 +5803,9 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "agent_review",
+                        "usage_budget"
                       ]
                     }
                   },
@@ -7590,6 +7825,112 @@
           },
           { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/agent-review": {
+      "get": {
+        "operationId": "getAgentReview",
+        "summary": "Agent review rounds, verdicts, escalation and change risk",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "submitAgentVerdict",
+        "summary": "A registered agent reviewer's verdict on the current revision",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "head_cs": { "type": "string" },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "verdict": { "type": "string", "enum": ["pass", "fail"] },
+                  "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "summary": { "default": "", "type": "string", "maxLength": 20000 },
+                  "findings": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "severity": {
+                          "default": "medium",
+                          "type": "string",
+                          "enum": ["high", "medium", "low"]
+                        },
+                        "body": { "type": "string", "minLength": 1, "maxLength": 4000 },
+                        "path": { "type": "string" },
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["body"]
+                    }
+                  }
+                },
+                "required": ["head_cs", "revision", "verdict", "confidence"]
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",
@@ -9897,6 +10238,62 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/usage": {
+      "get": {
+        "operationId": "getRepoUsage",
+        "summary": "Token, CI and storage usage and cost for the repo (CSV too)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "day",
+              "type": "string",
+              "enum": ["day", "repo", "agent", "model", "kind", "ticket", "pull", "task"]
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": { "default": "json", "type": "string", "enum": ["json", "csv"] }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/variables": {
       "get": {
         "operationId": "listRepoVariables",
@@ -10722,6 +11119,185 @@
         "operationId": "deleteToken",
         "summary": "Revoke one of your API tokens",
         "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/usage": {
+      "post": {
+        "operationId": "reportUsage",
+        "summary": "Report model token usage for work on a repo",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": { "type": "string", "minLength": 3, "maxLength": 200 },
+                  "kind": {
+                    "default": "tokens",
+                    "type": "string",
+                    "enum": ["tokens", "ci_seconds"]
+                  },
+                  "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "billing": {
+                    "default": "metered",
+                    "type": "string",
+                    "enum": ["metered", "subscription"]
+                  },
+                  "input_tokens": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -1000000000000,
+                    "maximum": 1000000000000
+                  },
+                  "output_tokens": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -1000000000000,
+                    "maximum": 1000000000000
+                  },
+                  "cached_tokens": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -1000000000000,
+                    "maximum": 1000000000000
+                  },
+                  "quantity": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": -1000000000000,
+                    "maximum": 1000000000000
+                  },
+                  "usd_micros": {
+                    "type": "integer",
+                    "minimum": -1000000000000,
+                    "maximum": 1000000000000
+                  },
+                  "agent_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "task_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "run_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "ticket": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "pull": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "correction_of": { "type": "string", "minLength": 1, "maxLength": 128 },
+                  "at": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["repo"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/usage/budgets": {
+      "get": {
+        "operationId": "listUsageBudgets",
+        "summary": "Budgets of an org or agent with use so far and alerts",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 100 }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "setUsageBudget",
+        "summary": "Set an org or agent budget (soft alert, hard stop)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "agent": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "metric": { "type": "string", "enum": ["tokens", "usd_micros"] },
+                  "period": { "type": "string", "enum": ["day", "month"] },
+                  "soft_limit": {
+                    "default": null,
+                    "anyOf": [
+                      { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                      { "type": "null" }
+                    ]
+                  },
+                  "hard_limit": {
+                    "default": null,
+                    "anyOf": [
+                      { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": ["metric", "period"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/usage/budgets/{id}": {
+      "delete": {
+        "operationId": "deleteUsageBudget",
+        "summary": "Remove a budget",
+        "security": [{ "session": [] }, { "bearer": [] }],
         "x-yag-permission": "—",
         "x-yag-rate-bucket": "api_write",
         "parameters": [

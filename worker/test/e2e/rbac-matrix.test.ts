@@ -289,6 +289,12 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/attestations/verify': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/agent-reviewers': 'agent-review.test.ts',
+  'PUT /api/v1/repos/:repo{.+}/agent-reviewers/:agent': 'agent-review.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/agent-reviewers/:agent': 'agent-review.test.ts',
+  'GET /api/v1/repos/:repo{.+}/pulls/:id/agent-review': 'agent-review.test.ts',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/agent-review': 'agent-review.test.ts',
+  'GET /api/v1/repos/:repo{.+}/usage': 'usage.test.ts',
 };
 
 /**
