@@ -19,6 +19,9 @@ export interface CreateRepoInput {
   githubRepoId?: number | null;
   /** Creating user — repo creators are admins (issue #14). */
   createdBy?: string | null;
+  /** Org-owned repos (issue #26) carry the org id; default is the slug prefix. */
+  ownerKind?: 'user' | 'org';
+  ownerId?: string;
 }
 
 /** Insert a repository row (id = ULID). */
@@ -38,14 +41,16 @@ export async function createRepo(
     visibility: input.visibility ?? 'private',
     // new repos take Git ref rules; the migration default keeps pilots on 'scion'
     refs_mode: 'git' as const,
+    owner_kind: input.ownerKind ?? 'user',
+    owner_id: input.ownerId ?? (input.slug.split('/')[0] as string),
   };
   await run(
     env,
     `INSERT INTO ${T.repos}
        (${C.repos.id}, ${C.repos.slug}, ${C.repos.githubInstallationId},
         ${C.repos.githubRepoId}, ${C.repos.defaultBranch}, ${C.repos.createdAt},
-        ${C.repos.visibility}, created_by, refs_mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ${C.repos.visibility}, created_by, refs_mode, ${C.repos.ownerKind}, ${C.repos.ownerId})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.slug,
@@ -56,6 +61,8 @@ export async function createRepo(
       row.visibility,
       row.created_by,
       row.refs_mode,
+      row.owner_kind,
+      row.owner_id,
     ],
   );
   return parseRepoRow(row);

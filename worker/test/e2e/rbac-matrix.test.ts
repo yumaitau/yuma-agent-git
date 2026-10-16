@@ -40,7 +40,9 @@ function discover(): Endpoint[] {
   const out: Endpoint[] = [];
   for (const route of honoApp.routes) {
     if (route.method === 'ALL') continue;
-    const endpoint = { method: route.method, path: route.path };
+    // `:repo{[^/]+/[^/]+}` (refs routes) is the same repo segment as `:repo{.+}`
+    const path = route.path.replace(':repo{[^/]+/[^/]+}', ':repo{.+}');
+    const endpoint = { method: route.method, path };
     if (seen.has(key(endpoint))) continue;
     seen.add(key(endpoint));
     out.push(endpoint);

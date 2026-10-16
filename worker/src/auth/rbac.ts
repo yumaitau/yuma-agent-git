@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Env } from '../env';
 import { C, T } from '../db/schema';
-import { parsePathRuleRow, parseRepoMemberRow, q, q1 } from '../db/client';
+import { parsePathRuleRow, q } from '../db/client';
 import type { PathRuleRecord, RepoRecord } from '../db/client';
 import type { Principal } from './principal';
 
@@ -16,8 +16,11 @@ import type { Principal } from './principal';
  *   2. path rules matching the path (longest prefix first; principal-specific
  *      before role-based before `*`; deny beats grant at equal specificity) —
  *      a matching rule decides the perms it lists; other perms fall through
- *   3. repo membership roles: admin → everything, write → read/write/history,
- *      read → read/history
+ *   3. effective repo role (issue #26) = max of direct membership, team
+ *      grants (parent teams included) and the org base role; org owners are
+ *      admin on every org repo. admin → everything, write → read/write/history,
+ *      read → read/history. Resolved from D1 on every call, never cached, so a
+ *      membership change applies on the next request.
  *   4. repo creator → admin
  *   5. default deny
  */
@@ -98,18 +101,59 @@ function coversPath(prefix: string, path: string): boolean {
   return path === prefix.slice(0, -1) || path.startsWith(prefix);
 }
 
+const ROLE_RANK: Record<Role, number> = { read: 1, write: 2, admin: 3 };
+
+/**
+ * `user_teams(team_id, depth)`: the teams a user is in plus their ancestors
+ * (nested teams inherit the parent's grants), capped at depth 5 so the walk
+ * stays bounded. Binds one parameter, the user id. Use after `WITH RECURSIVE`.
+ */
+export const USER_TEAMS_CTE = `user_teams(team_id, depth) AS (
+  SELECT ${C.teamMembers.teamId}, 0 FROM ${T.teamMembers} WHERE ${C.teamMembers.userId} = ?
+  UNION
+  SELECT t.${C.teams.parentTeamId}, ut.depth + 1 FROM user_teams ut
+    JOIN ${T.teams} t ON t.${C.teams.id} = ut.team_id
+   WHERE t.${C.teams.parentTeamId} IS NOT NULL AND ut.depth < 5
+)`;
+
+const roleRowSchema = z.object({ role: z.enum(['admin', 'write', 'read', 'none']) });
+
 export async function roleOf(
   env: Env,
   repoId: string,
   principal: Principal | null,
 ): Promise<Role | null> {
   if (principal === null) return null;
-  const row = await q1(
+  const userId = principal.userId;
+  // One statement: direct role, team roles, org role (owner → admin,
+  // billing → none, admin/member → the org base role).
+  const rows = await q(
     env,
-    `SELECT * FROM ${T.repoMembers} WHERE ${C.repoMembers.repoId} = ? AND ${C.repoMembers.userId} = ?`,
-    [repoId, principal.userId],
+    `WITH RECURSIVE ${USER_TEAMS_CTE}
+     SELECT ${C.repoMembers.role} AS role FROM ${T.repoMembers}
+      WHERE ${C.repoMembers.repoId} = ? AND ${C.repoMembers.userId} = ?
+     UNION ALL
+     SELECT tr.${C.teamRepos.role} FROM ${T.teamRepos} tr
+      WHERE tr.${C.teamRepos.repoId} = ?
+        AND tr.${C.teamRepos.teamId} IN (SELECT team_id FROM user_teams)
+     UNION ALL
+     SELECT CASE om.${C.orgMembers.role} WHEN 'owner' THEN 'admin' WHEN 'billing' THEN 'none'
+            ELSE o.${C.orgs.baseRole} END
+       FROM ${T.repos} r
+       JOIN ${T.orgs} o ON o.${C.orgs.id} = r.${C.repos.ownerId}
+       JOIN ${T.orgMembers} om ON om.${C.orgMembers.orgId} = o.${C.orgs.id}
+        AND om.${C.orgMembers.userId} = ?
+      WHERE r.${C.repos.id} = ? AND r.${C.repos.ownerKind} = 'org'`,
+    [userId, repoId, userId, repoId, userId, repoId],
   );
-  return row ? parseRepoMemberRow(row).role : null;
+  let best: Role | null = null;
+  for (const row of rows) {
+    const { role } = roleRowSchema.parse(row);
+    if (role !== 'none' && (best === null || ROLE_RANK[role] > ROLE_RANK[best])) {
+      best = role;
+    }
+  }
+  return best;
 }
 
 export interface Decision {
@@ -237,11 +281,10 @@ function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
     }
   }
 
-  // 3. membership roles
-  const memberRole = ctx.role;
-  if (memberRole === 'admin') return { allowed: true };
-  if (memberRole === 'write') return { allowed: perm !== 'admin' };
-  if (memberRole === 'read') return { allowed: perm === 'read' || perm === 'history' };
+  // 3. effective repo role
+  if (ctx.role === 'admin') return { allowed: true };
+  if (ctx.role === 'write') return { allowed: perm !== 'admin' };
+  if (ctx.role === 'read') return { allowed: perm === 'read' || perm === 'history' };
 
   // 4. repo creator is admin
   if (repo.created_by != null && principal.userId === repo.created_by) {

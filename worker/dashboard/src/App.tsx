@@ -13,6 +13,7 @@ import { TreeView } from './views/TreeView';
 import { DiffExplorerView } from './views/DiffExplorer';
 import { AgentsView, TaskDetailView } from './views/Agents';
 import { SettingsView } from './views/Settings';
+import { OrgSettingsView } from './views/OrgSettings';
 import { Empty } from './ui';
 
 function NotFound(): ReactElement {
@@ -47,6 +48,8 @@ function AppRoutes(): ReactElement {
               <Routes>
                 <Route path="/" element={<HomeView />} />
                 <Route path="/settings" element={<SettingsView />} />
+                <Route path="/orgs" element={<OrgSettingsView />} />
+                <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />
                 <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
