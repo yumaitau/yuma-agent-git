@@ -381,6 +381,41 @@ export const pathRuleSchema = z.object({
 });
 export type PathRule = z.infer<typeof pathRuleSchema>;
 
+const patternsSchema = z.object({
+  include: z.array(z.string()),
+  exclude: z.array(z.string()),
+});
+export const rulesetSchema = z.object({
+  id: z.string(),
+  scope: z.enum(['org', 'repo']),
+  name: z.string(),
+  target: z.enum(['branch', 'tag', 'push']),
+  enforcement: z.enum(['active', 'evaluate', 'disabled']),
+  conditions: z.object({
+    ref_name: patternsSchema.optional(),
+    repository_name: patternsSchema.optional(),
+  }),
+  rules: z.array(z.looseObject({ type: z.string() })),
+  bypass: z.array(z.string()),
+  updated_at: z.number(),
+});
+export type Ruleset = z.infer<typeof rulesetSchema>;
+export type RulesetInput = Pick<
+  Ruleset,
+  'name' | 'target' | 'enforcement' | 'conditions' | 'rules' | 'bypass'
+>;
+
+export const rulesetEvaluationSchema = z.object({
+  id: z.number(),
+  ruleset: z.string(),
+  ref: z.string().nullable(),
+  via: z.string(),
+  actor_id: z.string(),
+  violations: z.array(z.object({ rule: z.string(), message: z.string() })),
+  at: z.number(),
+});
+export type RulesetEvaluation = z.infer<typeof rulesetEvaluationSchema>;
+
 export const importJobSchema = z.object({
   job_id: z.string(),
   status: z.string(),
@@ -924,6 +959,52 @@ export const api = {
       { method: 'DELETE' },
       okSchema,
     );
+  },
+
+  // -- rulesets (issue #41) --------------------------------------------------
+  async listRulesets(
+    slug: string,
+  ): Promise<{ rulesets: Ruleset[]; inherited: Ruleset[] }> {
+    return requestJson(
+      `/api/v1/repos/${slug}/rulesets`,
+      {},
+      z.object({ rulesets: z.array(rulesetSchema), inherited: z.array(rulesetSchema) }),
+    );
+  },
+
+  async createRuleset(slug: string, input: RulesetInput): Promise<Ruleset> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/rulesets`,
+      { method: 'POST', body: input },
+      z.object({ ruleset: rulesetSchema }),
+    );
+    return body.ruleset;
+  },
+
+  async updateRuleset(slug: string, id: string, input: RulesetInput): Promise<Ruleset> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/rulesets/${id}`,
+      { method: 'PUT', body: input },
+      z.object({ ruleset: rulesetSchema }),
+    );
+    return body.ruleset;
+  },
+
+  async deleteRuleset(slug: string, id: string): Promise<void> {
+    await requestJson(
+      `/api/v1/repos/${slug}/rulesets/${id}`,
+      { method: 'DELETE' },
+      okSchema,
+    );
+  },
+
+  async listRulesetEvaluations(slug: string): Promise<RulesetEvaluation[]> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/rulesets/evaluations`,
+      {},
+      z.object({ evaluations: z.array(rulesetEvaluationSchema) }),
+    );
+    return body.evaluations;
   },
 
   // -- orgs (issue #26) ------------------------------------------------------

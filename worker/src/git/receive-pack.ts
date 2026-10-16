@@ -4,7 +4,8 @@ import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import type { AppEnv, Principal } from '../auth/principal';
 import { pathDecider } from '../auth/rbac';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { recordOutcome } from '../policy/rulesets';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
 import { MAX_CHANGED_FILES } from '../core/changesets';
@@ -509,6 +510,8 @@ export async function receivePack(
         from: u.from,
         to,
         non_ff: !u.fastForward,
+        actor: principal,
+        via: 'git-push',
       });
       moved.push(u);
     } catch (err) {
@@ -520,7 +523,12 @@ export async function receivePack(
     for (const u of moved.reverse()) {
       const to = u.deleting ? null : (push.csOf.get(u.newSha) as string);
       try {
-        await moveRefViaDO(env, repo.id, u.name, { from: to, to: u.from, non_ff: true });
+        await moveRefViaDO(env, repo.id, u.name, {
+          from: to,
+          to: u.from,
+          non_ff: true,
+          skip_rulesets: true,
+        });
       } catch (err) {
         console.error('receive-pack: atomic rollback failed', u.ref, err);
       }
@@ -540,6 +548,14 @@ export async function receivePack(
         via: 'git-push',
       },
     });
+    if (u.pushRules) {
+      await recordOutcome(env, u.pushRules, {
+        repo,
+        actor: actorOf(principal),
+        ref: u.name,
+        via: 'git-push',
+      });
+    }
   }
   return statusReport(updates, 'ok', useSideband, messages);
 }

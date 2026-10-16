@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import type { Env } from '../env';
+import type { AppEnv } from '../auth/principal';
+import { actorOf } from '../audit/record';
+import { enforcePushRules } from '../policy/rulesets';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { commitChanges, commitRequestSchema } from '../core/commit';
 import { firstParentHistory, getChangeset } from '../core/changesets';
@@ -20,8 +22,9 @@ import {
  *
  * Path rules: a commit needs `write` on every path it touches; reads drop
  * `changed_files` entries the caller may not `read` (`omitted_paths_count`).
+ * Push rulesets (#41) apply to the files a commit changes.
  */
-export const changesetsRoutes = new Hono<{ Bindings: Env }>();
+export const changesetsRoutes = new Hono<AppEnv>();
 
 /** Metadata routes are principal-dependent: never cache them (issue #21). */
 const NO_STORE = 'private, no-store';
@@ -71,6 +74,15 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
       parsed.data.changes.map((change) => change.path),
     );
     if (denied) return denied;
+    const principal = c.get('principal');
+    await enforcePushRules(
+      c.env,
+      repo,
+      principal,
+      actorOf(principal),
+      parsed.data.changes,
+      'commit',
+    );
 
     const result = await commitChanges(c.env, repo.id, parsed.data);
     return c.json(

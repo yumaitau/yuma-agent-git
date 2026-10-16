@@ -188,7 +188,12 @@ reposRoutes.post('/api/v1/repos/:owner/:name/initialize', async (c) => {
       created_at: repo.created_at,
       changes: [{ path: 'README.md', op: 'add', content_b64: btoa(`# ${repo.slug}\n`) }],
     });
-    await moveRefViaDO(c.env, repo.id, name, { from: null, to: result.changeset.id });
+    await moveRefViaDO(c.env, repo.id, name, {
+      from: null,
+      to: result.changeset.id,
+      actor: c.get('principal'),
+      via: 'api',
+    });
     await recordAudit(c, {
       action: 'repo.initialize',
       repo,

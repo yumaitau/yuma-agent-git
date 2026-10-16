@@ -146,6 +146,7 @@ for (const action of ['update', 'review', 'merge'] as const) {
           repo_id: loaded.repo.id,
           id: pull.id,
           actor: c.get('principal')!.userId,
+          principal: c.get('principal'),
           body,
         }),
       });

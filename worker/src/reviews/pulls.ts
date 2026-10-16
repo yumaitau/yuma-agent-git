@@ -7,6 +7,17 @@ import { getChangeset } from '../core/changesets';
 import { isAncestorDag } from '../core/ancestry';
 import { ApiError } from '../core/errors';
 import { settings } from '../ci/config';
+import type { Principal } from '../auth/principal';
+import type { RepoRecord } from '../db/client';
+import { actorOf } from '../audit/record';
+import {
+  actorFor,
+  evaluate,
+  principalSchema,
+  recordOutcome,
+  rulesetsFor,
+  type Outcome,
+} from '../policy/rulesets';
 
 import type { Pull, Review } from '../../shared/collaboration';
 export type { Pull, Review } from '../../shared/collaboration';
@@ -23,13 +34,37 @@ export async function pullGate(
   env: Env,
   pull: Pull,
 ): Promise<{ mergeable: boolean; reasons: string[] }> {
+  const { mergeable, reasons } = await checkMerge(env, pull, null);
+  return { mergeable, reasons };
+}
+
+interface MergeCheck {
+  mergeable: boolean;
+  reasons: string[];
+  repo: RepoRecord;
+  outcome: Outcome;
+  /** CI settings version a passing run must match. */
+  version: number;
+}
+
+/**
+ * Merge requirements for `actor`: pull request state, then the rulesets on
+ * the target branch (#41) with this revision's approvals and CI result.
+ * Without an active `pull_request` rule a merge still needs one approval.
+ */
+async function checkMerge(
+  env: Env,
+  pull: Pull,
+  actor: Principal | null,
+): Promise<MergeCheck> {
   const reasons: string[] = [];
   if (pull.state !== 'open') reasons.push('Open this pull request before merging.');
   const ref = await getRef(env, pull.repo_id, pull.base_ref);
   if (ref?.head !== pull.base_cs)
     reasons.push('The target branch moved. Rebase and update the pull request.');
   const config = await settings(env, pull.repo_id);
-  const required = config?.policy.required_approvals ?? 1;
+  const repo = await getRepo(env, pull.repo_id);
+  if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
   const reviews = await q<Review>(
     env,
     `SELECT * FROM pull_reviews WHERE pull_id = ? AND head_cs = ?
@@ -37,30 +72,36 @@ export async function pullGate(
     [pull.id, pull.head_cs, pull.revision],
   );
   const latest = new Map<string, Review>();
-  const repo = await getRepo(env, pull.repo_id);
   for (const review of reviews) {
-    if (latest.has(review.author_id) || review.author_id === pull.author_id || !repo)
-      continue;
+    if (latest.has(review.author_id) || review.author_id === pull.author_id) continue;
     if (await can(env, repo, { kind: 'user', userId: review.author_id }, 'write'))
       latest.set(review.author_id, review);
   }
   if ([...latest.values()].some((r) => r.decision === 'request_changes'))
     reasons.push('A reviewer requested changes.');
-  if ([...latest.values()].filter((r) => r.decision === 'approve').length < required)
-    reasons.push(
-      `${required} approval${required === 1 ? '' : 's'} required for this revision.`,
-    );
-  if (config?.policy.require_checks) {
-    const check = await q1<{ state: string }>(
-      env,
-      `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
-      ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      [pull.repo_id, pull.head_cs, config.version],
-    );
-    if (check?.state !== 'passed')
-      reasons.push('The latest CI run must pass for this revision and current pipeline.');
-  }
-  return { mergeable: reasons.length === 0, reasons };
+  const approvals = [...latest.values()].filter((r) => r.decision === 'approve').length;
+  const version = config?.version ?? 0;
+  const check = await q1<{ state: string }>(
+    env,
+    `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
+    ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+    [pull.repo_id, pull.head_cs, version],
+  );
+  const rulesets = await rulesetsFor(env, repo);
+  const outcome = evaluate(rulesets, {
+    repo,
+    actor: await actorFor(env, repo, actor, rulesets),
+    ref: {
+      name: pull.base_ref,
+      kind: 'update',
+      fastForward: true,
+      merge: { approvals, checksPassed: check?.state === 'passed' },
+    },
+  });
+  if (outcome.requiredApprovals === null && approvals < 1)
+    reasons.push('1 approval required for this revision.');
+  reasons.push(...outcome.blocking.map((v) => v.message));
+  return { mergeable: reasons.length === 0, reasons, repo, outcome, version };
 }
 
 /** Invoked inside the target ref's DO gate, shared with ordinary ref moves. */
@@ -69,6 +110,8 @@ export async function mergePullLocked(
   repoId: string,
   id: number,
   expectedHead: string,
+  actor: Principal | null = null,
+  bypassReason: string | null = null,
 ): Promise<Pull> {
   const pull = await getPull(env, repoId, id);
   if (pull.head_cs !== expectedHead)
@@ -77,7 +120,7 @@ export async function mergePullLocked(
       'pull_stale',
       'Pull request revision changed. Refresh before merging.',
     );
-  const gate = await pullGate(env, pull);
+  const gate = await checkMerge(env, pull, actor);
   if (!gate.mergeable) throw new ApiError(409, 'merge_blocked', gate.reasons.join(' '));
   if (
     !(await getChangeset(env, repoId, pull.head_cs)) ||
@@ -90,7 +133,6 @@ export async function mergePullLocked(
     );
   }
   // API mutations for this pull also use this ref DO, so the gate cannot race a new review/head.
-  const config = await settings(env, repoId);
   const updated = await env.DB.batch([
     env.DB.prepare(
       `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed')`,
@@ -100,10 +142,10 @@ export async function mergePullLocked(
       repoId,
       pull.base_ref,
       pull.base_cs,
-      config?.policy.require_checks ? 1 : 0,
+      gate.outcome.requireChecks ? 1 : 0,
       repoId,
       pull.head_cs,
-      config?.version ?? 0,
+      gate.version,
     ),
     env.DB.prepare(
       "UPDATE pull_requests SET state = 'merged', merged_at = ?, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM refs WHERE repo_id = ? AND name = ? AND head = ?)",
@@ -115,6 +157,17 @@ export async function mergePullLocked(
       'merge_blocked',
       'Checks or the target branch changed. Refresh before merging.',
     );
+  try {
+    await recordOutcome(env, gate.outcome, {
+      repo: gate.repo,
+      actor: actorOf(actor),
+      ref: pull.base_ref,
+      via: 'merge',
+      reason: bypassReason,
+    });
+  } catch (err) {
+    console.error('merge: ruleset outcome not recorded', err);
+  }
   return getPull(env, repoId, id);
 }
 
@@ -128,6 +181,7 @@ export async function mutatePullLocked(
     repo_id: string;
     id: number;
     actor: string;
+    principal?: unknown;
     body: Record<string, unknown>;
   };
   if (
@@ -151,7 +205,22 @@ export async function mutatePullLocked(
         'pull_stale',
         'Pull request revision changed. Refresh before merging.',
       );
-    return { pull: await mergePullLocked(env, args.repo_id, args.id, body.head_cs) };
+    const principal = principalSchema
+      .nullable()
+      .catch(null)
+      .parse(args.principal ?? null);
+    const reason =
+      typeof body.bypass_reason === 'string' ? body.bypass_reason.slice(0, 500) : null;
+    return {
+      pull: await mergePullLocked(
+        env,
+        args.repo_id,
+        args.id,
+        body.head_cs,
+        principal,
+        reason,
+      ),
+    };
   }
   if (pull.state === 'merged' || pull.state === 'closed')
     throw new ApiError(409, 'pull_closed', 'This pull request is closed.');

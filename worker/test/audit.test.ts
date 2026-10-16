@@ -543,6 +543,12 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/scim/tokens': 'scim_token.create',
   'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack': 'ref.move',
+  'POST /api/v1/repos/:repo{.+}/rulesets': 'ruleset.create',
+  'PUT /api/v1/repos/:repo{.+}/rulesets/:id': 'ruleset.update',
+  'DELETE /api/v1/repos/:repo{.+}/rulesets/:id': 'ruleset.delete',
+  'POST /api/v1/orgs/:org/rulesets': 'ruleset.create',
+  'PUT /api/v1/orgs/:org/rulesets/:id': 'ruleset.update',
+  'DELETE /api/v1/orgs/:org/rulesets/:id': 'ruleset.delete',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':

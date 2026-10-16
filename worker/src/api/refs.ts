@@ -143,7 +143,11 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
       });
     }
 
-    const result = await moveRefViaDO(c.env, repo.id, name, parsed.data);
+    const result = await moveRefViaDO(c.env, repo.id, name, {
+      ...parsed.data,
+      actor: principal,
+      via: 'api',
+    });
     await recordAudit(c, {
       action: 'ref.move',
       repo,
@@ -237,7 +241,12 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
     }
     try {
       // from: null makes the CAS the single arbiter of "tag already exists"
-      await moveRefViaDO(c.env, repo.id, ref, { from: null, to: target });
+      await moveRefViaDO(c.env, repo.id, ref, {
+        from: null,
+        to: target,
+        actor: c.get('principal'),
+        via: 'api',
+      });
     } catch (err) {
       if (err instanceof ConflictError) {
         return apiError(c, 409, 'tag_exists', `tag ${input.name} already exists`);

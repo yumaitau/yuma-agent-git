@@ -126,6 +126,11 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:repo/refs/:name': 'One ref',
   'PUT /api/v1/repos/:repo/refs/:name': 'Compare-and-swap move a ref',
   'GET /api/v1/repos/:repo/tree': 'List a directory at a revision',
+  'GET /api/v1/repos/:repo/rulesets': 'Repo rulesets plus the org rulesets that reach it',
+  'POST /api/v1/repos/:repo/rulesets': 'Create a branch, tag or push ruleset',
+  'PUT /api/v1/repos/:repo/rulesets/:id': 'Replace a repo ruleset',
+  'DELETE /api/v1/repos/:repo/rulesets/:id': 'Delete a repo ruleset',
+  'GET /api/v1/repos/:repo/rulesets/evaluations': 'Evaluate-mode log for this repo',
   'PUT /api/v1/repos/:owner/:name': 'Change the default branch or ref naming mode',
   'GET /api/v1/repos/:repo/tags': 'List tags with annotations (keyset paged)',
   'POST /api/v1/repos/:repo/tags': 'Create a lightweight or annotated tag',
@@ -168,6 +173,11 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/orgs/:org/teams/:team/repos': 'Grant the team a repo role',
   'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo': 'Remove a team repo grant',
   'GET /api/v1/orgs/:org/repos': 'Org repos the caller can read',
+  'GET /api/v1/orgs/:org/rulesets': 'List org rulesets',
+  'POST /api/v1/orgs/:org/rulesets': 'Create an org ruleset',
+  'PUT /api/v1/orgs/:org/rulesets/:id': 'Replace an org ruleset',
+  'DELETE /api/v1/orgs/:org/rulesets/:id': 'Delete an org ruleset',
+  'GET /api/v1/orgs/:org/rulesets/evaluations': 'Evaluate-mode log for org rulesets',
   'GET /:owner/:repo.git/info/refs':
     'Git smart HTTP advertisement: v2 capabilities, or refs for `git-receive-pack`',
   'POST /:owner/:repo.git/git-upload-pack':

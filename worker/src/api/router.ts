@@ -14,6 +14,7 @@ import { objectsRoutes } from './objects';
 import { orgsRoutes } from './orgs';
 import { readRoutes } from './read';
 import { refsRoutes } from './refs';
+import { rulesetsRoutes } from './rulesets';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
 export const apiRouter = new Hono<{ Bindings: Env }>();
@@ -31,6 +32,7 @@ apiRouter.route('/', diffRoutes);
 apiRouter.route('/', exportRoutes);
 apiRouter.route('/', importRoutes);
 apiRouter.route('/', refsRoutes);
+apiRouter.route('/', rulesetsRoutes);
 apiRouter.route('/', objectsRoutes);
 apiRouter.route('/', orgsRoutes);
 apiRouter.route('/', readRoutes);

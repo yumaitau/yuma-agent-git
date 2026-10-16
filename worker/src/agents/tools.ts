@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import type { Principal } from '../auth/principal';
 import { can, pathDecider, restrictingDecision, type PathDecider } from '../auth/rbac';
 import { getRepo } from '../db/repos';
+import { enforcePushRules } from '../policy/rulesets';
 import { commitChanges } from '../core/commit';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
@@ -378,22 +379,39 @@ export const tools: Tool[] = [
       }
       const budgetError = charge(ctx.budget, 'commit');
       if (budgetError) return budgetError;
+      const changes = parsed.changes.map((change) =>
+        change.op === 'del'
+          ? { path: change.path, op: 'del' as const }
+          : change.content_b64 !== undefined
+            ? { path: change.path, op: change.op, content_b64: change.content_b64 }
+            : {
+                path: change.path,
+                op: change.op,
+                blob_sha256: change.blob_sha256 as string,
+              },
+      );
+      // push rulesets (#41), as for the commit RPC
+      const repo = await getRepo(env, ctx.repo_id);
+      if (!repo) return { error: 'repo_not_found' };
+      try {
+        await enforcePushRules(
+          env,
+          repo,
+          ctx.principal,
+          { kind: 'agent', id: ctx.task_id, onBehalfOf: ctx.principal?.userId },
+          changes,
+          'agent.commit',
+        );
+      } catch (err) {
+        if (err instanceof ApiError) return { error: err.code, message: err.message };
+        throw err;
+      }
       const result = await commitChanges(env, ctx.repo_id, {
         first_parent: ctx.head_cs,
         parents: parsed.parents,
         message: parsed.message,
         author: { agent: ctx.task_id },
-        changes: parsed.changes.map((change) =>
-          change.op === 'del'
-            ? { path: change.path, op: 'del' as const }
-            : change.content_b64 !== undefined
-              ? { path: change.path, op: change.op, content_b64: change.content_b64 }
-              : {
-                  path: change.path,
-                  op: change.op,
-                  blob_sha256: change.blob_sha256 as string,
-                },
-        ),
+        changes,
       });
       ctx.head_cs = result.changeset.id; // working revision advances
       return {
@@ -433,13 +451,23 @@ export const tools: Tool[] = [
         await moveRefViaDO(env, ctx.repo_id, branch, {
           from: current,
           to: ctx.head_cs,
+          actor: ctx.principal,
+          via: 'agent.land',
         });
       } catch (err) {
         // only losing the race to another land is retryable (merge, then land
         // again) — a protected branch would otherwise loop until the budget dies
         if (!(err instanceof ConflictError)) {
           const code = err instanceof ApiError ? err.code : 'internal_error';
-          return { landed: false, reason: code, final: true, head_cs: ctx.head_cs };
+          // a ruleset refusal names the ruleset in its message
+          const message = err instanceof ApiError ? { message: err.message } : {};
+          return {
+            landed: false,
+            reason: code,
+            ...message,
+            final: true,
+            head_cs: ctx.head_cs,
+          };
         }
         // stale or not a fast-forward: someone else landed — merge and retry
         const head = await readRefHead(env, ctx.repo_id, branch);

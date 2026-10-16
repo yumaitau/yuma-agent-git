@@ -59,7 +59,11 @@ export type AuditAction =
   | 'scim.user.update'
   | 'scim.user.deprovision'
   | 'scim_token.create'
-  | 'scim_token.revoke';
+  | 'scim_token.revoke'
+  | 'ruleset.create'
+  | 'ruleset.update'
+  | 'ruleset.delete'
+  | 'ruleset.bypass';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

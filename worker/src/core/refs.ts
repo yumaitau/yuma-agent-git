@@ -6,6 +6,7 @@ import { run } from '../db/client';
 import { ApiError, ConflictError, RequestValidationError } from './errors';
 import { timePhase } from '../observability/phase';
 import { recordRefMove } from '../observability/metrics';
+import type { Principal } from '../auth/principal';
 
 export { getRef, listRefs };
 export type { RefRecord };
@@ -103,6 +104,11 @@ export interface MoveRefInput {
   force?: boolean;
   /** Allow a non-fast-forward move, still compare-and-swap on `from`. */
   non_ff?: boolean;
+  /** Who moves the ref and how, for rulesets (#41); absent: the system. */
+  actor?: Principal | null;
+  via?: string;
+  /** Only to put back a move the same push made (atomic rollback). */
+  skip_rulesets?: boolean;
 }
 
 export interface MoveRefResult {
@@ -117,6 +123,7 @@ interface MoveRefErrorBody {
     message?: string;
     expected?: string | null;
     actual?: string | null;
+    [detail: string]: unknown;
   };
 }
 
@@ -149,6 +156,9 @@ export async function moveRefViaDO(
         to: input.to,
         force: input.force ?? false,
         non_ff: input.non_ff ?? false,
+        actor: input.actor ?? null,
+        via: input.via,
+        skip_rulesets: input.skip_rulesets,
       }),
     }),
   );
@@ -168,18 +178,20 @@ export async function moveRefViaDO(
     return parsed.data;
   }
 
-  const error = body.error ?? {};
-  const code = error.code ?? 'internal_error';
-  const message = error.message ?? 'ref move failed';
+  const {
+    code = 'internal_error',
+    message = 'ref move failed',
+    ...details
+  } = body.error ?? {};
   if (res.status === 409) {
     await recordRefMove(env, true);
     throw new ConflictError(code, message, {
-      expected: error.expected ?? input.from,
-      actual: error.actual ?? null,
+      expected: details.expected ?? input.from,
+      actual: details.actual ?? null,
     });
   }
   if (res.status === 400) {
     throw new RequestValidationError(message, {}, code);
   }
-  throw new ApiError(res.status, code, message);
+  throw new ApiError(res.status, code, message, details);
 }
