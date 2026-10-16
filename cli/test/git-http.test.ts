@@ -105,6 +105,8 @@ describe.runIf(enabled)('git smart HTTP against wrangler dev (CI smoke)', () => 
         '--persist-to',
         persist,
         '--show-interactive-dev-session=false',
+        '--inspector-port',
+        String(port + 1),
         // signs Git LFS transfer actions
         '--var',
         'CACHE_SIGNING_KEY:smoke-signing-key',

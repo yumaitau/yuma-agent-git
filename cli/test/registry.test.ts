@@ -109,7 +109,13 @@ describe.runIf(smoke && (hasHelm || hasNpm))(
           '127.0.0.1',
           '--port',
           String(port),
-        ].concat(['--persist-to', persist, '--show-interactive-dev-session=false']),
+        ].concat([
+          '--persist-to',
+          persist,
+          '--show-interactive-dev-session=false',
+          '--inspector-port',
+          String(port + 1),
+        ]),
         {
           cwd: workerDir,
           env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
