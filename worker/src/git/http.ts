@@ -5,6 +5,7 @@ import { decide, pathDecider, restrictingDecision, type Decision } from '../auth
 import { ssoMessage } from '../auth/sso';
 import { resolveTokenPrincipal } from '../auth/tokens';
 import { resolveCloneToken } from '../ci/runners';
+import { resolveSshToken } from '../api/keys';
 import { PayloadTooLargeError } from '../core/errors';
 import { getRepoBySlug } from '../db/repos';
 import type { RepoRecord } from '../db/client';
@@ -53,13 +54,22 @@ export async function gitBasicAuth(c: Context<AppEnv>, next: Next): Promise<void
     const user = colon < 0 ? decoded : decoded.slice(0, colon);
     const password = colon < 0 ? '' : decoded.slice(colon + 1);
     const secret = password || user;
-    // a self-hosted runner clones with its job's clone token (issue #48)
+    // a self-hosted runner clones with its job's clone token (issue #48), and
+    // the SSH gateway with a token for one repo and service (issue #34)
     const principal =
       (await resolveTokenPrincipal(c.env, secret)) ??
-      (await resolveCloneToken(c.env, secret));
+      (await resolveCloneToken(c.env, secret)) ??
+      (await resolveSshToken(c.env, secret, gitService(new URL(c.req.url))));
     if (principal) c.set('principal', principal);
   }
   await next();
+}
+
+/** The Git service a smart HTTP request is part of, or null (LFS). */
+function gitService(url: URL): string | null {
+  const m = /\/(git-upload-pack|git-receive-pack)$/.exec(url.pathname);
+  if (m) return m[1] as string;
+  return url.pathname.endsWith('/info/refs') ? url.searchParams.get('service') : null;
 }
 
 function unauthorized(c: Context<AppEnv>): Response {

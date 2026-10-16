@@ -1234,6 +1234,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/ssh-keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Your SSH keys for Git over SSH */
+    get: operations['listSshKeys'];
+    put?: never;
+    /** Register an SSH key for Git over SSH (recent MFA) */
+    post: operations['addSshKey'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/me/ssh-keys/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove an SSH key; its tokens stop at once */
+    delete: operations['deleteSshKey'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/me/totp': {
     parameters: {
       query?: never;
@@ -2742,6 +2777,41 @@ export interface paths {
     /** File an update work item (issue) for the fixed version, for an agent to pick up */
     post: operations['createDependencyUpdateWork'];
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/deploy-keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Repo deploy keys */
+    get: operations['listDeployKeys'];
+    put?: never;
+    /** Add a deploy key, read-only unless `read_only: false` (recent MFA) */
+    post: operations['addDeployKey'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/deploy-keys/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove a deploy key */
+    delete: operations['deleteDeployKey'];
     options?: never;
     head?: never;
     patch?: never;
@@ -5007,6 +5077,23 @@ export interface paths {
     get: operations['getHealth'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/internal/ssh/authorize': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** SSH gateway: check a key, or get a 60-second Git token for one key, repo and service (internal host only) */
+    post: operations['authorizeSsh'];
     delete?: never;
     options?: never;
     head?: never;
@@ -7768,6 +7855,7 @@ export interface operations {
               | 'usage_budget'
               | 'environment_approval'
               | 'agent_approval'
+              | 'deploy_key'
             )[];
             /**
              * @default yag
@@ -8056,6 +8144,7 @@ export interface operations {
             | 'usage_budget'
             | 'environment_approval'
             | 'agent_approval'
+            | 'deploy_key'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -8329,6 +8418,79 @@ export interface operations {
     };
   };
   deleteSigningKey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listSshKeys: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  addSshKey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          title: string;
+          public_key: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteSshKey: {
     parameters: {
       query?: never;
       header?: never;
@@ -9089,6 +9251,7 @@ export interface operations {
             | 'usage_budget'
             | 'environment_approval'
             | 'agent_approval'
+            | 'deploy_key'
           )[];
           /**
            * @default yag
@@ -11893,6 +12056,89 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listDeployKeys: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  addDeployKey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          title: string;
+          public_key: string;
+          /** @default true */
+          read_only?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteDeployKey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getDiff: {
     parameters: {
       query: {
@@ -12422,6 +12668,7 @@ export interface operations {
             | 'usage_budget'
             | 'environment_approval'
             | 'agent_approval'
+            | 'deploy_key'
           )[];
           /**
            * @default yag
@@ -16965,6 +17212,37 @@ export interface operations {
           'application/json': unknown;
         };
       };
+    };
+  };
+  authorizeSsh: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          fingerprint: string;
+          repo?: string;
+          /** @enum {string} */
+          service?: 'git-upload-pack' | 'git-receive-pack';
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
     };
   };
   resumeMcpStream: {

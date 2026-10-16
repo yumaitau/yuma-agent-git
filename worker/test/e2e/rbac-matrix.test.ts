@@ -174,6 +174,9 @@ const PUBLIC = new Set([
   'POST /ci/oidc/token',
   // signed provenance (#58): public keys, verified offline by anyone
   'GET /.well-known/yag-provenance-keys',
+  // Git over SSH (#34): answers only on the internal gateway host with the
+  // gateway key, 404 everywhere else (test/ssh-keys.test.ts)
+  'POST /internal/ssh/authorize',
   'POST /ci/code-scanning/sarif', // CI request token; the job's own repo (#67)
   // self-hosted runners (#48): a one-time registration token in the body,
   // then the runner's own credential (test/ci-runners.test.ts)
@@ -333,6 +336,9 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/pulls/:id/agent-review': 'agent-review.test.ts',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/agent-review': 'agent-review.test.ts',
   'GET /api/v1/repos/:repo{.+}/usage': 'usage.test.ts',
+  'GET /api/v1/repos/:repo{.+}/deploy-keys': 'ssh-keys.test.ts',
+  'POST /api/v1/repos/:repo{.+}/deploy-keys': 'ssh-keys.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/deploy-keys/:id': 'ssh-keys.test.ts',
   // GitHub REST compatibility (#74): each calls native routes as the caller
   ...Object.fromEntries(
     [

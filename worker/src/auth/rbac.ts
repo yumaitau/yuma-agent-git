@@ -281,6 +281,13 @@ function evaluateAccess(ctx: DecisionContext, perm: Perm, path?: string): Decisi
     const repos = boundRepos(principal);
     if (repos !== null && !repos.includes(repo.id)) return { allowed: false };
     if (principal.kind === 'agent' && perm === 'admin') return { allowed: false };
+    // a deploy key (issue #34) reads, and may write, its one repo; nothing more
+    if (
+      principal.kind === 'token' &&
+      principal.deployKeyId &&
+      (perm === 'triage' || perm === 'admin')
+    )
+      return { allowed: false };
     const writes = hasScope(principal, 'repo:write');
     if (perm === 'write' || perm === 'triage' || perm === 'admin') {
       if (!writes) return { allowed: false };
@@ -322,6 +329,9 @@ function evaluateAccess(ctx: DecisionContext, perm: Perm, path?: string): Decisi
         : { allowed: false, deniedBy: describe(rule) };
     }
   }
+
+  // a deploy key has no person, so no role: its scopes are the whole grant
+  if (principal.kind === 'token' && principal.deployKeyId) return { allowed: true };
 
   // 3. effective repo role
   if (ctx.role === 'admin') return { allowed: true };

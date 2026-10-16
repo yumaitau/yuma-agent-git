@@ -53,6 +53,13 @@ export interface Env {
    * `{"keys":[...]}`, the first (with `d`) signs and all are published.
    */
   PROVENANCE_SIGNING_KEYS?: string;
+  /**
+   * Git over SSH (issue #34, ADR 0007): the internal hostname the SSH gateway
+   * calls `/internal/ssh/authorize` on. Unset, that endpoint answers 404.
+   */
+  SSH_GATEWAY_HOST?: string;
+  /** Secret: the key the SSH gateway sends in `x-ssh-gateway-key`. */
+  SSH_GATEWAY_KEY?: string;
   /** Key-encryption key for CI secrets, secret: base64 key or key ring JSON. */
   SECRETS_KEK?: string;
   /** Comma-separated user ids allowed to run the KEK re-wrap. */

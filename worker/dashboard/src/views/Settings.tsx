@@ -14,6 +14,7 @@ import {
 import { useToast } from '../toast';
 import { RulesetsPanel } from './Rulesets';
 import { ApprovalsPanel } from './Guardrails';
+import { DeployKeysPanel } from './SshKeys';
 import {
   Chip,
   Empty,
@@ -554,6 +555,7 @@ export function SettingsView(): ReactElement {
       <PathRulesPanel repos={repos} />
       <RulesetsPanel repos={repos} />
       <ApprovalsPanel repos={repos} />
+      <DeployKeysPanel repos={repos} />
       <SuperfansPanel repos={repos} />
       <div className="small faint">
         Sign-in methods and second factors are managed on{' '}

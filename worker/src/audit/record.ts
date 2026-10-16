@@ -179,6 +179,10 @@ export type AuditAction =
   | 'session.link'
   | 'signing_key.add'
   | 'signing_key.remove'
+  | 'ssh_key.add'
+  | 'ssh_key.remove'
+  | 'deploy_key.add'
+  | 'deploy_key.remove'
   | 'usage.budget.set'
   | 'usage.budget.delete'
   | 'usage.budget.alert';

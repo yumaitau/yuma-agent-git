@@ -27,6 +27,11 @@ export type Principal =
       authMethod?: string | null;
       /** A self-hosted runner's clone token (ci/runners.ts): reads `repoId` only. */
       ciRunId?: string;
+      /**
+       * A repo deploy key over SSH (api/keys.ts): `userId` is
+       * `deploy-key:<id>`, never a person, so no role or team applies.
+       */
+      deployKeyId?: string;
     }
   | {
       kind: 'agent';

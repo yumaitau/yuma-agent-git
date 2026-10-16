@@ -241,6 +241,8 @@ const PURPOSES: Record<string, string> = {
     'Provenance signing keys, current and previous (public)',
   'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
   'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
+  'POST /internal/ssh/authorize':
+    'SSH gateway: check a key, or get a 60-second Git token for one key, repo and service (internal host only)',
   'POST /runner/v1/register':
     'Register a self-hosted runner with a one-time token (credential returned once)',
   'POST /runner/v1/jobs/claim':
@@ -315,6 +317,10 @@ const PURPOSES: Record<string, string> = {
     'Agent actions held for a human (`?state=pending|approved|rejected|all`)',
   'POST /api/v1/repos/:repo/approvals/:id': 'Approve or reject a held agent action',
   'POST /api/v1/repos/:repo/connect': 'Link the repo to a GitHub repo via the App',
+  'GET /api/v1/repos/:repo/deploy-keys': 'Repo deploy keys',
+  'POST /api/v1/repos/:repo/deploy-keys':
+    'Add a deploy key, read-only unless `read_only: false` (recent MFA)',
+  'DELETE /api/v1/repos/:repo/deploy-keys/:id': 'Remove a deploy key',
   'GET /api/v1/repos/:repo/diff': 'Server-side diff between two revisions',
   'POST /api/v1/repos/:repo/export/github': 'Queue a push of a revision to GitHub',
   'GET /api/v1/repos/:repo/export/fast-import': 'Stream a `git fast-import` export',
@@ -482,6 +488,9 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/me/signing-keys': 'Your commit signing keys',
   'POST /api/v1/me/signing-keys': 'Register an SSH or OpenPGP commit signing key',
   'DELETE /api/v1/me/signing-keys/:id': 'Remove a commit signing key',
+  'GET /api/v1/me/ssh-keys': 'Your SSH keys for Git over SSH',
+  'POST /api/v1/me/ssh-keys': 'Register an SSH key for Git over SSH (recent MFA)',
+  'DELETE /api/v1/me/ssh-keys/:id': 'Remove an SSH key; its tokens stop at once',
   'POST /api/v1/me/totp': 'Start authenticator app enrolment',
   'POST /api/v1/me/totp/confirm': 'Confirm authenticator enrolment with a code',
   'DELETE /api/v1/me/totp': 'Remove the authenticator app (recent MFA)',
@@ -695,6 +704,11 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     return {
       auth: 'CI request token',
       perm: 'running job with `security_events: write`',
+    };
+  if (path === '/internal/ssh/authorize')
+    return {
+      auth: 'SSH gateway key',
+      perm: 'per key: as smart HTTP',
     };
   if (path === '/runner/v1/register') return { auth: 'registration token', perm: '—' };
   if (/^\/runner\/v1\/jobs\/:id\/(artifacts|caches)/.test(path))
@@ -935,6 +949,7 @@ const SECURITY: Record<string, Record<string, string[]>[]> = {
   'SCIM token': [{ scimBearer: [] }],
   'CI request token': [{ ciJobBearer: [] }],
   'registration token': [],
+  'SSH gateway key': [{ sshGatewayKey: [] }],
   // Git LFS transfers (#35): the batch response's `RemoteAuth` header
   'signed batch action': [],
   'runner credential': [{ runnerBearer: [] }],
@@ -1048,6 +1063,13 @@ function openapi(mod: WorkerModule, rows: Row[]): JsonObject {
           scheme: 'bearer',
           description:
             'Per-run job token (`yagclone_…`) from `YAG_RUNTIME_TOKEN` in the job, valid while it runs',
+        },
+        sshGatewayKey: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-ssh-gateway-key',
+          description:
+            'The SSH gateway key (`SSH_GATEWAY_KEY`), accepted only on the internal `SSH_GATEWAY_HOST`',
         },
         runnerBearer: {
           type: 'http',

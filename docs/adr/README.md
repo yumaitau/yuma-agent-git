@@ -12,6 +12,7 @@ record's status.
 | [0003](0003-policy-engine.md)  | Agent policies use a typed TS rules DSL | Accepted                  |
 | [0004](0004-code-search.md)    | Code search uses a trigram index in D1  | Accepted                  |
 | [0005](0005-residency.md)      | Where customer data lives (residency)   | Proposed (draft)          |
+| [0007](0007-ssh-gateway.md)    | Where the Git over SSH gateway runs     | Proposed                  |
 
 ## Template
 

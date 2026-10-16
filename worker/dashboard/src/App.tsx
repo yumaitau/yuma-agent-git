@@ -31,6 +31,7 @@ import { AgentsView, TaskDetailView } from './views/Agents';
 import { SettingsView } from './views/Settings';
 import { OrgSettingsView } from './views/OrgSettings';
 import { SecurityView } from './views/Security';
+import { SshKeysView } from './views/SshKeys';
 import { Empty } from './ui';
 
 function NotFound(): ReactElement {
@@ -68,6 +69,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/inbox" element={<InboxView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/security" element={<SecurityView />} />
+                <Route path="/ssh-keys" element={<SshKeysView />} />
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org/runners" element={<RunnersView />} />

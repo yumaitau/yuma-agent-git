@@ -26,6 +26,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Git over SSH, hosting-independent parts (#34, `docs/ssh.md`). People register
+  SSH keys (Ed25519, ECDSA, `sk-ssh-ed25519`, RSA of 3072 bits or more; DSA
+  refused) and repo admins add read-only or read-write deploy keys, from a
+  session with a recent second factor, audited. `POST /internal/ssh/authorize`
+  answers only on the gateway's internal hostname with the gateway key and
+  returns a 60-second token for one repository and Git service, which smart
+  HTTP accepts. The new `ssh-gateway/` Go module serves `git-upload-pack` and
+  `git-receive-pack` over SSH with those tokens and refuses everything else.
+  Where it runs is open (ADR 0007, Proposed); nothing is deployed.
 - Wave 4a seams. GitHub Actions translation (#49) maps `actions/cache`,
   `upload-artifact`, `download-artifact` and `codeql-action/upload-sarif` onto
   job caches and artifacts (#51) and code scanning (#67). Notifications (#44)

@@ -28,6 +28,7 @@ import { mcpServerRoutes } from './mcp/server';
 import { npmRoutes } from './registry/npm';
 import { ociRoutes } from './registry/oci';
 import { provenanceKeysRoutes } from './api/provenance';
+import { sshGatewayRoutes } from './api/keys';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -89,6 +90,9 @@ app.route('/', npmRoutes);
 // Signed provenance (issue #58): the public keys records verify against.
 app.route('/', provenanceKeysRoutes);
 
+// Git over SSH (issue #34): the gateway's token endpoint, internal host only.
+app.route('/', sshGatewayRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, token management,
 // agent identities with their token exchange, and apps and OAuth apps (#75).
@@ -125,6 +129,7 @@ app.notFound((c) => {
     path.startsWith('/webhooks/') ||
     path.startsWith('/scim/') ||
     path.startsWith('/healthz') ||
+    path.startsWith('/internal/') ||
     path.startsWith('/ci/oidc/') ||
     path.startsWith('/runner/') ||
     path.startsWith('/v2/') ||

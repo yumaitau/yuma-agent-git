@@ -56,6 +56,7 @@ const EVENTS = [
   'usage_budget',
   'environment_approval',
   'agent_approval',
+  'deploy_key',
 ];
 const STATUS_KIND = {
   pending: 'info',
