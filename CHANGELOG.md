@@ -41,6 +41,15 @@ All notable changes to this project are documented here. The format follows
 --no-ff` would record; squashes credit other authors with `Co-authored-by`. The
   agent `land` tool merges a moved main in by itself. The dashboard has a method
   picker, update buttons and a conflict view. Migration `0023_merge_strategies`.
+- Line-level review (#39). Threads sit on lines of a pull request revision
+  (`/pulls/:id/threads`), follow their code to new revisions and turn
+  outdated, still readable, when the lines change. Threads take replies and
+  resolve or unresolve. A fenced `suggestion` block is applied as a changeset
+  on the head (`/pulls/:id/suggestions/apply`), which needs fresh approvals.
+  A review can carry up to 100 inline comments in one call, and reviews can
+  be requested from people, teams and agents (`/pulls/:id/reviewers`). The
+  branch rule `required_review_thread_resolution` blocks merges until every
+  thread is resolved. The dashboard diff takes inline comments.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).

@@ -155,7 +155,7 @@ async function resolveLabels(
  * and agent tokens must be able to read the repo; teams must belong to the
  * org that owns it.
  */
-async function resolveAssignees(
+export async function resolveAssignees(
   c: Context<AppEnv>,
   repo: RepoWithCreator,
   inputs: readonly string[],
@@ -519,7 +519,7 @@ issuesRoutes.post(`${base}/issues`, async (c) => {
 const eventPayload = z.record(z.string(), z.unknown());
 
 /** Display names for the principals on a page: logins, team slugs. */
-async function principalNames(
+export async function principalNames(
   c: Context<AppEnv>,
   principals: Iterable<string>,
 ): Promise<Record<string, string>> {

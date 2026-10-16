@@ -232,6 +232,15 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
         }
       }
       const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
+      if (response.ok && action === 'review') {
+        // inline comments (#39) link the issues they mention, as thread comments do
+        const comments = (body as { comments?: unknown } | null)?.comments;
+        for (const comment of Array.isArray(comments) ? (comments as unknown[]) : []) {
+          const text = (comment as { body?: unknown } | null)?.body;
+          if (typeof text === 'string')
+            await linkReferences(c, loaded.repo, source, text);
+        }
+      }
       // `Closes #N` closes issues only once the pull lands on the default branch.
       if (
         response.ok &&
@@ -588,7 +597,7 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
   }
 });
 
-async function autoCheck(
+export async function autoCheck(
   c: Context<AppEnv>,
   repo: RepoWithCreator,
   pull: Pull,

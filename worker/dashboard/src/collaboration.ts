@@ -8,6 +8,9 @@ import type {
   PipelineRun,
   Pull,
   Review,
+  ReviewComment,
+  ReviewRequest,
+  ReviewThread,
 } from '../../shared/collaboration';
 export type {
   CiPolicy,
@@ -18,6 +21,9 @@ export type {
   PipelineRun,
   Pull,
   Review,
+  ReviewComment,
+  ReviewRequest,
+  ReviewThread,
 };
 export interface CiOverview {
   can_admin: boolean;

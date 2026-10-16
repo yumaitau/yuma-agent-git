@@ -14,7 +14,10 @@ import {
   type Pull,
   type PullConflicts,
   type PullDetail,
+  type ReviewRequest,
+  type ReviewThread,
 } from '../collaboration';
+import { NewThread, ThreadCard, type Draft, type ThreadActions } from './ReviewThreads';
 import { useSlug } from '../slug';
 import {
   ErrorNotice,
@@ -248,6 +251,15 @@ export function PullView(): ReactElement {
   const slug = useSlug();
   const { id } = useParams();
   const { data, error, refresh } = useRemote<PullDetail>(`/repos/${slug}/pulls/${id}`);
+  const threads = useRemote<{ threads: ReviewThread[]; names: Record<string, string> }>(
+    `/repos/${slug}/pulls/${id}/threads`,
+  );
+  const reviewers = useRemote<{
+    review_requests: ReviewRequest[];
+    names: Record<string, string>;
+  }>(`/repos/${slug}/pulls/${id}/reviewers`);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [requested, setRequested] = useState('');
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [text, setText] = useState('');
   const [head, setHead] = useState('');
@@ -306,6 +318,32 @@ export function PullView(): ReactElement {
       setBusy(false);
     }
   };
+  const run: ThreadActions['run'] = async (path, method, body) => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await call(path, method, body);
+      refresh();
+      threads.refresh();
+      reviewers.refresh();
+      return true;
+    } catch (err) {
+      setFailure(asApiError(err));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const actions: ThreadActions | null = data
+    ? {
+        slug,
+        pull: data.pull,
+        names: { ...reviewers.data?.names, ...threads.data?.names },
+        busy,
+        run,
+      }
+    : null;
+  const allThreads = threads.data?.threads ?? [];
   const check = async (): Promise<void> => {
     setBusy(true);
     setFailure(null);
@@ -436,13 +474,93 @@ export function PullView(): ReactElement {
               </details>
             </section>
           )}
+          <section aria-label="Reviewers">
+            <h2>Reviewers</h2>
+            <ul>
+              {reviewers.data?.review_requests.map((r) => (
+                <li key={r.principal}>
+                  {actions?.names[r.principal] ?? r.principal}{' '}
+                  <span className="small muted">{r.state}</span>
+                </li>
+              ))}
+            </ul>
+            {open && (
+              <form
+                className="row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const current =
+                    reviewers.data?.review_requests.map((r) => r.principal) ?? [];
+                  const added = requested
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  void run(`/repos/${slug}/pulls/${id}/reviewers`, 'PUT', {
+                    reviewers: [...current, ...added],
+                  }).then((ok) => ok && setRequested(''));
+                }}
+              >
+                <input
+                  type="text"
+                  aria-label="Request reviewers"
+                  placeholder="login, team:<id> or agent:<id>"
+                  value={requested}
+                  onChange={(e) => setRequested(e.target.value)}
+                />
+                <button disabled={busy || !requested.trim()}>Request review</button>
+              </form>
+            )}
+          </section>
           {tip && <PipelineRuns slug={slug} head={tip} />}
           <h2>Changes</h2>
           {diff ? (
-            <DiffView files={diff.files} texts={diff.texts} />
+            <DiffView
+              files={diff.files}
+              texts={diff.texts}
+              review={(file) =>
+                !actions || file.side === 'from'
+                  ? undefined
+                  : {
+                      onLine: (anchor) =>
+                        open && setDraft({ path: file.path, ...anchor }),
+                      below: (anchor) => (
+                        <>
+                          {allThreads
+                            .filter(
+                              (t) =>
+                                !t.outdated &&
+                                t.path === file.path &&
+                                t.side === anchor.side &&
+                                t.end_line === anchor.line,
+                            )
+                            .map((t) => (
+                              <ThreadCard key={t.id} thread={t} actions={actions} />
+                            ))}
+                          {draft?.path === file.path &&
+                            draft.side === anchor.side &&
+                            draft.line === anchor.line && (
+                              <NewThread
+                                draft={draft}
+                                actions={actions}
+                                onClose={() => setDraft(null)}
+                              />
+                            )}
+                        </>
+                      ),
+                    }
+              }
+            />
           ) : (
             <Loading label="Loading diff…" />
           )}
+          <h2>
+            Review threads{' '}
+            <span className="small muted">
+              {allThreads.filter((t) => !t.resolved_at).length} unresolved
+            </span>
+          </h2>
+          {actions &&
+            allThreads.map((t) => <ThreadCard key={t.id} thread={t} actions={actions} />)}
           <h2>Review</h2>
           <ol className="history-list">
             {data.reviews.map((review) => (

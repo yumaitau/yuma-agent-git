@@ -17,6 +17,7 @@ import type { RepoRecord } from '../db/client';
 import { actorOf } from '../audit/record';
 import {
   actorFor,
+  enforcePushRules,
   evaluate,
   principalSchema,
   recordOutcome,
@@ -24,6 +25,18 @@ import {
   type EvalInput,
   type Outcome,
 } from '../policy/rulesets';
+import { commitChanges } from '../core/commit';
+import { recordAgentProvenance } from '../auth/agents';
+import { USER_TEAMS_CTE } from '../auth/rbac';
+import {
+  authorKey,
+  reanchorThreads,
+  reviewCommentInput,
+  reviewCommentsInput,
+  suggestionChanges,
+  threadStatements,
+  unresolvedThreads,
+} from './threads';
 
 import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
 import type { Pull, Review } from '../../shared/collaboration';
@@ -140,6 +153,7 @@ async function checkMerge(
     (!settingsRun || check?.state === 'passed') && pipelines.reasons.length === 0;
   const rulesets = await rulesetsFor(env, repo);
   const evalActor = await actorFor(env, repo, actor, rulesets);
+  const unresolved = await unresolvedThreads(env, pull.id);
   const facts = (m: MergeMethod): EvalInput => ({
     repo,
     actor: evalActor,
@@ -147,7 +161,12 @@ async function checkMerge(
       name: pull.base_ref,
       kind: 'update',
       fastForward: true,
-      merge: { approvals, checksPassed, method: m },
+      merge: {
+        approvals,
+        checksPassed,
+        method: m,
+        unresolvedThreads: unresolved,
+      },
     },
   });
   const methods = (repo.merge_methods ?? [...MERGE_METHODS]).filter(
@@ -379,7 +398,7 @@ export async function mergePullLocked(
   // API mutations for this pull also use this ref DO, so the gate cannot race a new review/head.
   const updated = await env.DB.batch([
     env.DB.prepare(
-      `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed') AND (SELECT COUNT(*) FROM ci_pipeline_runs WHERE repo_id = ? AND head_cs = ?) = ?`,
+      `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed') AND (SELECT COUNT(*) FROM ci_pipeline_runs WHERE repo_id = ? AND head_cs = ?) = ? AND (? = 0 OR NOT EXISTS (SELECT 1 FROM review_threads WHERE pull_id = ? AND resolved_at IS NULL))`,
     ).bind(
       prepared.result,
       Date.now(),
@@ -393,6 +412,8 @@ export async function mergePullLocked(
       repoId,
       pull.head_cs,
       gate.pipelineCount,
+      gate.outcome.requireResolvedThreads ? 1 : 0,
+      pull.id,
     ),
     env.DB.prepare(
       "UPDATE pull_requests SET state = 'merged', merged_at = ?, updated_at = ?, base_cs = ?, merge_method = ?, merged_cs = ? WHERE id = ? AND EXISTS (SELECT 1 FROM refs WHERE repo_id = ? AND name = ? AND head = ?)",
@@ -412,7 +433,7 @@ export async function mergePullLocked(
     throw new ApiError(
       409,
       'merge_blocked',
-      'Checks or the target branch changed. Refresh before merging.',
+      'Checks, review threads or the target branch changed. Refresh before merging.',
     );
   try {
     await recordOutcome(env, gate.outcome, {
@@ -473,17 +494,26 @@ export async function mutatePullLocked(
     );
     return { pull: await getPull(env, pull.repo_id, pull.id) };
   }
-  if (action === 'review') {
+  const principal = principalSchema
+    .nullable()
+    .catch(null)
+    .parse(args.principal ?? null);
+  const author = principal ? authorKey(principal) : `user:${args.actor}`;
+  if (action === 'review' || action === 'thread' || action === 'apply_suggestions') {
     if (body.head_cs !== pull.head_cs || body.revision !== pull.revision)
       throw new ApiError(
         409,
         'pull_stale',
         'Review the current revision before submitting.',
       );
+  }
+  if (action === 'review') {
+    const comments = reviewCommentsInput.safeParse(body.comments ?? []);
     if (
       !['comment', 'approve', 'request_changes'].includes(String(body.decision)) ||
       typeof body.body !== 'string' ||
-      body.body.length > 20000
+      body.body.length > 20000 ||
+      !comments.success
     )
       throw new ApiError(400, 'invalid_review', 'Invalid review');
     if (body.decision !== 'comment' && args.actor === pull.author_id)
@@ -492,54 +522,149 @@ export async function mutatePullLocked(
         'self_review',
         'Authors cannot approve or block their own pull requests.',
       );
-    await run(
-      env,
-      'INSERT INTO pull_reviews (pull_id,author_id,head_cs,decision,body,created_at,revision) VALUES (?,?,?,?,?,?,?)',
-      [
+    const now = Date.now();
+    // A review answers requests for its author and, for people, their teams.
+    const teams =
+      principal?.kind === 'user'
+        ? ` OR principal IN (WITH RECURSIVE ${USER_TEAMS_CTE} SELECT 'team:' || team_id FROM user_teams)`
+        : '';
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT INTO pull_reviews (pull_id,author_id,head_cs,decision,body,created_at,revision) VALUES (?,?,?,?,?,?,?)',
+      ).bind(
         pull.id,
         args.actor,
         pull.head_cs,
         body.decision,
         body.body,
-        Date.now(),
+        now,
         pull.revision,
-      ],
-    );
-    return { ok: true };
+      ),
+      ...(await threadStatements(env, pull, author, comments.data, true)),
+      env.DB.prepare(
+        `UPDATE review_requests SET state = 'reviewed', updated_at = ?
+          WHERE pull_id = ? AND state = 'pending' AND (principal = ?${teams})`,
+      ).bind(now, pull.id, author, ...(teams ? [args.actor] : [])),
+    ]);
+    return { ok: true, comments: comments.data.length };
   }
-  if (action === 'update') {
-    const head = typeof body.head_cs === 'string' ? body.head_cs : pull.head_cs;
-    if (!(await getChangeset(env, pull.repo_id, head)))
-      throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
-    const ref = await getRef(env, pull.repo_id, pull.base_ref);
-    const state = body.state ?? pull.state;
-    if (!['draft', 'open', 'closed'].includes(String(state)))
-      throw new ApiError(400, 'invalid_state', 'Choose draft, open, or closed');
-    const title = body.title ?? pull.title;
-    const description = body.body ?? pull.body;
-    if (
-      typeof title !== 'string' ||
-      title.trim().length < 1 ||
-      title.length > 200 ||
-      typeof description !== 'string' ||
-      description.length > 20000
-    )
-      throw new ApiError(400, 'invalid_request', 'Invalid title or description');
-    const base = body.head_cs ? (ref?.head ?? pull.base_cs) : pull.base_cs;
-    if (head === base)
+  if (action === 'thread') {
+    const comment = reviewCommentInput.safeParse(body);
+    if (!comment.success)
       throw new ApiError(
-        409,
-        'no_changes',
-        'Choose a proposed revision different from the target branch.',
+        400,
+        'invalid_request',
+        comment.error.issues.map((i) => i.message).join('; '),
       );
-    const revision =
-      pull.revision + (head !== pull.head_cs || base !== pull.base_cs ? 1 : 0);
-    await run(
-      env,
-      'UPDATE pull_requests SET title=?, body=?, head_cs=?, base_cs=?, state=?, updated_at=?, revision=? WHERE id=?',
-      [title.trim(), description, head, base, state, Date.now(), revision, pull.id],
+    const results = await env.DB.batch(
+      await threadStatements(env, pull, author, [comment.data], false),
     );
-    return { pull: await getPull(env, pull.repo_id, pull.id) };
+    return { thread_id: results[0]!.meta.last_row_id };
   }
+  if (action === 'apply_suggestions') {
+    const ids = body.comment_ids;
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 50 ||
+      !ids.every((id) => Number.isSafeInteger(id)) ||
+      (body.message !== undefined &&
+        (typeof body.message !== 'string' ||
+          body.message.trim() === '' ||
+          body.message.length > 65536))
+    )
+      throw new ApiError(400, 'invalid_request', 'Name the suggestions to apply');
+    if (!principal) throw new ApiError(401, 'unauthorized', 'authentication required');
+    const repo = await getRepo(env, pull.repo_id);
+    if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
+    const { changes, threadIds } = await suggestionChanges(env, pull, ids as number[]);
+    await enforcePushRules(
+      env,
+      repo,
+      principal,
+      actorOf(principal),
+      changes,
+      'suggestion',
+    );
+    const result = await commitChanges(env, repo.id, {
+      first_parent: pull.head_cs,
+      message:
+        typeof body.message === 'string'
+          ? body.message
+          : `Apply suggested change${ids.length === 1 ? '' : 's'} from review`,
+      author: await commitAuthor(env, principal),
+      changes,
+    });
+    await recordAgentProvenance(env, repo.id, [result.changeset.id], principal);
+    const now = Date.now();
+    await env.DB.prepare(
+      `UPDATE review_threads SET resolved_by = ?, resolved_at = ?
+        WHERE id IN (${threadIds.map(() => '?').join(',')}) AND resolved_at IS NULL`,
+    )
+      .bind(author, now, ...threadIds)
+      .run();
+    return {
+      pull: await updatePull(env, pull, { head_cs: result.changeset.id }),
+      changeset: result.changeset,
+    };
+  }
+  if (action === 'update') return { pull: await updatePull(env, pull, body) };
   throw new ApiError(404, 'not_found', 'Unknown pull request operation');
+}
+
+/** Agents commit as themselves; people as their login and a verified email, if any. */
+async function commitAuthor(
+  env: Env,
+  principal: Principal,
+): Promise<{ agent: string } | { name: string; email: string }> {
+  if (principal.kind === 'agent') return { agent: principal.agentId };
+  const user = await q1<{ login: string; email: string | null }>(
+    env,
+    `SELECT login, (SELECT email FROM user_identities WHERE user_id = users.id
+       AND email IS NOT NULL ORDER BY linked_at LIMIT 1) AS email FROM users WHERE id = ?`,
+    [principal.userId],
+  );
+  return { name: user?.login ?? principal.userId, email: user?.email ?? '' };
+}
+
+/** Title, description, state or a new head (which rebases onto the target and re-anchors threads). */
+async function updatePull(
+  env: Env,
+  pull: Pull,
+  body: Record<string, unknown>,
+): Promise<Pull> {
+  const head = typeof body.head_cs === 'string' ? body.head_cs : pull.head_cs;
+  if (!(await getChangeset(env, pull.repo_id, head)))
+    throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
+  const ref = await getRef(env, pull.repo_id, pull.base_ref);
+  const state = body.state ?? pull.state;
+  if (!['draft', 'open', 'closed'].includes(String(state)))
+    throw new ApiError(400, 'invalid_state', 'Choose draft, open, or closed');
+  const title = body.title ?? pull.title;
+  const description = body.body ?? pull.body;
+  if (
+    typeof title !== 'string' ||
+    title.trim().length < 1 ||
+    title.length > 200 ||
+    typeof description !== 'string' ||
+    description.length > 20000
+  )
+    throw new ApiError(400, 'invalid_request', 'Invalid title or description');
+  const base = body.head_cs ? (ref?.head ?? pull.base_cs) : pull.base_cs;
+  if (head === base)
+    throw new ApiError(
+      409,
+      'no_changes',
+      'Choose a proposed revision different from the target branch.',
+    );
+  const revision =
+    pull.revision + (head !== pull.head_cs || base !== pull.base_cs ? 1 : 0);
+  await run(
+    env,
+    'UPDATE pull_requests SET title=?, body=?, head_cs=?, base_cs=?, state=?, updated_at=?, revision=? WHERE id=?',
+    [title.trim(), description, head, base, state, Date.now(), revision, pull.id],
+  );
+  const updated = await getPull(env, pull.repo_id, pull.id);
+  if (revision !== pull.revision) await reanchorThreads(env, updated);
+  return updated;
 }

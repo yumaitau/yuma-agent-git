@@ -240,7 +240,20 @@ const PURPOSES: Record<string, string> = {
     'Merge a pull request (merge commit, squash or rebase)',
   'POST /api/v1/repos/:repo/pulls/:id/update-branch':
     'Bring the target into the pull request (merge or rebase)',
-  'POST /api/v1/repos/:repo/pulls/:id/review': 'Comment, approve or request changes',
+  'POST /api/v1/repos/:repo/pulls/:id/review':
+    'Comment, approve or request changes, with inline comments',
+  'GET /api/v1/repos/:repo/pulls/:id/threads': 'Line review threads with their comments',
+  'POST /api/v1/repos/:repo/pulls/:id/threads':
+    'Comment on lines of the current revision',
+  'POST /api/v1/repos/:repo/pulls/:id/threads/:thread/replies':
+    'Reply to a review thread',
+  'PUT /api/v1/repos/:repo/pulls/:id/threads/:thread/resolution':
+    'Resolve or unresolve a review thread',
+  'POST /api/v1/repos/:repo/pulls/:id/suggestions/apply':
+    'Commit suggested changes onto the head',
+  'GET /api/v1/repos/:repo/pulls/:id/reviewers': 'Requested reviewers and their state',
+  'PUT /api/v1/repos/:repo/pulls/:id/reviewers':
+    'Request reviews from people, teams, agents',
   'POST /api/v1/repos/:repo/pulls/:id/update': 'Edit title/body/state or move the head',
   'GET /api/v1/repos/:repo/refs': 'List refs',
   'GET /api/v1/repos/:repo/refs/:name': 'One ref',

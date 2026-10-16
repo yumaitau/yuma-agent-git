@@ -752,6 +752,47 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: {},
         expect: { anon: 401, stranger: 404, creator: 200 },
       },
+      // line-level review (#39): guarded; no such pull request
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/pulls/1/threads',
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/pulls/1/threads',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/pulls/1/threads/1/replies',
+        body: { body: 'x' },
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/pulls/1/threads/1/resolution',
+        body: { resolved: true },
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/pulls/1/suggestions/apply',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/pulls/1/reviewers',
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/pulls/1/reviewers',
+        body: { reviewers: [] },
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
     ];
 
     for (const entry of sweep) {
