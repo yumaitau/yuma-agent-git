@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
 
 /**
  * Typed client for the yuma-agent-git `/api/v1` API (session-cookie auth).
@@ -193,6 +194,8 @@ export const repoSchema = z.object({
   refs_mode: z.enum(['scion', 'git']).optional(),
   owner_kind: z.enum(['user', 'org']).optional(),
   owner_id: z.string().nullable().optional(),
+  merge_methods: z.array(z.enum(MERGE_METHODS)).optional(),
+  default_merge_method: z.enum(MERGE_METHODS).optional(),
 });
 export type Repo = z.infer<typeof repoSchema>;
 
@@ -637,7 +640,12 @@ export const api = {
 
   async updateRepo(
     slug: string,
-    input: { default_branch?: string; refs_mode?: 'scion' | 'git' },
+    input: {
+      default_branch?: string;
+      refs_mode?: 'scion' | 'git';
+      merge_methods?: MergeMethod[];
+      default_merge_method?: MergeMethod;
+    },
   ): Promise<Repo> {
     const body = await requestJson(
       `/api/v1/repos/${slug}`,

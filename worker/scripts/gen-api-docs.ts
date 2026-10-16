@@ -234,7 +234,12 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:repo/pulls': 'List pull requests (50 per page)',
   'POST /api/v1/repos/:repo/pulls': 'Open a pull request',
   'GET /api/v1/repos/:repo/pulls/:id': 'Pull request, reviews and merge gate',
-  'POST /api/v1/repos/:repo/pulls/:id/merge': 'Merge a pull request',
+  'GET /api/v1/repos/:repo/pulls/:id/conflicts':
+    'Would it merge into the current target? Conflicting paths and hunks',
+  'POST /api/v1/repos/:repo/pulls/:id/merge':
+    'Merge a pull request (merge commit, squash or rebase)',
+  'POST /api/v1/repos/:repo/pulls/:id/update-branch':
+    'Bring the target into the pull request (merge or rebase)',
   'POST /api/v1/repos/:repo/pulls/:id/review': 'Comment, approve or request changes',
   'POST /api/v1/repos/:repo/pulls/:id/update': 'Edit title/body/state or move the head',
   'GET /api/v1/repos/:repo/refs': 'List refs',

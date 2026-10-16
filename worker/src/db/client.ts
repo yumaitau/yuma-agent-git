@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Env } from '../env';
 import { timePhase } from '../observability/phase';
+import { MERGE_METHODS } from '../../shared/collaboration';
 
 /**
  * Thin typed helpers over `D1Database` plus zod row parsers — zod at every
@@ -184,6 +185,9 @@ export const repoRowSchema = z.object({
   /** Owner namespace (migration 0012): slug prefix for users, orgs.id for orgs. */
   owner_kind: z.enum(['user', 'org']).optional(),
   owner_id: z.string().nullable().optional(),
+  /** Allowed pull request merge methods and the default (migration 0023). */
+  merge_methods: jsonOf(z.array(z.enum(MERGE_METHODS))).optional(),
+  default_merge_method: z.enum(MERGE_METHODS).optional(),
 });
 export type RepoRecord = z.infer<typeof repoRowSchema>;
 

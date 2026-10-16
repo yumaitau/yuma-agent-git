@@ -220,7 +220,7 @@ describe('think-act-observe loop', () => {
     expect(row).toMatchObject({ status: 'failed', result_cs: snapshot.head_cs });
   });
 
-  it('stale land → merge with parents [main_head] → retry lands', async () => {
+  it('stale land → the server merges main in (parents [head, main_head]) and lands', async () => {
     const { repoId, taskId } = await seedAgentRepo();
     // someone else lands first
     const rival = await commitChanges(dbEnv, repoId, {
@@ -237,13 +237,6 @@ describe('think-act-observe loop', () => {
         changes: [{ path: 'mine.txt', op: 'add', content_b64: b64('m') }],
       }),
       call('land', {}),
-      // the dance: merge the landed head in, then retry
-      call('commit', {
-        message: 'merge rival',
-        parents: [rival.changeset.id],
-        changes: [{ path: 'rival.txt', op: 'add', content_b64: b64('r') }],
-      }),
-      call('land', {}),
       call('finish', { summary: 'landed after merge' }),
     ]);
 
@@ -251,8 +244,9 @@ describe('think-act-observe loop', () => {
     expect(state.status).toBe('done');
     const head = await headOf(repoId);
     const landed = await getChangeset(dbEnv, repoId, head);
-    expect(landed?.message).toContain('merge');
-    expect(landed?.parents.length).toBe(2); // the merge commit
+    expect(landed?.message).toBe('Merge main into agent work\n');
+    expect(landed?.parents).toHaveLength(2); // the merge commit
+    expect(landed?.parents[1]).toBe(rival.changeset.id);
   });
 
   it('resume after interruption continues from persisted state without duplicates', async () => {

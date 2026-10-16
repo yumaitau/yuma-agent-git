@@ -7,9 +7,12 @@ import {
   type CiOverview,
   type CiPolicy,
   type Detection,
+  type MergeConflict,
+  type MergeMethod,
   type PipelineJob,
   type PipelineRun,
   type Pull,
+  type PullConflicts,
   type PullDetail,
 } from '../collaboration';
 import { useSlug } from '../slug';
@@ -250,8 +253,27 @@ export function PullView(): ReactElement {
   const [head, setHead] = useState('');
   const [failure, setFailure] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState<MergeMethod | null>(null);
+  const [conflicts, setConflicts] = useState<PullConflicts | null>(null);
   const base = data?.pull.base_cs;
   const tip = data?.pull.head_cs;
+  const open = ['open', 'draft'].includes(data?.pull.state ?? '');
+  const chosen = method ?? data?.gate.method ?? 'merge';
+  useEffect(() => {
+    let cancelled = false;
+    setConflicts(null);
+    if (open && tip)
+      void call<PullConflicts>(`/repos/${slug}/pulls/${id}/conflicts`)
+        .then((value) => {
+          if (!cancelled) setConflicts(value);
+        })
+        .catch(() => {
+          /* the merge gate still reports blockers */
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, id, open, tip, base]);
   useEffect(() => {
     let cancelled = false;
     setDiff(null);
@@ -307,8 +329,9 @@ export function PullView(): ReactElement {
             {data.pull.title} <span className="muted">#{data.pull.number}</span>
           </h1>
           <p className="muted">
-            {data.pull.state} · <code>{shortId(tip)}</code> into{' '}
-            <code>{data.pull.base_ref}</code>
+            {data.pull.state}
+            {data.pull.merge_method ? ` (${data.pull.merge_method})` : ''} ·{' '}
+            <code>{shortId(tip)}</code> into <code>{data.pull.base_ref}</code>
           </p>
           <Markdown source={data.pull.body} slug={slug} />
           {['open', 'draft'].includes(data.pull.state) && (
@@ -323,14 +346,53 @@ export function PullView(): ReactElement {
               ) : (
                 <p>Reviews and checks are satisfied for this revision.</p>
               )}
+              {conflicts && !conflicts.mergeable && (
+                <ConflictView conflicts={conflicts} baseRef={data.pull.base_ref} />
+              )}
               <div className="row">
-                <button
-                  disabled={busy || !data.gate.mergeable}
-                  className="primary"
-                  onClick={() => void action('merge', { head_cs: tip })}
+                <select
+                  aria-label="Merge method"
+                  value={chosen}
+                  onChange={(e) => setMethod(e.target.value as MergeMethod)}
                 >
-                  Merge pull request
+                  {data.gate.methods.map((m) => (
+                    <option key={m} value={m}>
+                      {METHOD_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  disabled={
+                    busy ||
+                    !data.gate.mergeable ||
+                    conflicts?.mergeable === false ||
+                    !data.gate.methods.includes(chosen)
+                  }
+                  className="primary"
+                  onClick={() => void action('merge', { head_cs: tip, method: chosen })}
+                >
+                  {METHOD_LABELS[chosen]}
                 </button>
+                {conflicts && conflicts.target_cs !== data.pull.base_cs && (
+                  <>
+                    <button
+                      disabled={busy || !conflicts.mergeable}
+                      onClick={() =>
+                        void action('update-branch', { head_cs: tip, method: 'merge' })
+                      }
+                    >
+                      Update branch
+                    </button>
+                    <button
+                      disabled={busy || !conflicts.mergeable}
+                      onClick={() =>
+                        void action('update-branch', { head_cs: tip, method: 'rebase' })
+                      }
+                    >
+                      Update with rebase
+                    </button>
+                  </>
+                )}
                 <button disabled={busy} onClick={() => void check()}>
                   Run checks
                 </button>
@@ -353,7 +415,8 @@ export function PullView(): ReactElement {
               <details>
                 <summary>Update the proposed revision</summary>
                 <p className="small muted">
-                  Rebase onto the latest target first. Changing the head requires fresh
+                  Use this to submit a conflict resolution: a changeset whose parents are
+                  this revision and the target head. Changing the head requires fresh
                   approvals and checks.
                 </p>
                 <div className="row">
@@ -438,6 +501,69 @@ export function PullView(): ReactElement {
         </>
       )}
     </>
+  );
+}
+
+const METHOD_LABELS: Record<MergeMethod, string> = {
+  merge: 'Create a merge commit',
+  squash: 'Squash and merge',
+  rebase: 'Rebase and merge',
+};
+
+const CONFLICT_LABELS: Record<MergeConflict['kind'], string> = {
+  content: 'both changed the same lines',
+  add_add: 'both added different files',
+  modify_delete: 'changed on one side, deleted on the other',
+  file_directory: 'a file on one side, a directory on the other',
+  mode: 'both changed the file mode',
+  binary: 'binary file changed on both sides',
+  too_large: 'too large to merge on the server',
+  unsupported: 'entry type the server cannot merge',
+  multiple_merge_bases: 'histories cross-merged; no single merge base',
+};
+
+/** Server-side conflict report (#42): paths, then base / target / proposed hunks. */
+function ConflictView({
+  conflicts,
+  baseRef,
+}: {
+  conflicts: PullConflicts;
+  baseRef: string;
+}): ReactElement {
+  return (
+    <div className="stack" aria-label="Merge conflicts">
+      <h3>Conflicts with {baseRef}</h3>
+      <p className="small muted">
+        Commit a resolution with parents [this revision,{' '}
+        <code>{shortId(conflicts.target_cs)}</code>], then update the proposed revision.
+      </p>
+      {conflicts.conflicts.map((c) => (
+        <details key={`${c.path}:${c.kind}`}>
+          <summary>
+            <code>{c.path || '(repository)'}</code>{' '}
+            <span className="small muted">{CONFLICT_LABELS[c.kind]}</span>
+          </summary>
+          {c.hunks?.map((h, i) => (
+            <div key={i} className="row">
+              {(
+                [
+                  ['Base', h.base],
+                  [baseRef, h.ours],
+                  ['This pull request', h.theirs],
+                ] as const
+              ).map(([label, side]) => (
+                <figure key={label} className="stack">
+                  <figcaption className="small muted">
+                    {label}, line {side.start}
+                  </figcaption>
+                  <pre className="mono small">{side.lines.join('')}</pre>
+                </figure>
+              ))}
+            </div>
+          ))}
+        </details>
+      ))}
+    </div>
   );
 }
 

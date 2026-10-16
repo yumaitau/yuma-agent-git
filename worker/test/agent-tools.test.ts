@@ -171,27 +171,50 @@ describe('agent tools', () => {
     expect(checkRow?.prompt).toContain('- agent.txt');
     expect(checkRow?.prompt).not.toContain('src/a.txt'); // only what landed
 
-    // stale: someone else lands first → structured reason, no exception
+    // stale: someone else landed first → the server merges main in (#42)
     const ctx2 = ctxFor(repoId, baseCs);
-    await executeTool(dbEnv, ctx2, 'commit', {
+    const racing = await executeTool(dbEnv, ctx2, 'commit', {
       message: 'racing change',
       changes: [{ path: 'racing.txt', op: 'add', content_b64: b64('race') }],
     });
-    const stale = await executeTool(dbEnv, ctx2, 'land', {});
-    expect(stale).toMatchObject({ landed: false, reason: 'stale' });
-    expect(stale.main_head).toBe(ctx.head_cs);
+    const landedMain = ctx.head_cs;
+    const merged = await executeTool(dbEnv, ctx2, 'land', {});
+    expect(merged).toMatchObject({ landed: true, main_head: ctx2.head_cs });
+    const mergeCs = await q1<{ parents: string; author: string }>(
+      dbEnv,
+      'SELECT parents, author FROM changesets WHERE id = ?',
+      [ctx2.head_cs],
+    );
+    expect(JSON.parse(mergeCs?.parents ?? '[]')).toEqual([racing.cs, landedMain]);
+    expect(JSON.parse(mergeCs?.author ?? '{}')).toEqual({ agent: 'task-under-test' });
 
-    // the documented dance: merge the landed head into our line
-    // (parents [our head, main_head]) and retry — now it fast-forwards
-    const merged = await executeTool(dbEnv, ctx2, 'commit', {
-      message: 'merge landed work',
-      parents: [stale.main_head as string],
-      // relative to OUR head (first parent), main's agent.txt is an addition
-      changes: [{ path: 'agent.txt', op: 'add', content_b64: b64('merged') }],
+    // overlapping edits: merge_conflict with the conflicts, nothing lands
+    const ctx3 = ctxFor(repoId, baseCs);
+    await executeTool(dbEnv, ctx3, 'commit', {
+      message: 'clashing change',
+      changes: [{ path: 'agent.txt', op: 'add', content_b64: b64('clash') }],
     });
-    expect(merged.cs).toBeTypeOf('string');
-    const retry = await executeTool(dbEnv, ctx2, 'land', {});
-    expect(retry).toMatchObject({ landed: true, main_head: merged.cs });
+    const clash = await executeTool(dbEnv, ctx3, 'land', {});
+    expect(clash).toMatchObject({
+      landed: false,
+      reason: 'merge_conflict',
+      conflicts: [{ path: 'agent.txt', kind: 'add_add' }],
+      conflict_count: 1,
+      main_head: ctx2.head_cs,
+    });
+    expect(await readRefHead(dbEnv, repoId, 'main')).toBe(ctx2.head_cs);
+
+    // the agent resolves it with a changeset whose parents are [its head, main_head]
+    const resolved = await executeTool(dbEnv, ctx3, 'commit', {
+      message: 'resolve',
+      parents: [clash.main_head as string],
+      changes: [
+        { path: 'agent.txt', op: 'mod', content_b64: b64('resolved') },
+        { path: 'racing.txt', op: 'add', content_b64: b64('race') },
+      ],
+    });
+    const retry = await executeTool(dbEnv, ctx3, 'land', {});
+    expect(retry).toMatchObject({ landed: true, main_head: resolved.cs });
   });
 
   it('land targets the default branch and treats protection as final', async () => {

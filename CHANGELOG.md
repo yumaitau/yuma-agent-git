@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Pull request merges record a merge commit by default instead of fast-forwarding
+  (#42); set `default_merge_method` to change that per repo.
 - The whole API and dashboard require sign-in. Anonymous callers get `401`,
   public repositories included; API cache policies are `private`.
 - The CLI explains how to supply a token when the server refuses an anonymous
@@ -29,6 +31,16 @@ All notable changes to this project are documented here. The format follows
   (`POST /api/v1/orgs/:org/agents/pause`, or `/api/v1/admin/agents/pause`
   for the instance) revokes agent tokens, cancels agent tasks and refuses
   agent writes from the next request; the org page shows who paused agents.
+- Merge, squash and rebase pull requests on the server (#42). A moved target no
+  longer blocks a merge: the server three-way merges onto its current head and
+  reports `409 merge_conflict` with each conflicting path and its base, target and
+  proposed hunks when edits overlap (`GET …/pulls/:id/conflicts` checks ahead).
+  `POST …/pulls/:id/update-branch` brings the target into a pull request by merge
+  or rebase. Repos choose allowed methods and a default, and a branch ruleset
+  `merge_methods` rule narrows them. Merge commits get the SHA-1 `git merge
+--no-ff` would record; squashes credit other authors with `Co-authored-by`. The
+  agent `land` tool merges a moved main in by itself. The dashboard has a method
+  picker, update buttons and a conflict view. Migration `0023_merge_strategies`.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).

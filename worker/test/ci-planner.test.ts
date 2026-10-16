@@ -469,11 +469,14 @@ describe('pull request pipelines', () => {
       reviewer,
     );
     expect(approve.status).toBe(200);
-    expect(
-      (await api(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head, revision: 1 }))
-        .status,
-    ).toBe(200);
-    expect((await pipelines(head)).map((r) => [r.event, r.ref])).toContainEqual([
+    const merged = await api(`/pulls/${pull.id}/merge`, 'POST', {
+      head_cs: head,
+      revision: 1,
+    });
+    expect(merged.status).toBe(200);
+    // push pipelines run on what the target moved to: the merge commit (#42)
+    const tip = ((await merged.json()) as { pull: { merged_cs: string } }).pull.merged_cs;
+    expect((await pipelines(tip)).map((r) => [r.event, r.ref])).toContainEqual([
       'push',
       'main',
     ]);

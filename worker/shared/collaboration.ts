@@ -90,6 +90,9 @@ export interface Pull {
   created_at: number;
   updated_at: number;
   merged_at: number | null;
+  /** Set once merged (issue #42): the method and the changeset the target moved to. */
+  merge_method?: MergeMethod | null;
+  merged_cs?: string | null;
 }
 export interface Review {
   revision: number;
@@ -100,4 +103,35 @@ export interface Review {
   decision: string;
   body: string;
   created_at: number;
+}
+/** How a pull request lands on its target (issue #42). */
+export const MERGE_METHODS = ['merge', 'squash', 'rebase'] as const;
+export type MergeMethod = (typeof MERGE_METHODS)[number];
+/** One side of a conflicting region: 1-based first line and the lines themselves. */
+export interface ConflictSide {
+  start: number;
+  lines: string[];
+}
+export interface ConflictHunk {
+  base: ConflictSide;
+  ours: ConflictSide;
+  theirs: ConflictSide;
+}
+/**
+ * A path the server could not merge. `ours` is the side being merged into,
+ * `theirs` the incoming change. Only `content` and `add_add` carry hunks.
+ */
+export interface MergeConflict {
+  path: string;
+  kind:
+    | 'content'
+    | 'add_add'
+    | 'modify_delete'
+    | 'file_directory'
+    | 'mode'
+    | 'binary'
+    | 'too_large'
+    | 'unsupported'
+    | 'multiple_merge_bases';
+  hunks?: ConflictHunk[];
 }

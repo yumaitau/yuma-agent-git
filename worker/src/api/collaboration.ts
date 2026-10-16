@@ -8,6 +8,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 import { q, q1, run } from '../db/client';
 import { getRef } from '../db/repos';
 import { getChangeset } from '../core/changesets';
+import { threeWay } from '../core/merge';
 import { resolveRevision } from '../core/read';
 import { getBlob } from '../core/blobs';
 import { resolvePath } from '../core/trees';
@@ -140,8 +141,39 @@ collaborationRoutes.get(`${base}/pulls/:id`, async (c) => {
     return errorResponse(c, err);
   }
 });
+/**
+ * Would the pull request merge cleanly into its target's current head (#42)?
+ * Lists the conflicting paths and hunks; agents resolve them by committing a
+ * resolution changeset and updating the pull request.
+ */
+collaborationRoutes.get(`${base}/pulls/:id/conflicts`, async (c) => {
+  try {
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const pull = await getPull(c.env, loaded.repo.id, Number(c.req.param('id')));
+    const ref = await getRef(c.env, loaded.repo.id, pull.base_ref);
+    const target = ref ? await getChangeset(c.env, loaded.repo.id, ref.head) : null;
+    const head = await getChangeset(c.env, loaded.repo.id, pull.head_cs);
+    if (!target || !head)
+      throw new ApiError(
+        404,
+        'changeset_not_found',
+        'Target or proposed revision not found',
+      );
+    const merged = await threeWay(c.env, loaded.repo.id, target, head, { store: false });
+    return c.json({
+      mergeable: merged.conflicts.length === 0,
+      target_cs: target.id,
+      head_cs: head.id,
+      merge_base: merged.base,
+      conflicts: merged.conflicts,
+    });
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
 // Serialize reviews, revisions and merges with the same target ref DO.
-for (const action of ['update', 'review', 'merge'] as const) {
+for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
   collaborationRoutes.post(`${base}/pulls/:id/${action}`, async (c) => {
     try {
       const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
@@ -167,24 +199,32 @@ for (const action of ['update', 'review', 'merge'] as const) {
           body,
         }),
       });
+      const after = response.ok ? await getPull(c.env, loaded.repo.id, pull.id) : pull;
       if (response.ok) {
         const decision = (body as { decision?: unknown } | null)?.decision;
         await recordAudit(c, {
-          action: `pull.${action}`,
+          action: action === 'update-branch' ? 'pull.update_branch' : `pull.${action}`,
           repo: loaded.repo,
           target: {
             pull_id: pull.id,
             base_ref: pull.base_ref,
             ...(action === 'review' && typeof decision === 'string' ? { decision } : {}),
+            ...(action === 'merge'
+              ? { method: after.merge_method, merged_cs: after.merged_cs }
+              : {}),
+            ...(action === 'update-branch' ? { head_cs: after.head_cs } : {}),
           },
         });
       }
       if (response.ok && action === 'merge') {
         // A merge moves the target branch like a push does, so it starts `on: push` pipelines.
-        const merged = await getPull(c.env, loaded.repo.id, pull.id);
         try {
           await pushPipelines(c.env, loaded.repo.id, triggerOf(c), [
-            { name: merged.base_ref, from: merged.base_cs, to: merged.head_cs },
+            {
+              name: after.base_ref,
+              from: after.base_cs,
+              to: after.merged_cs ?? after.head_cs,
+            },
           ]);
         } catch (err) {
           // The branch already moved; a CI failure must not report the merge as failed.
@@ -198,13 +238,18 @@ for (const action of ['update', 'review', 'merge'] as const) {
         action === 'merge' &&
         pull.base_ref === loaded.repo.default_branch
       ) {
-        const merged = await getPull(c.env, loaded.repo.id, pull.id);
-        await linkLanded(c, loaded.repo, merged.base_cs, merged.head_cs, {
-          source,
-          body: merged.body,
-        });
+        await linkLanded(
+          c,
+          loaded.repo,
+          after.base_cs,
+          after.merged_cs ?? after.head_cs,
+          {
+            source,
+            body: after.body,
+          },
+        );
       }
-      if (response.ok && action === 'update') {
+      if (response.ok && (action === 'update' || action === 'update-branch')) {
         const data = (await response.json()) as { pull: Pull };
         if (data.pull.body !== pull.body)
           await linkReferences(c, loaded.repo, source, data.pull.body);

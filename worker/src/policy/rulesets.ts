@@ -9,6 +9,7 @@ import { ApiError } from '../core/errors';
 import type { CiPolicy } from '../ci/config';
 import type { Change } from '../core/commit';
 import { statBlob } from '../core/blobs';
+import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
 
 /**
  * Rulesets (issue #41): named rules on branches, tags and pushes, owned by a
@@ -44,6 +45,11 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   ...refRules,
   approvalsRule,
   z.object({ type: z.literal('required_status_checks') }),
+  // pull request merge methods allowed into the branch (#42)
+  z.object({
+    type: z.literal('merge_methods'),
+    allowed: z.array(z.enum(MERGE_METHODS)).min(1),
+  }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
 const globSchema = z.string().min(1).max(256);
@@ -291,7 +297,7 @@ export interface RefFacts {
   /** For updates: the new head descends from the old one. */
   fastForward: boolean;
   /** Present for pull request merges. */
-  merge?: { approvals: number; checksPassed: boolean };
+  merge?: { approvals: number; checksPassed: boolean; method: MergeMethod };
 }
 
 export interface FileFacts {
@@ -376,6 +382,10 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
     case 'required_status_checks':
       return ref.merge && !ref.merge.checksPassed
         ? 'The latest CI run must pass for this revision and current pipeline.'
+        : null;
+    case 'merge_methods':
+      return ref.merge && !rule.allowed.includes(ref.merge.method)
+        ? `${ref.merge.method} merges are not allowed into ${name}; use ${rule.allowed.join(' or ')}.`
         : null;
     default:
       return null;

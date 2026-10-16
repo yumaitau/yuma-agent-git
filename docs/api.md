@@ -161,21 +161,6 @@ Repo existence is never leaked (`worker/src/auth/guards.ts`):
 `denied_by` is `{id, path_prefix, effect, principal}` of the deciding rule, so the UI
 can name it.
 
-Agent guardrails (#62) then judge agent identities and agent tools on pushes, commits,
-ref moves, tags and pipeline runs (`docs/adr/0003-policy-engine.md`). Refusals are `403`
-with the reason in `message` and the matching rules in `policy: {version, matches}`:
-
-| Situation                                             | Response                                                              |
-| ----------------------------------------------------- | --------------------------------------------------------------------- |
-| Agents are paused in the org or on the instance       | `403 agents_paused`; agent tokens answer `401`                        |
-| A policy rule denies the action                       | `403 policy_denied`                                                   |
-| A rule holds it for a person                          | `403 approval_required` with `approval: {id, payload_hash, decision}` |
-| A person rejected this exact payload                  | `403 approval_rejected`                                               |
-| The stored policy cannot be read (agents fail closed) | `403 policy_unavailable`                                              |
-
-Once a person approves (`POST …/approvals/:id`), the agent repeats the identical request
-or push and it goes through. A refused push prints the same `<code>: <message>`.
-
 ## Errors
 
 Every error uses one envelope (`worker/src/api/errors.ts`):
@@ -189,16 +174,16 @@ Extra fields sit next to `code` and `message` when they help. Examples are `issu
 `bucket` on 429, `expected`/`actual` on a stale ref, and limits on 413. Unexpected
 failures are logged and returned as `500 internal_error` with no internals.
 
-| Status | Common codes                                                                                                                                                                            |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | `invalid_json`, `invalid_request`, `invalid_path`, `missing_sha256`, `hash_mismatch`, `unknown_parent`, `unknown_target`, `not_a_tree`, `invalid_ci_config`, `invalid_review`           |
-| 401    | `unauthorized`, `invalid_signature` (webhook)                                                                                                                                           |
-| 403    | `forbidden`, `insufficient_scope`, `whole_repository_required`, `protected_branch`, `self_review`, `not_admin`                                                                          |
-| 404    | `not_found`, `repo_not_found`, `revision_not_found`, `path_not_found`, `object_not_found`, `changeset_not_found`, `ref_not_found`, `task_not_found`, `token_not_found`, `run_not_found` |
-| 409    | `repo_exists`, `repo_initialized`, `ref_stale`, `ref_not_fast_forward`, `no_changes`, `pull_stale`, `pull_closed`, `merge_blocked`, `tree_too_large`                                    |
-| 413    | `file_too_large`, `fetch_too_large`, `payload_too_large`, `export_too_large`                                                                                                            |
-| 429    | `rate_limited`, `write_too_large`                                                                                                                                                       |
-| 500    | `internal_error`, `object_corrupt`, `not_configured`                                                                                                                                    |
+| Status | Common codes                                                                                                                                                                                               |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `invalid_json`, `invalid_request`, `invalid_path`, `missing_sha256`, `hash_mismatch`, `unknown_parent`, `unknown_target`, `not_a_tree`, `invalid_ci_config`, `invalid_review`                              |
+| 401    | `unauthorized`, `invalid_signature` (webhook)                                                                                                                                                              |
+| 403    | `forbidden`, `insufficient_scope`, `whole_repository_required`, `protected_branch`, `self_review`, `not_admin`                                                                                             |
+| 404    | `not_found`, `repo_not_found`, `revision_not_found`, `path_not_found`, `object_not_found`, `changeset_not_found`, `ref_not_found`, `task_not_found`, `token_not_found`, `run_not_found`                    |
+| 409    | `repo_exists`, `repo_initialized`, `ref_stale`, `ref_not_fast_forward`, `no_changes`, `pull_stale`, `pull_closed`, `merge_blocked`, `merge_conflict`, `rebase_unsupported`, `up_to_date`, `tree_too_large` |
+| 413    | `file_too_large`, `fetch_too_large`, `payload_too_large`, `export_too_large`                                                                                                                               |
+| 429    | `rate_limited`, `write_too_large`                                                                                                                                                                          |
+| 500    | `internal_error`, `object_corrupt`, `not_configured`                                                                                                                                                       |
 
 ## Rate limits
 
@@ -274,7 +259,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-198 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+200 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                                   | Auth                    | Permission                                                  | Rate bucket  | Purpose                                                                            |
 | ------ | ------------------------------------------------------ | ----------------------- | ----------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
@@ -421,9 +406,11 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/repos/:repo/pulls`                            | any                     | read (whole repo)                                           | api_read     | List pull requests (50 per page)                                                   |
 | POST   | `/api/v1/repos/:repo/pulls`                            | any                     | write (whole repo)                                          | api_write    | Open a pull request                                                                |
 | GET    | `/api/v1/repos/:repo/pulls/:id`                        | any                     | read (whole repo)                                           | api_read     | Pull request, reviews and merge gate                                               |
-| POST   | `/api/v1/repos/:repo/pulls/:id/merge`                  | any                     | write (whole repo)                                          | api_write    | Merge a pull request                                                               |
+| GET    | `/api/v1/repos/:repo/pulls/:id/conflicts`              | any                     | read (whole repo)                                           | api_read     | Would it merge into the current target? Conflicting paths and hunks                |
+| POST   | `/api/v1/repos/:repo/pulls/:id/merge`                  | any                     | write (whole repo)                                          | api_write    | Merge a pull request (merge commit, squash or rebase)                              |
 | POST   | `/api/v1/repos/:repo/pulls/:id/review`                 | any                     | write (whole repo)                                          | api_write    | Comment, approve or request changes                                                |
 | POST   | `/api/v1/repos/:repo/pulls/:id/update`                 | any                     | write (whole repo)                                          | api_write    | Edit title/body/state or move the head                                             |
+| POST   | `/api/v1/repos/:repo/pulls/:id/update-branch`          | any                     | write (whole repo)                                          | api_write    | Bring the target into the pull request (merge or rebase)                           |
 | GET    | `/api/v1/repos/:repo/refs`                             | any                     | read                                                        | api_read     | List refs                                                                          |
 | GET    | `/api/v1/repos/:repo/refs/:name`                       | any                     | read                                                        | api_read     | One ref                                                                            |
 | PUT    | `/api/v1/repos/:repo/refs/:name`                       | any                     | write (whole repo) + agent identity for `refs/agents/<id>/` | api_write    | Compare-and-swap move a ref                                                        |
@@ -645,9 +632,9 @@ Pull requests always target the repo's default branch. All pull and CI responses
 - `POST …/pulls` takes `{title: 1–200, body?: ≤20000 = "", head_cs: <64 hex>,
 draft?: false}`. It returns `201 {pull, ci: {status, message?}}`. If the default
   branch is missing or already at `head_cs` it returns `409 no_changes`.
-- `GET …/pulls/:id` returns `{pull, reviews, gate: {mergeable, reasons}}`. A `pull` is
-  `{id, repo_id, title, body, author_id, base_ref, base_cs, head_cs, state, revision,
-created_at, updated_at, merged_at}`.
+- `GET …/pulls/:id` returns `{pull, reviews, gate: {mergeable, reasons, methods,
+method}}`. A `pull` is `{id, repo_id, title, body, author_id, base_ref, base_cs,
+head_cs, state, revision, created_at, updated_at, merged_at, merge_method, merged_cs}`.
 - `POST …/pulls/:id/update` takes `{title?, body?, state?: "draft"|"open"|"closed",
 head_cs?}` and returns `{pull, ci}`. Moving `head_cs` bumps `revision` and rebases
   `base_cs` onto the current branch head.
@@ -655,8 +642,33 @@ head_cs?}` and returns `{pull, ci}`. Moving `head_cs` bumps `revision` and rebas
 "comment"|"approve"|"request_changes", body: ≤20000}` and returns `{ok: true}`.
   `head_cs` and `revision` must match the current pull (`409 pull_stale`). Authors may
   only `comment` on their own pulls (`403 self_review`).
-- `POST …/pulls/:id/merge` takes `{head_cs, revision}` and returns `{pull}`. It fails
-  with `409 merge_blocked` (gate reasons in `message`) or `409 pull_stale`.
+- `POST …/pulls/:id/merge` takes `{head_cs, revision, method?: "merge"|"squash"|"rebase",
+commit_title?, commit_message?, bypass_reason?}` and returns `{pull}` with
+  `merge_method` and `merged_cs` (where the target moved). The server builds the result
+  on the target's current head, so a moved target needs no update first. `merge`
+  records a merge commit by the merger (parents `[target, head]`, as
+  `git merge --no-ff`); `squash` records one commit by the first author with
+  `Co-authored-by` trailers for the others; `rebase` replays each commit keeping its
+  author and author time, with the merger as committer. The method defaults to the
+  repo's `default_merge_method`; `PUT /api/v1/repos/:owner/:name` sets
+  `merge_methods` and `default_merge_method`, and a branch ruleset `merge_methods`
+  rule (`{type: "merge_methods", allowed: [...]}`) narrows them further. The gate in
+  `GET …/pulls/:id` lists the allowed `methods` and the `method` it checked. It fails
+  with `409 merge_blocked` (gate reasons in `message`), `409 pull_stale`,
+  `409 rebase_unsupported` (rebasing merge commits) or `409 merge_conflict`
+  `{conflicts, conflict_count, merge_base}`, and then no ref moves.
+- `GET …/pulls/:id/conflicts` returns `{mergeable, target_cs, head_cs, merge_base,
+conflicts}` for the target's current head. Each conflict is `{path, kind, hunks?}`;
+  `kind` is `content`, `add_add`, `modify_delete`, `file_directory`, `mode`, `binary`,
+  `too_large` (over 1 MiB or 10,000 lines), `unsupported` or `multiple_merge_bases`,
+  and `hunks` are `{base, ours, theirs}` with `{start, lines}` each (ours is the
+  target). Resolve by committing a changeset with parents `[head_cs, target_cs]` and
+  moving the pull to it with `…/update`.
+- `POST …/pulls/:id/update-branch` takes `{head_cs, revision, method?: "merge"|"rebase"}`
+  and brings the target into the pull request: a merge commit by the caller, or the
+  pull's commits replayed onto the target. It returns `{pull, ci}` with a new
+  `revision` (approvals start again), `409 up_to_date` when there is nothing to bring
+  in, or `409 merge_conflict` as above.
 
 ### CI
 
@@ -792,9 +804,12 @@ touches, as `POST …/changesets` does. Otherwise it returns
 `{error: "forbidden", perm: "write", path, denied_by?}` and commits nothing. `land`
 needs write on the whole repo, as ref moves do: if any path rule restricts the caller,
 it returns `{landed: false, reason: "whole_repository_required", final: true, denied_by?}`.
-`land` moves the default branch: a lost race returns
-`{landed: false, reason: "stale", main_head}` (merge `main_head` in and land again); any
-other refusal, such as a protected default branch, returns
+`land` moves the default branch. When another land got there first, the server merges
+`main_head` in (a merge commit by the agent) and lands again. Overlapping edits return
+`{landed: false, reason: "merge_conflict", conflicts, conflict_count, main_head}`
+(commit a resolution with parents `[main_head]` and land again); a race lost three
+times returns `{landed: false, reason: "stale", main_head}`. Any other refusal, such
+as a protected default branch, returns
 `{landed: false, reason: "<code>", final: true}` and must not be retried.
 
 JSON-RPC errors are returned with HTTP **200**:

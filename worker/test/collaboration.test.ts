@@ -121,11 +121,18 @@ describe('pull requests', () => {
     expect(
       (await request(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head })).status,
     ).toBe(200);
-    expect((await getRef(testEnv, repo.id, 'main'))?.head).toBe(head);
-    expect(
-      (await q1<Pull>(testEnv, 'SELECT * FROM pull_requests WHERE id=?', [pull.id]))
-        ?.state,
-    ).toBe('merged');
+    // the default method records a merge commit of the reviewed head (#42)
+    const merged = await q1<Pull>(testEnv, 'SELECT * FROM pull_requests WHERE id=?', [
+      pull.id,
+    ]);
+    expect(merged).toMatchObject({ state: 'merged', merge_method: 'merge' });
+    expect((await getRef(testEnv, repo.id, 'main'))?.head).toBe(merged?.merged_cs);
+    const tip = await q1<{ parents: string }>(
+      testEnv,
+      'SELECT parents FROM changesets WHERE id = ?',
+      [merged?.merged_cs],
+    );
+    expect(JSON.parse(tip?.parents ?? '[]')).toEqual([base, head]);
   });
   it('invalidates approvals after a head update and rejects stale review submissions', async () => {
     const pull = await openPull();
@@ -167,7 +174,7 @@ describe('pull requests', () => {
       (await request(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head })).status,
     ).toBe(409);
   });
-  it('blocks draft, requested changes and a moved base', async () => {
+  it('blocks draft and requested changes, but not a moved base', async () => {
     const pull = await openPull();
     await request(
       `/pulls/${pull.id}/review`,
@@ -189,10 +196,11 @@ describe('pull requests', () => {
       (await request(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head })).status,
     ).toBe(409);
     await request(`/pulls/${pull.id}/update`, 'POST', { state: 'open' });
+    // the server merges onto the moved target (#42)
     await setRef(testEnv, repo.id, 'main', await commit(base, 'other.txt'));
     expect(
       (await request(`/pulls/${pull.id}/merge`, 'POST', { head_cs: head })).status,
-    ).toBe(409);
+    ).toBe(200);
   });
   it('requires a successful current pipeline and blocks direct protected ref moves', async () => {
     await configure({ required_approvals: 0 });

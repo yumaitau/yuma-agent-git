@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { getRef, setRef } from '../db/repos';
 import { isAncestorDag } from './ancestry';
-import { ApiError } from './errors';
-import { mutatePullLocked } from '../reviews/pulls';
+import { ApiError, ObjectWalkLimitError } from './errors';
+import { mutatePullLocked, preparePull, type Prepared } from '../reviews/pulls';
 import { parsePolicy } from '../ci/config';
 import { tx, type RepoRecord } from '../db/client';
 import { getRepo } from '../db/repos';
@@ -105,17 +105,37 @@ export class RefLockDO {
       });
     }
     if (request.method === 'POST' && url.pathname.startsWith('/pull/')) {
+      const action = url.pathname.slice(6);
       const input: unknown = await request.json();
-      return this.state.blockConcurrencyWhile(async () => {
+      const failed = (err: unknown): Response => {
+        if (err instanceof ApiError)
+          return fail(err.status, err.code, err.message, err.details);
+        if (err instanceof ObjectWalkLimitError) return fail(413, err.code, err.message);
+        console.error('pull operation failed', err);
+        return fail(500, 'internal_error', 'Pull request operation failed');
+      };
+      // Merges and branch updates build their changesets outside the gate
+      // (#42); the gate lands them only if the target has not moved since.
+      for (let attempt = 1; ; attempt++) {
+        let prepared: Prepared | null;
         try {
-          return Response.json(
-            await mutatePullLocked(this.env, url.pathname.slice(6), input),
-          );
+          prepared = await preparePull(this.env, action, input);
         } catch (err) {
-          if (err instanceof ApiError) return fail(err.status, err.code, err.message);
-          return fail(500, 'internal_error', 'Pull request operation failed');
+          return failed(err);
         }
-      });
+        const response = await this.state.blockConcurrencyWhile(async () => {
+          try {
+            return Response.json(
+              await mutatePullLocked(this.env, action, input, prepared),
+            );
+          } catch (err) {
+            if (err instanceof ApiError && err.code === 'target_moved' && attempt < 3)
+              return null;
+            return failed(err);
+          }
+        });
+        if (response) return response;
+      }
     }
     if (request.method !== 'POST' || url.pathname !== '/move') {
       return fail(404, 'not_found', 'unknown ref-lock operation');

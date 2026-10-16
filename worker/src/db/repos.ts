@@ -43,6 +43,9 @@ export async function createRepo(
     refs_mode: 'git' as const,
     owner_kind: input.ownerKind ?? 'user',
     owner_id: input.ownerId ?? (input.slug.split('/')[0] as string),
+    // column defaults (migration 0023), so the record matches the stored row
+    merge_methods: '["merge","squash","rebase"]',
+    default_merge_method: 'merge' as const,
   };
   await run(
     env,

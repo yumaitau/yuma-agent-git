@@ -354,6 +354,15 @@ export class Oracle {
     return seen;
   }
 
+  /** Best common ancestors over every parent edge (git merge-base --all). */
+  mergeBases(a: number, b: number): number[] {
+    const fromB = this.dagAncestors(b);
+    const common = [...this.dagAncestors(a)].filter((x) => fromB.has(x));
+    return common
+      .filter((x) => !common.some((y) => y !== x && this.dagAncestors(y).has(x)))
+      .sort((x, y) => x - y);
+  }
+
   /** Every path touched by any DAG ancestor (the `changed_paths` payload). */
   changedPaths(i: number): string[] {
     const paths = new Set<string>();

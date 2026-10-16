@@ -6,6 +6,7 @@ import { can, pathDecider, restrictingDecision } from '../auth/rbac';
 import type { RepoRecord } from '../db/client';
 import { getRepoBySlug } from '../db/repos';
 import { firstParentHistory, getChangeset } from '../core/changesets';
+import { dagMergeBases } from '../core/ancestry';
 import { recordAudit } from '../audit/record';
 import { parseReferences } from '../../shared/markdown';
 import { actorKey, eventStatement, getIssueRow } from './issues';
@@ -105,8 +106,12 @@ export async function linkLanded(
   // The ref already moved, so a failure here must not report the land as failed.
   try {
     if (pull) await linkReferences(c, repo, pull.source, pull.body, true);
-    for (const cs of await firstParentHistory(c.env as Env, repo.id, to, MAX_LANDED)) {
-      if (cs.id === from) break;
+    // everything `to` adds over `from`, merged-in commits too (#42)
+    const landed =
+      from === null
+        ? await firstParentHistory(c.env as Env, repo.id, to, MAX_LANDED)
+        : (await dagMergeBases(c.env as Env, repo.id, from, to)).onlyB;
+    for (const cs of landed.slice(0, MAX_LANDED)) {
       await linkReferences(
         c,
         repo,

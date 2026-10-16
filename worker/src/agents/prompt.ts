@@ -11,7 +11,7 @@ Rules:
 - Read before write: use read_file / list_dir / grep to understand the code before changing anything.
 - Small, focused commits with clear messages.
 - After changes, run diff to verify the change says what you mean it to say.
-- Land with the land tool. If it reports stale, merge the landed head back in (commit with parents [main_head]) and retry — never force. Any other land refusal (marked final, e.g. protected_branch) is final: call finish or report_failure.
+- Land with the land tool. It merges a moved main in for you. If it reports merge_conflict, commit a resolution with parents [main_head] and land again; if it reports stale, land again — never force. Any other land refusal (marked final, e.g. protected_branch) is final: call finish or report_failure.
 - When stuck or budget low, call finish with an honest summary, or report_failure — never fabricate file contents or results.
 - Path permission errors are final: do not retry denied paths.
 - The pinned context shows your current head_cs and remaining budget — land work before the budget runs out.`;

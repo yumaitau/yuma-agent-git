@@ -2370,7 +2370,16 @@
                     "minLength": 1,
                     "maxLength": 255
                   },
-                  "refs_mode": { "type": "string", "enum": ["scion", "git"] }
+                  "refs_mode": { "type": "string", "enum": ["scion", "git"] },
+                  "merge_methods": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": { "type": "string", "enum": ["merge", "squash", "rebase"] }
+                  },
+                  "default_merge_method": {
+                    "type": "string",
+                    "enum": ["merge", "squash", "rebase"]
+                  }
                 }
               }
             }
@@ -5958,10 +5967,42 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/conflicts": {
+      "get": {
+        "operationId": "getPullConflicts",
+        "summary": "Would it merge into the current target? Conflicting paths and hunks",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/pulls/{id}/merge": {
       "post": {
         "operationId": "mergePull",
-        "summary": "Merge a pull request",
+        "summary": "Merge a pull request (merge commit, squash or rebase)",
         "security": [{ "session": [] }, { "bearer": [] }],
         "x-yag-permission": "write (whole repo)",
         "x-yag-rate-bucket": "api_write",
@@ -5992,7 +6033,11 @@
                     "type": "integer",
                     "minimum": -9007199254740991,
                     "maximum": 9007199254740991
-                  }
+                  },
+                  "method": { "type": "string", "enum": ["merge", "squash", "rebase"] },
+                  "commit_title": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "commit_message": { "type": "string", "maxLength": 20000 },
+                  "bypass_reason": { "type": "string" }
                 },
                 "required": ["head_cs", "revision"]
               }
@@ -6099,6 +6144,62 @@
                   "state": { "type": "string", "enum": ["draft", "open", "closed"] },
                   "head_cs": { "type": "string" }
                 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/update-branch": {
+      "post": {
+        "operationId": "updatePullBranch",
+        "summary": "Bring the target into the pull request (merge or rebase)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "head_cs": { "type": "string" },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "method": {
+                    "default": "merge",
+                    "type": "string",
+                    "enum": ["merge", "rebase"]
+                  }
+                },
+                "required": ["head_cs", "revision"]
               }
             }
           }

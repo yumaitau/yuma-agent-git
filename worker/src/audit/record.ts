@@ -31,6 +31,7 @@ export type AuditAction =
   | 'pull.update'
   | 'pull.review'
   | 'pull.merge'
+  | 'pull.update_branch'
   | 'issue.create'
   | 'issue.update'
   | 'issue.delete'

@@ -10,6 +10,7 @@ import {
   type ApiError,
   type Changeset,
   type Ref,
+  type Repo,
 } from '../api';
 import { usePolling } from '../hooks';
 import { useSlug } from '../slug';
@@ -139,6 +140,78 @@ function DefaultBranchForm({
       </Field>
       <button disabled={busy || name === current} onClick={() => void save()}>
         Set default branch
+      </button>
+    </div>
+  );
+}
+
+const METHODS = ['merge', 'squash', 'rebase'] as const;
+type Method = (typeof METHODS)[number];
+
+/** Admin-only: which pull request merge methods the repo allows (#42). */
+function MergeMethodsForm({
+  repo,
+  onSaved,
+}: {
+  repo: Repo;
+  onSaved: () => void;
+}): ReactElement {
+  const slug = useSlug();
+  const toast = useToast();
+  const [allowed, setAllowed] = useState<Method[]>(repo.merge_methods ?? [...METHODS]);
+  const [preferred, setPreferred] = useState<Method>(
+    repo.default_merge_method ?? 'merge',
+  );
+  const save = useCallback(async () => {
+    try {
+      await api.updateRepo(slug, {
+        merge_methods: allowed,
+        default_merge_method: preferred,
+      });
+      toast.show('merge methods saved');
+      onSaved();
+    } catch (err) {
+      toast.showError(err);
+    }
+  }, [slug, allowed, preferred, toast, onSaved]);
+  return (
+    <div className="row" style={{ alignItems: 'flex-end', marginTop: 8 }}>
+      <fieldset className="checks">
+        <legend className="small">Pull request merge methods</legend>
+        {METHODS.map((m) => (
+          <label key={m}>
+            <input
+              type="checkbox"
+              checked={allowed.includes(m)}
+              onChange={(e) =>
+                setAllowed(
+                  METHODS.filter((x) =>
+                    x === m ? e.target.checked : allowed.includes(x),
+                  ),
+                )
+              }
+            />
+            {m}
+          </label>
+        ))}
+      </fieldset>
+      <Field label="Default method">
+        <select
+          value={preferred}
+          onChange={(e) => setPreferred(e.target.value as Method)}
+        >
+          {allowed.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <button
+        disabled={allowed.length === 0 || !allowed.includes(preferred)}
+        onClick={() => void save()}
+      >
+        Save merge methods
       </button>
     </div>
   );
@@ -279,6 +352,13 @@ export function RepoOverviewView(): ReactElement {
       )}
       {metadata?.can_admin && refs?.some((r) => !r.name.startsWith('refs/')) && (
         <DefaultBranchForm refs={refs} current={branch} onSaved={refreshRepo} />
+      )}
+      {metadata?.can_admin && (
+        <MergeMethodsForm
+          key={`${metadata.repo.merge_methods?.join()}:${metadata.repo.default_merge_method}`}
+          repo={metadata.repo}
+          onSaved={refreshRepo}
+        />
       )}
 
       <h2>Latest changesets</h2>
