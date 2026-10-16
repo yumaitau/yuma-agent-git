@@ -499,7 +499,7 @@ describe('agent review, security and budget notifications', () => {
       actor: system,
       data: { alert: { id: 7, severity: 'high', name: 'lodash', version: '4.17.20' } },
     });
-    for (const ref of ['refs/heads/main', 'refs/pull/1/head'])
+    for (const ref of ['main', 'refs/pull/1/head'])
       await emitEvent(bindings(), repo, {
         event: 'code_scanning_alert',
         action: 'created',

@@ -261,6 +261,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/github/v3/repos/{owner}/{repo}/code-scanning/alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** GitHub compatible: code scanning alerts on a ref (default branch), newest first */
+    get: operations['ghListCodeScanningAlerts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/github/v3/repos/{owner}/{repo}/commits/{ref}': {
     parameters: {
       query?: never;
@@ -6055,6 +6072,38 @@ export interface operations {
   ghGetRepo: {
     parameters: {
       query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  ghListCodeScanningAlerts: {
+    parameters: {
+      query?: {
+        ref?: string;
+        state?: 'open' | 'fixed' | 'dismissed';
+        severity?: string;
+        tool_name?: string;
+        per_page?: number;
+        page?: number;
+      };
       header?: never;
       path: {
         owner: string;

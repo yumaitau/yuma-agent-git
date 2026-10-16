@@ -584,6 +584,73 @@
         }
       }
     },
+    "/api/github/v3/repos/{owner}/{repo}/code-scanning/alerts": {
+      "get": {
+        "operationId": "ghListCodeScanningAlerts",
+        "summary": "GitHub compatible: code scanning alerts on a ref (default branch), newest first",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "as the native route it calls",
+        "x-yag-rate-bucket": "exempt",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 255 }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "fixed", "dismissed"] }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": { "description": "critical, high, medium or low", "type": "string" }
+          },
+          {
+            "name": "tool_name",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 100 }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/github/v3/repos/{owner}/{repo}/commits/{ref}": {
       "get": {
         "operationId": "ghGetCommit",

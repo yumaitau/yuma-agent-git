@@ -7,6 +7,7 @@ import { contentsRoutes } from './contents';
 import { issuesRoutes } from './issues';
 import { pullsRoutes } from './pulls';
 import { checksRoutes } from './checks';
+import { codeScanningRoutes } from './code-scanning';
 import { releasesRoutes } from './releases';
 import { searchRoutes } from './search';
 
@@ -32,6 +33,7 @@ for (const routes of [
   issuesRoutes,
   pullsRoutes,
   checksRoutes,
+  codeScanningRoutes,
   releasesRoutes,
   searchRoutes,
 ]) {

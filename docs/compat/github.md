@@ -48,6 +48,10 @@ Differences worth knowing:
 - Check runs and commit statuses are read from forge CI (pipeline jobs and
   single-command runs). There is no store for statuses posted by outside
   tools, so `POST /statuses/:sha` and `POST /check-runs` are not offered.
+- Code scanning alerts (#67) list the alerts on one ref (the default branch
+  unless `ref` is given), numbered by forge id, and need write access like
+  the native route. `severity` takes `critical`, `high`, `medium` or `low`.
+  There is no single-alert route or dismissal here; `commit_sha` is null.
 - `GET /search/issues` searches one repository: `repo:owner/name` is
   required. Supported qualifiers: `is:issue`, `is:pr` (or `type:`),
   `is:open`, `is:closed` (or `state:`), `label:` and `assignee:` (issues).
@@ -57,28 +61,29 @@ Differences worth knowing:
 
 ### Endpoints
 
-| Method             | Path (under `/api/github/v3`)                                            |
-| ------------------ | ------------------------------------------------------------------------ |
-| GET                | `/`, `/user`, `/user/repos`                                              |
-| GET                | `/repos/{owner}/{repo}`                                                  |
-| GET                | `/repos/{owner}/{repo}/contents`, `/contents/{path}` (`?ref=`)           |
-| GET                | `/repos/{owner}/{repo}/git/ref/{heads/x or tags/x}`                      |
-| POST               | `/repos/{owner}/{repo}/git/refs`                                         |
-| GET                | `/repos/{owner}/{repo}/commits/{ref}`                                    |
-| GET                | `/repos/{owner}/{repo}/commits/{ref}/check-runs`, `/statuses`, `/status` |
-| GET, POST          | `/repos/{owner}/{repo}/issues`                                           |
-| GET, PATCH         | `/repos/{owner}/{repo}/issues/{number}`                                  |
-| GET, POST          | `/repos/{owner}/{repo}/issues/{number}/comments`                         |
-| POST, PUT          | `/repos/{owner}/{repo}/issues/{number}/labels`                           |
-| GET, POST          | `/repos/{owner}/{repo}/labels`                                           |
-| GET, POST          | `/repos/{owner}/{repo}/pulls`                                            |
-| GET, PATCH         | `/repos/{owner}/{repo}/pulls/{number}`                                   |
-| GET, PUT           | `/repos/{owner}/{repo}/pulls/{number}/merge`                             |
-| GET, POST          | `/repos/{owner}/{repo}/pulls/{number}/reviews`                           |
-| GET, POST          | `/repos/{owner}/{repo}/releases`                                         |
-| GET                | `/repos/{owner}/{repo}/releases/latest`, `/releases/tags/{tag}`          |
-| GET, PATCH, DELETE | `/repos/{owner}/{repo}/releases/{id}`                                    |
-| GET                | `/search/issues`                                                         |
+| Method             | Path (under `/api/github/v3`)                                                      |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| GET                | `/`, `/user`, `/user/repos`                                                        |
+| GET                | `/repos/{owner}/{repo}`                                                            |
+| GET                | `/repos/{owner}/{repo}/contents`, `/contents/{path}` (`?ref=`)                     |
+| GET                | `/repos/{owner}/{repo}/git/ref/{heads/x or tags/x}`                                |
+| POST               | `/repos/{owner}/{repo}/git/refs`                                                   |
+| GET                | `/repos/{owner}/{repo}/commits/{ref}`                                              |
+| GET                | `/repos/{owner}/{repo}/commits/{ref}/check-runs`, `/statuses`, `/status`           |
+| GET                | `/repos/{owner}/{repo}/code-scanning/alerts` (`?ref=&state=&severity=&tool_name=`) |
+| GET, POST          | `/repos/{owner}/{repo}/issues`                                                     |
+| GET, PATCH         | `/repos/{owner}/{repo}/issues/{number}`                                            |
+| GET, POST          | `/repos/{owner}/{repo}/issues/{number}/comments`                                   |
+| POST, PUT          | `/repos/{owner}/{repo}/issues/{number}/labels`                                     |
+| GET, POST          | `/repos/{owner}/{repo}/labels`                                                     |
+| GET, POST          | `/repos/{owner}/{repo}/pulls`                                                      |
+| GET, PATCH         | `/repos/{owner}/{repo}/pulls/{number}`                                             |
+| GET, PUT           | `/repos/{owner}/{repo}/pulls/{number}/merge`                                       |
+| GET, POST          | `/repos/{owner}/{repo}/pulls/{number}/reviews`                                     |
+| GET, POST          | `/repos/{owner}/{repo}/releases`                                                   |
+| GET                | `/repos/{owner}/{repo}/releases/latest`, `/releases/tags/{tag}`                    |
+| GET, PATCH, DELETE | `/repos/{owner}/{repo}/releases/{id}`                                              |
+| GET                | `/search/issues`                                                                   |
 
 Request bodies and query parameters are in `docs/api.md` and
 `docs/openapi.json` (operation ids start with `gh`), so the SDK types them too.

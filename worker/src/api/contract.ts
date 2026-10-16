@@ -49,6 +49,7 @@ import {
   updateReleaseBody as ghUpdateReleaseBody,
 } from '../compat/github/releases';
 import { searchIssuesQuery as ghSearchIssuesQuery } from '../compat/github/search';
+import { ghCodeScanningQuery } from '../compat/github/code-scanning';
 import {
   authorizeQuery,
   codeGrantSchema as mcpCodeGrantSchema,
@@ -1178,6 +1179,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'ghListCheckRuns',
   },
   'GET /api/github/v3/repos/:owner/:repo/commits/:ref/statuses': { id: 'ghListStatuses' },
+  'GET /api/github/v3/repos/:owner/:repo/code-scanning/alerts': {
+    id: 'ghListCodeScanningAlerts',
+    query: ghCodeScanningQuery,
+  },
   'GET /api/github/v3/repos/:owner/:repo/commits/:ref/status': {
     id: 'ghGetCombinedStatus',
   },

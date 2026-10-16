@@ -620,6 +620,8 @@ const PURPOSES: Record<string, string> = {
   'POST /api/github/v3/repos/:owner/:repo/git/refs':
     'GitHub compatible: create a branch or tag',
   'GET /api/github/v3/repos/:owner/:repo/commits/:ref': 'GitHub compatible: get a commit',
+  'GET /api/github/v3/repos/:owner/:repo/code-scanning/alerts':
+    'GitHub compatible: code scanning alerts on a ref (default branch), newest first',
   'GET /api/github/v3/repos/:owner/:repo/commits/:ref/check-runs':
     'GitHub compatible: CI jobs for a commit as check runs',
   'GET /api/github/v3/repos/:owner/:repo/commits/:ref/statuses':

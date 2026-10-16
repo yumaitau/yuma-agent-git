@@ -450,8 +450,9 @@ async function planFor(
         })
         .parse(d['alert']);
       const dependency = event.event === 'dependency_alert';
-      // code scanning on other refs (pull requests) shows on the pull request instead
-      if (!dependency && alert.ref !== `refs/heads/${repo.default_branch}`) return null;
+      // code scanning on other refs (pull requests) shows on the pull request instead;
+      // stored refs name branches without `refs/heads/` (security/code-scanning.ts)
+      if (!dependency && alert.ref !== repo.default_branch) return null;
       const p = plan({
         type: 'security_alert',
         id: `${dependency ? 'dependency' : 'code_scanning'}:${alert.id}`,

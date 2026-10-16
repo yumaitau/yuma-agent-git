@@ -255,6 +255,104 @@ describe('GitHub REST compatibility (Octokit)', () => {
     ).rejects.toMatchObject({ status: 409 });
   });
 
+  it('reads pipeline jobs as check runs (#47) and code scanning alerts (#67)', async () => {
+    const gh = octokit(ownerToken);
+    // a pipeline on the pull request's head plans its jobs as check runs
+    const withPipeline = (
+      await commitChanges(testEnv, repo.id, {
+        first_parent: head,
+        message: 'add pipeline',
+        author,
+        changes: [
+          {
+            path: '.yuma/pipelines/ci.yml',
+            op: 'add',
+            content_b64: btoa(
+              'on: [pull_request]\njobs:\n  lint:\n    steps: [{ run: npm run lint }]\n  test:\n    needs: lint\n    steps: [{ run: npm test }]\n',
+            ),
+          },
+        ],
+      })
+    ).changeset.id;
+    await setRef(testEnv, repo.id, 'feature', withPipeline);
+    const pull = await gh.rest.pulls.create({
+      owner: 'team',
+      repo: 'project',
+      title: 'Pipeline',
+      head: 'feature',
+      base: 'main',
+    });
+    const checks = await gh.rest.checks.listForRef({
+      owner: 'team',
+      repo: 'project',
+      ref: pull.data.head.sha,
+    });
+    expect(
+      checks.data.check_runs.map((r) => [r.name, r.status, r.conclusion]).sort(),
+    ).toEqual([
+      ['lint', 'queued', null],
+      ['test', 'queued', null],
+    ]);
+
+    const alert = (ref: string, rule: string, state: string) =>
+      run(
+        testEnv,
+        `INSERT INTO code_scanning_alerts (repo_id, ref, tool, category, fingerprint, rule_id,
+           rule_name, severity, message, path, start_line, end_line, state, dismissed_reason,
+           dismissed_by, last_analysis_id, created_at, updated_at)
+         VALUES (?, ?, 'semgrep', 'sast', ?, ?, 'SQL injection', 'high', 'Tainted query',
+           'src/db.ts', 4, 6, ?, ?, ?, 1, 1000, 2000)`,
+        [
+          repo.id,
+          ref,
+          `${ref}:${rule}`,
+          rule,
+          state,
+          state === 'dismissed' ? 'false_positive' : null,
+          state === 'dismissed' ? owner.userId : null,
+        ],
+      );
+    await alert('main', 'sqli', 'open');
+    await alert('main', 'xss', 'dismissed');
+    await alert('feature', 'ssrf', 'open');
+    const alerts = await gh.rest.codeScanning.listAlertsForRepo({
+      owner: 'team',
+      repo: 'project',
+    });
+    expect(alerts.data.map((a) => a.rule.id)).toEqual(['xss', 'sqli']);
+    expect(alerts.data[1]).toMatchObject({
+      state: 'open',
+      dismissed_by: null,
+      rule: { id: 'sqli', severity: 'error', security_severity_level: 'high' },
+      tool: { name: 'semgrep' },
+      most_recent_instance: {
+        ref: 'refs/heads/main',
+        message: { text: 'Tainted query' },
+        location: { path: 'src/db.ts', start_line: 4, end_line: 6 },
+      },
+      html_url: 'https://forge.test/r/team/project/security-alerts',
+    });
+    expect(alerts.data[0]).toMatchObject({
+      state: 'dismissed',
+      dismissed_reason: 'false positive',
+      dismissed_by: { login: 'owner' },
+    });
+    const open = await gh.rest.codeScanning.listAlertsForRepo({
+      owner: 'team',
+      repo: 'project',
+      ref: 'refs/heads/feature',
+      state: 'open',
+    });
+    expect(open.data.map((a) => a.rule.id)).toEqual(['ssrf']);
+    // the native route's write requirement applies: readers are refused
+    await expect(
+      octokit(readerToken).rest.codeScanning.listAlertsForRepo({
+        owner: 'team',
+        repo: 'project',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
   it('serves repos, contents, refs, commits and releases', async () => {
     const gh = octokit(ownerToken);
     const repoData = await gh.rest.repos.get({ owner: 'team', repo: 'project' });

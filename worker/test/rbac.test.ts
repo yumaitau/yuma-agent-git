@@ -1057,6 +1057,11 @@ describe('route sweep — the authz contract future routes must extend', () => {
         path: '/api/github/v3/repos/acme/sweep/pulls',
         expect: { anon: 401, stranger: 404, creator: 200 },
       },
+      {
+        method: 'GET',
+        path: '/api/github/v3/repos/acme/sweep/code-scanning/alerts',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
     ];
 
     for (const entry of sweep) {
