@@ -7,6 +7,7 @@ import { getChangeset } from '../core/changesets';
 import { isAncestorDag } from '../core/ancestry';
 import { ApiError } from '../core/errors';
 import { settings } from '../ci/config';
+import { pipelineGate } from '../ci/planner';
 
 import type { Pull, Review } from '../../shared/collaboration';
 export type { Pull, Review } from '../../shared/collaboration';
@@ -50,11 +51,15 @@ export async function pullGate(
     reasons.push(
       `${required} approval${required === 1 ? '' : 's'} required for this revision.`,
     );
-  if (config?.policy.require_checks) {
+  // Pipelines that ran on this revision replace the settings pipeline as its checks.
+  const pipelines = await pipelineGate(env, pull.repo_id, pull.head_cs);
+  if (pipelines.count > 0 && (config?.policy.require_checks ?? true))
+    reasons.push(...pipelines.reasons);
+  else if (config?.policy.require_checks) {
     const check = await q1<{ state: string }>(
       env,
       `SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ?
-      ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1`,
       [pull.repo_id, pull.head_cs, config.version],
     );
     if (check?.state !== 'passed')
@@ -91,19 +96,24 @@ export async function mergePullLocked(
   }
   // API mutations for this pull also use this ref DO, so the gate cannot race a new review/head.
   const config = await settings(env, repoId);
+  // A pipeline run started after the gate changes the count and blocks the merge.
+  const pipelines = await pipelineGate(env, repoId, pull.head_cs);
   const updated = await env.DB.batch([
     env.DB.prepare(
-      `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed')`,
+      `UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ? AND (? = 0 OR (SELECT state FROM ci_runs WHERE repo_id = ? AND head_cs = ? AND settings_version = ? AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1) = 'passed') AND (SELECT COUNT(*) FROM ci_pipeline_runs WHERE repo_id = ? AND head_cs = ?) = ?`,
     ).bind(
       pull.head_cs,
       Date.now(),
       repoId,
       pull.base_ref,
       pull.base_cs,
-      config?.policy.require_checks ? 1 : 0,
+      config?.policy.require_checks && pipelines.count === 0 ? 1 : 0,
       repoId,
       pull.head_cs,
       config?.version ?? 0,
+      repoId,
+      pull.head_cs,
+      pipelines.count,
     ),
     env.DB.prepare(
       "UPDATE pull_requests SET state = 'merged', merged_at = ?, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM refs WHERE repo_id = ? AND name = ? AND head = ?)",

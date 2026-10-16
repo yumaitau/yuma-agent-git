@@ -36,6 +36,11 @@ All notable changes to this project are documented here. The format follows
   commits keep their SHAs. See `docs/git-http.md`.
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
 - Dashboard theme in the Yuma IT brand.
+- Pipeline spec v2 (#47): YAML pipelines in `.yuma/pipelines/*.yml` with jobs,
+  `needs`, matrices, services, concurrency groups and push (from `git push`),
+  pull request, manual and scheduled triggers. Invalid files report line-numbered
+  errors and the CI page shows each run's job graph. Repositories without spec
+  files keep the settings pipeline. See `docs/pipelines.md`.
 
 ### Fixed
 

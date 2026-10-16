@@ -3,8 +3,9 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import type { AppEnv, Principal } from '../auth/principal';
-import { pathDecider } from '../auth/rbac';
+import { pathDecider, restrictingDecision } from '../auth/rbac';
 import { recordAudit } from '../audit/record';
+import { ciReady, pushPipelines } from '../ci/triggers';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
 import { MAX_CHANGED_FILES } from '../core/changesets';
@@ -60,6 +61,7 @@ import { AGENT, commitShas } from './upload-pack';
  *     changeset must rebuild to the pushed commit SHA or the push fails
  *  5. one compare-and-swap per ref through `moveRefViaDO`; with `atomic`, a
  *     failed move puts the refs already moved back
+ *  6. start pipelines whose push trigger matches (`ci/triggers.ts`)
  *
  * Packs are held in memory, so they are capped (`PUSH_LIMITS`). Larger pushes
  * are refused with a clear message instead of spilling to R2. A changeset row
@@ -455,12 +457,13 @@ export async function receivePack(
 
   // 3. pre-receive checks
   const pending = updates.filter((u) => !u.error);
+  const decider = await pathDecider(env, repo, principal);
   const verdicts = await preReceive(
     {
       env,
       repo,
       principal,
-      decider: await pathDecider(env, repo, principal),
+      decider,
       commits,
       async refChanges(u) {
         const out = { changes: [] as GitChange[], trees: [] };
@@ -540,6 +543,32 @@ export async function receivePack(
         via: 'git-push',
       },
     });
+  }
+
+  // 6. push-triggered pipelines; CI reads the whole tree, as for API-started runs
+  if (moved.length > 0 && ciReady(env)) {
+    if (restrictingDecision(decider, ['read', 'write'])) {
+      messages.push('CI: not started; pipelines need access to the whole repository');
+    } else {
+      try {
+        messages.push(
+          ...(await pushPipelines(
+            env,
+            repo.id,
+            principal.userId,
+            moved.map((u) => ({
+              name: u.name,
+              from: u.from,
+              to: u.deleting ? null : (push.csOf.get(u.newSha) ?? null),
+            })),
+          )),
+        );
+      } catch (err) {
+        // The refs already moved; a CI failure must not report the push as failed.
+        console.error('receive-pack: pipeline trigger failed', err);
+        messages.push('CI: pipelines could not be started; start them from the CI page');
+      }
+    }
   }
   return statusReport(updates, 'ok', useSideband, messages);
 }

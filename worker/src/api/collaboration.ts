@@ -21,6 +21,7 @@ import {
   type CiRun,
 } from '../ci/config';
 import { enqueueRun } from '../ci/runs';
+import { pullPipelines } from '../ci/triggers';
 import { recordAudit } from '../audit/record';
 
 export const collaborationRoutes = new Hono<AppEnv>();
@@ -184,7 +185,7 @@ collaborationRoutes.get(`${base}/ci`, async (c) => {
     const config = await settings(c.env, loaded.repo.id);
     const runs = await q<CiRun>(
       c.env,
-      'SELECT * FROM ci_runs WHERE repo_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 30',
+      'SELECT * FROM ci_runs WHERE repo_id = ? AND pipeline_run_id IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 30',
       [loaded.repo.id],
     );
     // Repository callers see their own reservation total; global budgets are operator-owned.
@@ -404,13 +405,13 @@ async function autoCheck(
   pull: Pull,
   actor: string,
 ): Promise<{ status: string; message?: string }> {
-  if (
-    pull.state !== 'open' ||
-    env.CI_ENABLED !== 'true' ||
-    !(await settings(env, pull.repo_id))
-  )
+  if (pull.state !== 'open' || env.CI_ENABLED !== 'true')
     return { status: 'not_started' };
   try {
+    // Pipeline files in the proposed revision run instead of the settings pipeline.
+    const pipelines = await pullPipelines(env, pull, actor);
+    if (pipelines) return pipelines;
+    if (!(await settings(env, pull.repo_id))) return { status: 'not_started' };
     await enqueueRun(env, pull.repo_id, pull.head_cs, actor);
     return { status: 'queued' };
   } catch (err) {

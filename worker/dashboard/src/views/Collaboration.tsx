@@ -7,6 +7,8 @@ import {
   type CiOverview,
   type CiPolicy,
   type Detection,
+  type PipelineJob,
+  type PipelineRun,
   type Pull,
   type PullDetail,
 } from '../collaboration';
@@ -369,6 +371,7 @@ export function PullView(): ReactElement {
               </details>
             </section>
           )}
+          {tip && <PipelineRuns slug={slug} head={tip} />}
           <h2>Changes</h2>
           {diff ? (
             <DiffView files={diff.files} texts={diff.texts} />
@@ -436,6 +439,107 @@ export function PullView(): ReactElement {
   );
 }
 
+/** Columns of the job graph: a job sits one stage after the deepest job it needs. */
+function stages(jobs: PipelineJob[]): PipelineJob[][] {
+  const depth = new Map<string, number>();
+  const of = (name: string): number => {
+    const known = depth.get(name);
+    if (known !== undefined) return known;
+    const needs = jobs.find((j) => j.job === name)?.needs ?? [];
+    const value = needs.length ? 1 + Math.max(...needs.map(of)) : 0;
+    depth.set(name, value);
+    return value;
+  };
+  const out: PipelineJob[][] = [];
+  for (const job of jobs) (out[of(job.job)] ??= []).push(job);
+  return out;
+}
+
+/** Pipeline spec v2 runs with their job graph; nothing when there are none. */
+export function PipelineRuns({
+  slug,
+  head,
+  canWrite = false,
+  onLog,
+}: {
+  slug: string;
+  head?: string;
+  canWrite?: boolean;
+  onLog?: (runId: string) => void;
+}): ReactElement | null {
+  const { data, error, refresh } = useRemote<{ runs: PipelineRun[] }>(
+    `/repos/${slug}/ci/pipelines${head ? `?head=${head}` : ''}`,
+  );
+  const [failure, setFailure] = useState<ApiError | null>(null);
+  if (error) return <ErrorNotice error={error} />;
+  if (!data?.runs.length) return null;
+  const cancel = async (id: string): Promise<void> => {
+    try {
+      await call(`/repos/${slug}/ci/pipelines/runs/${id}/cancel`, 'POST', {});
+      refresh();
+    } catch (err) {
+      setFailure(asApiError(err));
+    }
+  };
+  return (
+    <section aria-label="Pipeline runs">
+      <h2>Pipelines</h2>
+      {failure && <ErrorNotice error={failure} />}
+      {data.runs.map((r) => (
+        <article key={r.id} className="pipeline-run">
+          <div className="row between">
+            <div>
+              <strong>{r.name}</strong>{' '}
+              <span className={`ci-state state-${r.state}`}>{r.state}</span>
+              <div className="small muted">
+                {r.event.replace('_', ' ')} · {r.ref ?? 'revision'} ·{' '}
+                <code>{shortId(r.head_cs)}</code> · {formatRelative(r.created_at)}
+              </div>
+            </div>
+            {canWrite && r.state === 'running' && (
+              <button onClick={() => void cancel(r.id)}>Cancel</button>
+            )}
+          </div>
+          {r.errors ? (
+            <ul aria-label={`${r.pipeline} errors`}>
+              {r.errors.map((e) => (
+                <li key={`${e.line}:${e.column}:${e.message}`}>
+                  <code>
+                    {r.pipeline}:{e.line}:{e.column}
+                  </code>{' '}
+                  {e.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="job-graph" aria-label={`${r.name} job graph`}>
+              {stages(r.jobs).map((stage, i) => (
+                <ol key={i} className="job-stage">
+                  {stage.map((j) => (
+                    <li key={j.key} className="job-node">
+                      <strong>{j.key}</strong>
+                      <span className={`ci-state state-${j.state}`}>
+                        {j.state.replace('_', ' ')}
+                      </span>
+                      {j.needs.length > 0 && (
+                        <span className="small muted">needs {j.needs.join(', ')}</span>
+                      )}
+                      {j.error && <span className="small">{j.error}</span>}
+                      {onLog && j.run_id && (
+                        <button onClick={() => onLog(j.run_id!)}>Log</button>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              ))}
+            </div>
+          )}
+        </article>
+      ))}
+    </section>
+  );
+}
+
 export function CiView(): ReactElement {
   const slug = useSlug();
   const path = `/repos/${slug}/ci`;
@@ -495,6 +599,12 @@ export function CiView(): ReactElement {
       setBusy(false);
     }
   };
+  const showLog = (id: string): Promise<void> =>
+    task(async () => {
+      const res = await apiFetch(`/api/v1${path}/runs/${id}/log`);
+      if (!res.ok) throw new Error('Cannot load this log');
+      setLog(await res.text());
+    });
   const save = async (start: boolean): Promise<void> =>
     task(async () => {
       await call(path, 'PUT', {
@@ -727,19 +837,7 @@ export function CiView(): ReactElement {
                       <td className="small muted">{formatRelative(job.created_at)}</td>
                       <td>
                         <div className="row">
-                          <button
-                            onClick={() =>
-                              void task(async () => {
-                                const res = await apiFetch(
-                                  `/api/v1${path}/runs/${job.id}/log`,
-                                );
-                                if (!res.ok) throw new Error('Cannot load this log');
-                                setLog(await res.text());
-                              })
-                            }
-                          >
-                            Log
-                          </button>
+                          <button onClick={() => void showLog(job.id)}>Log</button>
                           {['queued', 'running'].includes(job.state) ? (
                             <button
                               disabled={busy || !data.can_write}
@@ -778,6 +876,11 @@ export function CiView(): ReactElement {
           )}
         </>
       )}
+      <PipelineRuns
+        slug={slug}
+        canWrite={data?.can_write}
+        onLog={(id) => void showLog(id)}
+      />
       {log !== null && (
         <section>
           <div className="row between">

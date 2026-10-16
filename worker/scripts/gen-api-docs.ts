@@ -96,6 +96,10 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/ci/runs': 'Queue a CI run',
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': 'Cancel a CI run',
   'GET /api/v1/repos/:repo/ci/runs/:id/log': 'CI run log (`text/plain`)',
+  'GET /api/v1/repos/:repo/ci/pipelines':
+    'Pipeline runs with their jobs and spec errors (`?head=`)',
+  'POST /api/v1/repos/:repo/ci/pipelines/runs': 'Start a pipeline with a manual trigger',
+  'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': 'Cancel a pipeline run',
   'POST /api/v1/repos/:repo/connect': 'Link the repo to a GitHub repo via the App',
   'GET /api/v1/repos/:repo/diff': 'Server-side diff between two revisions',
   'POST /api/v1/repos/:repo/export/github': 'Queue a push of a revision to GitHub',
@@ -271,6 +275,10 @@ async function loadWorker(): Promise<WorkerModule> {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    // Bundled CommonJS packages (e.g. `yaml`'s Node build) require Node built-ins.
+    banner: {
+      js: `import { createRequire } from 'node:module'; const require = createRequire(${JSON.stringify(import.meta.url)});`,
+    },
     write: false,
     logLevel: 'error',
   });

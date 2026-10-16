@@ -517,6 +517,8 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/repos/:repo{.+}/ci': 'ci.settings.update',
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',
+  'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci.run.create',
+  'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci.run.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent.task.create',
   'POST /api/v1/agents/tasks/:id/cancel': 'agent.task.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/superfans': 'agent.superfan.start',

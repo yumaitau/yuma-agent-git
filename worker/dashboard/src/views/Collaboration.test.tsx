@@ -97,23 +97,25 @@ it('disables merging and shows the current revision requirements', async () => {
       Response.json(
         path.includes('/diff')
           ? { files: [], texts: [] }
-          : {
-              pull: {
-                id: 1,
-                title: 'Fix build',
-                body: '',
-                state: 'open',
-                base_cs: 'a'.repeat(64),
-                head_cs: 'b'.repeat(64),
-                base_ref: 'main',
-                revision: 1,
+          : path.includes('/ci/pipelines')
+            ? { runs: [] }
+            : {
+                pull: {
+                  id: 1,
+                  title: 'Fix build',
+                  body: '',
+                  state: 'open',
+                  base_cs: 'a'.repeat(64),
+                  head_cs: 'b'.repeat(64),
+                  base_ref: 'main',
+                  revision: 1,
+                },
+                reviews: [],
+                gate: {
+                  mergeable: false,
+                  reasons: ['One teammate must approve this revision.'],
+                },
               },
-              reviews: [],
-              gate: {
-                mergeable: false,
-                reasons: ['One teammate must approve this revision.'],
-              },
-            },
       ),
     ),
   );
@@ -124,4 +126,64 @@ it('disables merging and shows the current revision requirements', async () => {
   expect((screen.getByText('Merge pull request') as HTMLButtonElement).disabled).toBe(
     true,
   );
+});
+
+it('draws the pipeline job graph by stage and shows line-numbered spec errors', async () => {
+  const job = (key: string, needs: string[], state: string) => ({
+    key,
+    job: key.split(' ')[0],
+    needs,
+    state,
+    run_id: state === 'waiting' ? null : `run-${key}`,
+    error: null,
+  });
+  const run = {
+    pipeline: '.yuma/pipelines/ci.yml',
+    event: 'push',
+    ref: 'main',
+    head_cs: 'c'.repeat(64),
+    concurrency_group: null,
+    requested_by: 'u1',
+    created_at: Date.now(),
+    finished_at: null,
+  };
+  const runs = [
+    {
+      ...run,
+      id: 'p1',
+      name: 'ci',
+      state: 'running',
+      errors: null,
+      jobs: [
+        job('lint', [], 'passed'),
+        job('test (20)', [], 'passed'),
+        job('test (22)', [], 'running'),
+        job('build', ['lint', 'test'], 'waiting'),
+      ],
+    },
+    {
+      ...run,
+      id: 'p2',
+      pipeline: '.yuma/pipelines/bad.yml',
+      name: 'bad',
+      state: 'failed',
+      errors: [{ line: 4, column: 13, message: 'jobs.a.needs.0: Unknown job "x"' }],
+      jobs: [],
+    },
+  ];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string) =>
+      Response.json(path.includes('/ci/pipelines') ? { runs } : overview),
+    ),
+  );
+  mount(<CiView />);
+  const graph = await screen.findByLabelText('ci job graph');
+  const stages = [...graph.querySelectorAll('ol')].map((ol) =>
+    [...ol.querySelectorAll('strong')].map((s) => s.textContent),
+  );
+  expect(stages).toEqual([['lint', 'test (20)', 'test (22)'], ['build']]);
+  expect(screen.getByText('needs lint, test')).toBeTruthy();
+  expect(screen.getByText('.yuma/pipelines/bad.yml:4:13')).toBeTruthy();
+  expect(screen.getByText(/Unknown job "x"/)).toBeTruthy();
 });

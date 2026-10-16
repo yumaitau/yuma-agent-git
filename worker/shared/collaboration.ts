@@ -27,6 +27,38 @@ export interface CiRun {
   log_key: string | null;
   image: string | null;
   error: string | null;
+  /** Set for jobs of a v2 pipeline run. */
+  pipeline_run_id?: string | null;
+  job_key?: string | null;
+}
+/** A line-numbered problem in a pipeline file. */
+export interface SpecError {
+  line: number;
+  column: number;
+  message: string;
+}
+export interface PipelineJob {
+  key: string;
+  job: string;
+  needs: string[];
+  state: string;
+  run_id: string | null;
+  error: string | null;
+}
+export interface PipelineRun {
+  id: string;
+  pipeline: string;
+  name: string;
+  event: 'push' | 'pull_request' | 'manual' | 'schedule';
+  ref: string | null;
+  head_cs: string;
+  concurrency_group: string | null;
+  state: string;
+  errors: SpecError[] | null;
+  requested_by: string;
+  created_at: number;
+  finished_at: number | null;
+  jobs: PipelineJob[];
 }
 export interface Pull {
   id: number;

@@ -12,6 +12,7 @@ import { exportRoutes } from './export';
 import { importRoutes } from './imports';
 import { objectsRoutes } from './objects';
 import { orgsRoutes } from './orgs';
+import { pipelineRoutes } from './pipelines';
 import { readRoutes } from './read';
 import { refsRoutes } from './refs';
 
@@ -33,4 +34,5 @@ apiRouter.route('/', importRoutes);
 apiRouter.route('/', refsRoutes);
 apiRouter.route('/', objectsRoutes);
 apiRouter.route('/', orgsRoutes);
+apiRouter.route('/', pipelineRoutes);
 apiRouter.route('/', readRoutes);
