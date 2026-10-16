@@ -46,6 +46,17 @@ export interface Env {
   EVENTS_QUEUE?: Queue;
   /** Queue `mirror-sync` (issues #36, #73): pull and push mirror syncs. */
   MIRROR_QUEUE?: Queue;
+  /** Queue `notifications` (issue #44): domain events fanned out to inboxes and email. */
+  NOTIFY_QUEUE?: Queue;
+  /** HMAC key for unsubscribe links, secret. Unset: no notification email is sent. */
+  NOTIFY_SIGNING_KEY?: string;
+  /** Notification email over HTTPS (PaperBoy): endpoint, bearer key (secret), sender. */
+  PAPERBOY_API_URL?: string;
+  PAPERBOY_API_KEY?: string;
+  PAPERBOY_FROM?: string;
+  /** Or Cloudflare Email Routing: a `send_email` binding and its sender address. */
+  EMAIL?: SendEmail;
+  NOTIFY_EMAIL_FROM?: string;
   /** "true" lets webhooks use http:// URLs (local testing). Private addresses stay refused. */
   WEBHOOKS_ALLOW_HTTP?: string;
   /** Package registry (issue #53): storage quota per owner in bytes (default 10 GiB). */

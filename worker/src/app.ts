@@ -15,6 +15,7 @@ import { appsRoutes } from './auth/apps';
 import { oauthAppsRoutes } from './auth/oauth-apps';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
+import { unsubscribeRoutes } from './api/notifications';
 import { gitBasicAuth, gitRoutes } from './git/http';
 import { oidcRoutes } from './ci/oidc';
 import { runnerRoutes } from './ci/runners';
@@ -90,6 +91,8 @@ app.route('/', oauthAppsRoutes);
 app.route('/', appsRoutes);
 app.route('/', agentIdentityRoutes);
 app.route('/', webhooksRoutes);
+// signed unsubscribe links from notification email (#44), no sign-in
+app.route('/', unsubscribeRoutes);
 app.route('/', githubRoutes);
 app.route('/', adminRoutes);
 app.route('/', cacheTokenRoutes);

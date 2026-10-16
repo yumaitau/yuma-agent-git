@@ -11,7 +11,8 @@ import type { AuditActor } from '../audit/record';
  * repository subscribes to the event, a small message goes to the
  * `forge-events` queue; `queues/webhooks.ts` fans it out to a delivery per
  * hook and builds each payload there, so a push or merge pays only for one
- * indexed read here. Emitting never fails the caller.
+ * indexed read here. Events people are notified about (#44) also go to the
+ * `notifications` queue (queues/notify.ts). Emitting never fails the caller.
  */
 export const WEBHOOK_EVENTS = [
   'push',
@@ -20,6 +21,8 @@ export const WEBHOOK_EVENTS = [
   'pull_request_review',
   'pull_request_review_thread',
   'issues',
+  // notifications (#44): issue comments and deployments waiting for reviewers
+  'issue_comment',
   'ci_run',
   'work_item',
   'secret_scanning_alert',
@@ -27,6 +30,7 @@ export const WEBHOOK_EVENTS = [
   'release',
   // package registry (#53): published, tagged, deleted
   'package',
+  'environment_approval',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -78,6 +82,22 @@ export function parseEvents(text: string): string[] {
   return z.array(z.string()).parse(JSON.parse(text));
 }
 
+/** Events notifications may come from; pushes, refs, releases and packages never do. */
+const NOTIFY_EVENTS = new Set<WebhookEvent>([
+  'pull_request',
+  'pull_request_review',
+  'pull_request_review_thread',
+  'issues',
+  'issue_comment',
+  'work_item',
+  'secret_scanning_alert',
+  'environment_approval',
+]);
+
+function notifies(event: WebhookEvent, action: string | null): boolean {
+  return NOTIFY_EVENTS.has(event) || (event === 'ci_run' && action === 'completed');
+}
+
 export async function emitEvent(
   env: Env,
   repo: Pick<RepoRecord, 'id' | 'owner_kind' | 'owner_id'>,
@@ -90,13 +110,6 @@ export async function emitEvent(
   },
 ): Promise<void> {
   try {
-    if (!env.EVENTS_QUEUE) return;
-    const hooks = await q<{ events: string }>(
-      env,
-      `SELECT events FROM webhooks WHERE ${HOOKS_FOR_REPO}`,
-      hookBinds(repo),
-    );
-    if (!hooks.some((h) => parseEvents(h.events).includes(input.event))) return;
     const event: ForgeEvent = {
       id: ulid(),
       event: input.event,
@@ -112,6 +125,18 @@ export async function emitEvent(
       at: Date.now(),
       data: input.data,
     };
+    // notifications (#44) take the same event, with the same id, on their own queue
+    if (env.NOTIFY_QUEUE && notifies(input.event, input.action))
+      await env.NOTIFY_QUEUE.send(event).catch((err: unknown) =>
+        console.error('notifications: event not queued', input.event, err),
+      );
+    if (!env.EVENTS_QUEUE) return;
+    const hooks = await q<{ events: string }>(
+      env,
+      `SELECT events FROM webhooks WHERE ${HOOKS_FOR_REPO}`,
+      hookBinds(repo),
+    );
+    if (!hooks.some((h) => parseEvents(h.events).includes(input.event))) return;
     await env.EVENTS_QUEUE.send({ type: 'event', event });
   } catch (err) {
     console.error('webhooks: event not queued', input.event, err);
