@@ -544,7 +544,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 12,
+                        "maxItems": 14,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -555,12 +555,14 @@
                             "pull_request_review",
                             "pull_request_review_thread",
                             "issues",
+                            "issue_comment",
                             "ci_run",
                             "work_item",
                             "secret_scanning_alert",
                             "merge_group",
                             "release",
-                            "package"
+                            "package",
+                            "environment_approval"
                           ]
                         }
                       },
@@ -765,7 +767,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -776,12 +778,14 @@
                         "pull_request_review",
                         "pull_request_review_thread",
                         "issues",
+                        "issue_comment",
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "environment_approval"
                       ]
                     }
                   },
@@ -1072,6 +1076,188 @@
                   "code": { "type": "string", "minLength": 1, "maxLength": 12 }
                 },
                 "required": ["code"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "summary": "Caller's notification inbox (agents: their own), newest first, with the unread count",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "inbox",
+              "description": "`inbox`: not done; `unread`: not read or done; `done`",
+              "type": "string",
+              "enum": ["inbox", "unread", "done"]
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Only this repository (`owner/name`)",
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Notification id cursor (`next_cursor`)",
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/notifications/{id}": {
+      "patch": {
+        "operationId": "updateNotification",
+        "summary": "Mark a notification read or unread, done or not done",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "read": { "type": "boolean" },
+                  "done": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/notifications/read": {
+      "post": {
+        "operationId": "markNotificationsRead",
+        "summary": "Mark the whole inbox read",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/notifications/settings": {
+      "get": {
+        "operationId": "getNotificationSettings",
+        "summary": "Notification email mode, digest hour (Australia/Sydney), weekends and reasons",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "updateNotificationSettings",
+        "summary": "Change notification preferences",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "enum": ["off", "instant", "digest"] },
+                  "digest_hour": {
+                    "description": "Australia/Sydney hour",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
+                  },
+                  "skip_weekends": { "type": "boolean" },
+                  "reasons": {
+                    "description": "`false` turns a reason off",
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "review_requested",
+                        "mention",
+                        "assign",
+                        "approval_requested",
+                        "security_alert",
+                        "ci_failed",
+                        "queue_ejected",
+                        "work_claimed",
+                        "author",
+                        "comment",
+                        "manual",
+                        "subscribed"
+                      ]
+                    },
+                    "additionalProperties": { "type": "boolean" }
+                  }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -1615,7 +1801,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1626,12 +1812,14 @@
                         "pull_request_review",
                         "pull_request_review_thread",
                         "issues",
+                        "issue_comment",
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "environment_approval"
                       ]
                     }
                   },
@@ -5554,7 +5742,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 14,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5565,12 +5753,14 @@
                         "pull_request_review",
                         "pull_request_review_thread",
                         "issues",
+                        "issue_comment",
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "environment_approval"
                       ]
                     }
                   },
@@ -6460,6 +6650,90 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/issues/{number}/subscription": {
+      "get": {
+        "operationId": "getIssueSubscription",
+        "summary": "Caller's subscription to an issue: subscribed, muted or none",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "setIssueSubscription",
+        "summary": "Subscribe to or mute an issue",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": ["subscribed", "muted", "none"],
+                    "description": "`muted` stops every update for the thread; `none` drops back to the default"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -7965,6 +8239,80 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/subscription": {
+      "get": {
+        "operationId": "getPullSubscription",
+        "summary": "Caller's subscription to a pull request: subscribed, muted or none",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "setPullSubscription",
+        "summary": "Subscribe to or mute a pull request",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": ["subscribed", "muted", "none"],
+                    "description": "`muted` stops every update for the thread; `none` drops back to the default"
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -9756,6 +10104,84 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/subscription": {
+      "get": {
+        "operationId": "getRepoSubscription",
+        "summary": "Caller's watch level: watching, participating or ignored",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "setRepoSubscription",
+        "summary": "Watch, ignore or reset a repo",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string",
+                    "enum": ["watching", "participating", "ignored"],
+                    "description": "`watching`: all activity; `participating`: threads you are in and mentions (the default); `ignored`: nothing"
+                  }
+                },
+                "required": ["level"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/tags": {
       "get": {
         "operationId": "listTags",
@@ -11314,6 +11740,46 @@
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
+      }
+    },
+    "/notifications/unsubscribe": {
+      "get": {
+        "operationId": "showUnsubscribe",
+        "summary": "Signed link from a notification email: shows a button, changes nothing",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Signed token from a notification email"
+            }
+          }
+        ],
+        "responses": { "2XX": { "description": "Success" } }
+      },
+      "post": {
+        "operationId": "unsubscribe",
+        "summary": "Signed link (also RFC 8058 one-click): stop notification email or mute a thread",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Signed token from a notification email"
+            }
+          }
+        ],
+        "responses": { "2XX": { "description": "Success" } }
       }
     },
     "/npm/-/package/{pkg}/dist-tags": {

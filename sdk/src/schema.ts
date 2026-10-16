@@ -573,6 +573,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/notifications': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Caller's notification inbox (agents: their own), newest first, with the unread count */
+    get: operations['listNotifications'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/notifications/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Mark a notification read or unread, done or not done */
+    patch: operations['updateNotification'];
+    trace?: never;
+  };
+  '/api/v1/notifications/read': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark the whole inbox read */
+    post: operations['markNotificationsRead'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/notifications/settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Notification email mode, digest hour (Australia/Sydney), weekends and reasons */
+    get: operations['getNotificationSettings'];
+    /** Change notification preferences */
+    put: operations['updateNotificationSettings'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/oauth-apps': {
     parameters: {
       query?: never;
@@ -2120,6 +2189,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/issues/{number}/subscription': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Caller's subscription to an issue: subscribed, muted or none */
+    get: operations['getIssueSubscription'];
+    /** Subscribe to or mute an issue */
+    put: operations['setIssueSubscription'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/labels': {
     parameters: {
       query?: never;
@@ -2565,6 +2652,24 @@ export interface paths {
     get: operations['listReviewRequests'];
     /** Request reviews from people, teams, agents */
     put: operations['setReviewRequests'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/subscription': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Caller's subscription to a pull request: subscribed, muted or none */
+    get: operations['getPullSubscription'];
+    /** Subscribe to or mute a pull request */
+    put: operations['setPullSubscription'];
     post?: never;
     delete?: never;
     options?: never;
@@ -3037,6 +3142,24 @@ export interface paths {
     post?: never;
     /** Delete a secret (`?environment=`) */
     delete: operations['deleteRepoSecret'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/subscription': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Caller's watch level: watching, participating or ignored */
+    get: operations['getRepoSubscription'];
+    /** Watch, ignore or reset a repo */
+    put: operations['setRepoSubscription'];
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -3623,6 +3746,24 @@ export interface paths {
     post: operations['postMcpMessage'];
     /** MCP: end the session */
     delete: operations['deleteMcpSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/notifications/unsubscribe': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Signed link from a notification email: shows a button, changes nothing */
+    get: operations['showUnsubscribe'];
+    put?: never;
+    /** Signed link (also RFC 8058 one-click): stop notification email or mute a thread */
+    post: operations['unsubscribe'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -4696,12 +4837,14 @@ export interface operations {
               | 'pull_request_review'
               | 'pull_request_review_thread'
               | 'issues'
+              | 'issue_comment'
               | 'ci_run'
               | 'work_item'
               | 'secret_scanning_alert'
               | 'merge_group'
               | 'release'
               | 'package'
+              | 'environment_approval'
             )[];
             /**
              * @default yag
@@ -4945,12 +5088,14 @@ export interface operations {
             | 'pull_request_review'
             | 'pull_request_review_thread'
             | 'issues'
+            | 'issue_comment'
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'environment_approval'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -5225,6 +5370,144 @@ export interface operations {
       content: {
         'application/json': {
           code: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listNotifications: {
+    parameters: {
+      query?: {
+        state?: 'inbox' | 'unread' | 'done';
+        repo?: string;
+        before?: string;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateNotification: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          read?: boolean;
+          done?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  markNotificationsRead: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getNotificationSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateNotificationSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {string} */
+          email?: 'off' | 'instant' | 'digest';
+          /** @description Australia/Sydney hour */
+          digest_hour?: number;
+          skip_weekends?: boolean;
+          /** @description `false` turns a reason off */
+          reasons?: {
+            [key: string]: boolean;
+          };
         };
       };
     };
@@ -5675,12 +5958,14 @@ export interface operations {
             | 'pull_request_review'
             | 'pull_request_review_thread'
             | 'issues'
+            | 'issue_comment'
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'environment_approval'
           )[];
           /**
            * @default yag
@@ -8353,12 +8638,14 @@ export interface operations {
             | 'pull_request_review'
             | 'pull_request_review_thread'
             | 'issues'
+            | 'issue_comment'
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
+            | 'environment_approval'
           )[];
           /**
            * @default yag
@@ -8909,6 +9196,64 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getIssueSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        number: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setIssueSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        number: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /**
+           * @description `muted` stops every update for the thread; `none` drops back to the default
+           * @enum {string}
+           */
+          state: 'subscribed' | 'muted' | 'none';
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -9994,6 +10339,64 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getPullSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setPullSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /**
+           * @description `muted` stops every update for the thread; `none` drops back to the default
+           * @enum {string}
+           */
+          state: 'subscribed' | 'muted' | 'none';
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -11173,6 +11576,66 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getRepoSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  setRepoSubscription: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /**
+           * @description `watching`: all activity; `participating`: threads you are in and mentions (the default); `ignored`: nothing
+           * @enum {string}
+           */
+          level: 'watching' | 'participating' | 'ignored';
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listTags: {
     parameters: {
       query?: {
@@ -12299,6 +12762,46 @@ export interface operations {
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
+    };
+  };
+  showUnsubscribe: {
+    parameters: {
+      query: {
+        token: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  unsubscribe: {
+    parameters: {
+      query: {
+        token: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
     };
   };
   listNpmDistTags: {

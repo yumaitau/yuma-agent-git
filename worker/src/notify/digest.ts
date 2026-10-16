@@ -32,7 +32,11 @@ const SYDNEY = new Intl.DateTimeFormat('en-AU', {
 });
 
 /** The Australia/Sydney date (`YYYY-MM-DD`), hour and whether it is a weekend. */
-export function sydneyClock(now: number): { date: string; hour: number; weekend: boolean } {
+export function sydneyClock(now: number): {
+  date: string;
+  hour: number;
+  weekend: boolean;
+} {
   const parts = Object.fromEntries(
     SYDNEY.formatToParts(new Date(now)).map((p) => [p.type, p.value]),
   );
@@ -61,7 +65,11 @@ export async function sendDigests(env: Env, now = Date.now()): Promise<void> {
   const sender = emailSender(env);
   if (!sender) return;
   const clock = sydneyClock(now);
-  const due = await q<{ principal: string; skip_weekends: number; digest_sent_on: string | null }>(
+  const due = await q<{
+    principal: string;
+    skip_weekends: number;
+    digest_sent_on: string | null;
+  }>(
     env,
     `SELECT principal, skip_weekends, digest_sent_on FROM notification_settings
       WHERE email = 'digest' AND principal LIKE 'user:%' AND digest_hour <= ?
@@ -81,10 +89,11 @@ export async function sendDigests(env: Env, now = Date.now()): Promise<void> {
       await digestFor(env, sender, row.principal, now);
     } catch (err) {
       console.error('notifications: digest not sent; retrying next sweep', err);
-      await run(env, 'UPDATE notification_settings SET digest_sent_on = ? WHERE principal = ?', [
-        row.digest_sent_on,
-        row.principal,
-      ]);
+      await run(
+        env,
+        'UPDATE notification_settings SET digest_sent_on = ? WHERE principal = ?',
+        [row.digest_sent_on, row.principal],
+      );
     }
   }
 }
@@ -127,8 +136,14 @@ async function digestFor(
     ),
   ];
   if (items.length > listed.length)
-    lines.push(`...and ${items.length - listed.length} more in your inbox: ${origin}/inbox`);
-  lines.push('', `Change digest settings: ${origin}/inbox`, `Stop notification email: ${stopAll}`);
+    lines.push(
+      `...and ${items.length - listed.length} more in your inbox: ${origin}/inbox`,
+    );
+  lines.push(
+    '',
+    `Change digest settings: ${origin}/inbox`,
+    `Stop notification email: ${stopAll}`,
+  );
   await sender.send({
     to,
     subject: `Yuma Git digest: ${items.length} unread`,

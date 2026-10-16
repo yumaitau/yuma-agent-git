@@ -926,6 +926,34 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: { to: 'dual' },
         expect: { anon: 401, stranger: 404, creator: 409 }, // github -> dual skips a stage
       },
+      // notifications (#44): watch levels and thread subscriptions need read access
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/subscription',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/subscription',
+        body: { level: 'watching' },
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/pulls/999/subscription',
+        body: { state: 'muted' },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such pull
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/issues/999/subscription',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/notifications?repo=acme/sweep',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
     ];
 
     for (const entry of sweep) {

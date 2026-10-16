@@ -239,7 +239,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'updateNotificationSettings',
     body: notificationSettingsInput,
   },
-  'PATCH /api/v1/notifications/:id': { id: 'updateNotification', body: updateNotification },
+  'PATCH /api/v1/notifications/:id': {
+    id: 'updateNotification',
+    body: updateNotification,
+  },
   'GET /api/v1/repos/:repo/subscription': { id: 'getRepoSubscription' },
   'PUT /api/v1/repos/:repo/subscription': { id: 'setRepoSubscription', body: watchInput },
   'GET /api/v1/repos/:repo/pulls/:id/subscription': { id: 'getPullSubscription' },

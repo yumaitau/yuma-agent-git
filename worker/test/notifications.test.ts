@@ -32,8 +32,12 @@ let head: string;
 const author = { name: 'Ada', email: 'ada@example.com' };
 
 let queued: ForgeEvent[] = [];
-let mail: { to: string; subject: string; text: string; headers: Record<string, string> }[] =
-  [];
+let mail: {
+  to: string;
+  subject: string;
+  text: string;
+  headers: Record<string, string>;
+}[] = [];
 let mailStatus = 200;
 const realFetch = globalThis.fetch;
 
@@ -117,7 +121,10 @@ interface Inbox {
   next_cursor: string | null;
 }
 
-async function inbox(as: { headers: Record<string, string> }, query = ''): Promise<Inbox> {
+async function inbox(
+  as: { headers: Record<string, string> },
+  query = '',
+): Promise<Inbox> {
   return json<Inbox>(await call('GET', `/api/v1/notifications${query}`, undefined, as));
 }
 
@@ -272,7 +279,10 @@ describe('fan-out and email', () => {
     const n = await openIssue('Crash on save', 'cc @reviewer and `@reader`');
     await drain();
     expect((await inbox(reviewer)).notifications).toMatchObject([
-      { reason: 'mention', subject: { type: 'issue', number: n, title: 'Crash on save' } },
+      {
+        reason: 'mention',
+        subject: { type: 'issue', number: n, title: 'Crash on save' },
+      },
     ]);
     expect((await inbox(reader)).notifications).toHaveLength(0);
     // a reply from the reviewer reaches the author (a participant), not the reviewer
@@ -333,7 +343,9 @@ describe('fan-out and email', () => {
 
   it('watching a repo hears new threads; ignoring it hears nothing, not even mentions', async () => {
     expect(
-      await json(await call('GET', '/api/v1/repos/team/project/subscription', undefined, reader)),
+      await json(
+        await call('GET', '/api/v1/repos/team/project/subscription', undefined, reader),
+      ),
     ).toEqual({ level: 'participating' });
     await json(
       await call(
@@ -380,7 +392,9 @@ describe('fan-out and email', () => {
     expect((await inbox(reader)).notifications).toMatchObject([
       { reason: 'work_claimed', event: 'work_item' },
     ]);
-    expect((await inbox(owner)).notifications).toMatchObject([{ reason: 'work_claimed' }]);
+    expect((await inbox(owner)).notifications).toMatchObject([
+      { reason: 'work_claimed' },
+    ]);
   });
 });
 
@@ -401,29 +415,39 @@ describe('inbox API', () => {
     );
     expect(read.notification.unread).toBe(false);
     expect((await inbox(reader)).unread_count).toBe(2);
-    await json(await call('PATCH', `/api/v1/notifications/${id}`, { done: true }, reader));
+    await json(
+      await call('PATCH', `/api/v1/notifications/${id}`, { done: true }, reader),
+    );
     expect((await inbox(reader)).notifications).toHaveLength(2);
     expect((await inbox(reader, '?state=done')).notifications).toHaveLength(1);
     // someone else's notification is not found
     expect(
-      (await call('PATCH', `/api/v1/notifications/${id}`, { read: true }, stranger)).status,
+      (await call('PATCH', `/api/v1/notifications/${id}`, { read: true }, stranger))
+        .status,
     ).toBe(404);
     await json(await call('POST', '/api/v1/notifications/read', undefined, reader));
     expect((await inbox(reader)).unread_count).toBe(0);
-    expect((await call('PATCH', `/api/v1/notifications/${id}`, {}, reader)).status).toBe(400);
+    expect((await call('PATCH', `/api/v1/notifications/${id}`, {}, reader)).status).toBe(
+      400,
+    );
 
     // access revoked: the rows stay but are hidden
     await run(testEnv, 'DELETE FROM repo_members WHERE user_id = ?', [reader.userId]);
     expect(await inbox(reader)).toMatchObject({ notifications: [], unread_count: 0 });
     expect(
-      (await call('GET', '/api/v1/notifications?repo=team/project', undefined, reader)).status,
+      (await call('GET', '/api/v1/notifications?repo=team/project', undefined, reader))
+        .status,
     ).toBe(404);
   });
 
   it('refuses anonymous callers and stores per-user settings', async () => {
-    expect((await call('GET', '/api/v1/notifications', undefined, null)).status).toBe(401);
+    expect((await call('GET', '/api/v1/notifications', undefined, null)).status).toBe(
+      401,
+    );
     expect(
-      await json(await call('GET', '/api/v1/notifications/settings', undefined, reviewer)),
+      await json(
+        await call('GET', '/api/v1/notifications/settings', undefined, reviewer),
+      ),
     ).toMatchObject({
       settings: { email: 'instant', digest_hour: 7, skip_weekends: false },
       email_address: 'reviewer@example.com',
@@ -439,11 +463,13 @@ describe('inbox API', () => {
       ),
     );
     expect(put.settings).toMatchObject({ email: 'digest', skip_weekends: true });
-    expect(put.settings.reasons).toMatchObject({ mention: false, review_requested: true });
+    expect(put.settings.reasons).toMatchObject({
+      mention: false,
+      review_requested: true,
+    });
     expect(
-      (
-        await call('PUT', '/api/v1/notifications/settings', { digest_hour: 24 }, reviewer)
-      ).status,
+      (await call('PUT', '/api/v1/notifications/settings', { digest_hour: 24 }, reviewer))
+        .status,
     ).toBe(400);
     // a disabled reason makes no notification; digest mode sends no instant email
     await openIssue('Mention', '@reviewer');
@@ -666,9 +692,11 @@ describe('unsubscribe links', () => {
 
     const n = await openIssue('Thread');
     await drain();
-    const issue = await q1<{ id: number }>(testEnv, 'SELECT id FROM issues WHERE number = ?', [
-      n,
-    ]);
+    const issue = await q1<{ id: number }>(
+      testEnv,
+      'SELECT id FROM issues WHERE number = ?',
+      [n],
+    );
     const mute = await signUnsubscribe(e, `user:${owner.userId}`, `issue:${issue!.id}`);
     expect(
       (

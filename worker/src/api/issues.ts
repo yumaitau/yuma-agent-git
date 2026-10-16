@@ -875,7 +875,8 @@ issuesRoutes.put(`${base}/issues/:number/assignees`, async (c) => {
     const { assignees } = parse(assigneesInput, await readJsonBody(c));
     const added = await setAssignees(c, loaded.repo, issue, assignees);
     const [hydrated] = await hydrateIssues(c.env, [issue]);
-    if (added.length) await emitIssue(c, loaded.repo, 'assigned', hydrated!, { assignees: added });
+    if (added.length)
+      await emitIssue(c, loaded.repo, 'assigned', hydrated!, { assignees: added });
     return c.json({ issue: hydrated });
   } catch (err) {
     return errorResponse(c, err);

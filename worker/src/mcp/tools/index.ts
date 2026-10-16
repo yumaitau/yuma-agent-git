@@ -546,7 +546,8 @@ const SPECS: ToolSpec[] = [
     name: 'notification_update',
     title: 'Mark notification',
     route: 'PATCH /api/v1/notifications/:id',
-    description: 'Mark one of your notifications read or unread, done or back in the inbox.',
+    description:
+      'Mark one of your notifications read or unread, done or back in the inbox.',
     scope: 'contents:read',
     idempotent: true,
   },

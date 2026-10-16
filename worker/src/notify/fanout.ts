@@ -79,7 +79,10 @@ export async function loadSettings(env: Env, principal: string): Promise<Setting
     email: s.email,
     digest_hour: s.digest_hour,
     skip_weekends: s.skip_weekends === 1,
-    disabled_reasons: z.array(z.enum(REASONS)).catch([]).parse(JSON.parse(s.disabled_reasons)),
+    disabled_reasons: z
+      .array(z.enum(REASONS))
+      .catch([])
+      .parse(JSON.parse(s.disabled_reasons)),
   };
 }
 
@@ -106,7 +109,9 @@ export async function canSee(
   if (!(await can(env, repo, who, perm))) return false;
   if (!WHOLE.has(subjectType)) return true;
   const decider = await pathDecider(env, repo, who);
-  return restrictingDecision(decider, perm === 'read' ? ['read'] : ['read', 'write']) === null;
+  return (
+    restrictingDecision(decider, perm === 'read' ? ['read'] : ['read', 'write']) === null
+  );
 }
 
 /** A recipient key as a principal for the visibility check; agents are checked by owner. */
@@ -172,7 +177,9 @@ const MENTION = /(?:^|[^\w@/.`-])@([A-Za-z0-9][A-Za-z0-9-]{0,38})/g;
 async function mentioned(env: Env, text: string | null | undefined): Promise<string[]> {
   if (!text) return [];
   const prose = text.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ');
-  const logins = [...new Set([...prose.matchAll(MENTION)].map((m) => m[1]!.toLowerCase()))];
+  const logins = [
+    ...new Set([...prose.matchAll(MENTION)].map((m) => m[1]!.toLowerCase())),
+  ];
   if (logins.length === 0) return [];
   const rows = await q<{ id: string }>(
     env,
@@ -245,7 +252,11 @@ function issueSubject(
 }
 
 /** Who hears about `event`, or null when it notifies nobody. */
-async function planFor(env: Env, repo: RepoRecord, event: ForgeEvent): Promise<Plan | null> {
+async function planFor(
+  env: Env,
+  repo: RepoRecord,
+  event: ForgeEvent,
+): Promise<Plan | null> {
   const d = event.data;
   const self = senderKey(event);
   const plan = (subject: Subject): Plan => ({
@@ -264,7 +275,8 @@ async function planFor(env: Env, repo: RepoRecord, event: ForgeEvent): Promise<P
       if (action === 'opened') {
         // the author, and the agent that opened it, follow it (#57 agents wake on CI)
         p.join.set(`user:${pull.author_id}`, 'author');
-        if (event.sender.kind === 'agent') p.join.set(`agent:${event.sender.id}`, 'author');
+        if (event.sender.kind === 'agent')
+          p.join.set(`agent:${event.sender.id}`, 'author');
         for (const m of await mentioned(env, pull.body)) involve(p, m, 'mention');
         p.watchers = true;
       } else if (action === 'review_requested') {
@@ -280,7 +292,10 @@ async function planFor(env: Env, repo: RepoRecord, event: ForgeEvent): Promise<P
     }
     case 'pull_request_review':
     case 'pull_request_review_thread': {
-      if (event.event === 'pull_request_review_thread' && !['created', 'replied'].includes(action))
+      if (
+        event.event === 'pull_request_review_thread' &&
+        !['created', 'replied'].includes(action)
+      )
         return null;
       const p = plan(pullSubject(repo, pullSchema.parse(d['pull_request'])));
       const text =
@@ -337,7 +352,8 @@ async function planFor(env: Env, repo: RepoRecord, event: ForgeEvent): Promise<P
       const ci = z
         .looseObject({ id: z.string(), state: z.string(), ref: z.string().nullable() })
         .parse(d['ci_run']);
-      if (action !== 'completed' || !['failed', 'timed_out'].includes(ci.state)) return null;
+      if (action !== 'completed' || !['failed', 'timed_out'].includes(ci.state))
+        return null;
       const row = await q1<{ requested_by: string; context: string | null }>(
         env,
         'SELECT requested_by, context FROM ci_runs WHERE id = ?',
@@ -371,7 +387,9 @@ async function planFor(env: Env, repo: RepoRecord, event: ForgeEvent): Promise<P
     }
     case 'secret_scanning_alert': {
       if (action !== 'created') return null;
-      const alert = z.looseObject({ id: z.number(), detector: z.string() }).parse(d['alert']);
+      const alert = z
+        .looseObject({ id: z.number(), detector: z.string() })
+        .parse(d['alert']);
       const p = plan({
         type: 'secret_alert',
         id: String(alert.id),
@@ -428,7 +446,8 @@ export async function notifyEvent(env: Env, event: ForgeEvent): Promise<void> {
   const { subject } = plan;
   const seen = new Map<string, boolean>();
   const visible = async (key: string): Promise<boolean> => {
-    if (!seen.has(key)) seen.set(key, await recipientCanSee(env, repo, key, subject.type));
+    if (!seen.has(key))
+      seen.set(key, await recipientCanSee(env, repo, key, subject.type));
     return seen.get(key)!;
   };
   const now = Date.now();
@@ -474,7 +493,9 @@ export async function notifyEvent(env: Env, event: ForgeEvent): Promise<void> {
   for (const [key, reasons] of plan.targets) {
     if (key === plan.self || silenced.has(key) || !(await visible(key))) continue;
     const settings = await loadSettings(env, key);
-    const reason = REASONS.find((r) => reasons.has(r) && !settings.disabled_reasons.includes(r));
+    const reason = REASONS.find(
+      (r) => reasons.has(r) && !settings.disabled_reasons.includes(r),
+    );
     if (!reason) continue;
     await run(
       env,
@@ -545,7 +566,9 @@ async function actorName(env: Env, key: string | null): Promise<string> {
   const [kind, id] = (key ?? '').split(':', 2);
   const row =
     kind === 'user'
-      ? await q1<{ name: string }>(env, 'SELECT login AS name FROM users WHERE id = ?', [id])
+      ? await q1<{ name: string }>(env, 'SELECT login AS name FROM users WHERE id = ?', [
+          id,
+        ])
       : kind === 'agent'
         ? await q1<{ name: string }>(env, 'SELECT name FROM agents WHERE id = ?', [id])
         : null;

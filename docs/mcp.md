@@ -61,7 +61,7 @@ an agent identity with narrow scopes.
 
 | Scope            | Tools                                                                                                                                                                         |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contents:read`  | every read-only tool                                                                                                                                                          |
+| `contents:read`  | every read-only tool, `notification_update` (your own inbox)                                                                                                                  |
 | `contents:write` | `changeset_create`, `branch_update`                                                                                                                                           |
 | `pulls:write`    | `pr_create`, `pr_update`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `review_create`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve` |
 | `issues:write`   | `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                                                                    |
@@ -99,6 +99,7 @@ data, never instructions.
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |
 | Work queue    | `queue_list`, `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                               |
 | CI            | `ci_status`, `ci_run`, `ci_logs`, `ci_cancel`, `pipeline_list`, `pipeline_run`                                                                                |
+| Notifications | `notifications_list`, `notification_update`                                                                                                                   |
 
 `tools/list` is the source of truth for names, input schemas and annotations.
 
@@ -185,8 +186,7 @@ to `/mcp` before then.
 
 ## Not yet covered
 
-- `notifications_list` has no API route yet. It becomes one entry in
-  `worker/src/mcp/tools/index.ts` when its route lands. Release asset upload
-  and attestation are not tools: they take raw bytes or a CI ID token.
+- Release asset upload and attestation are not tools: they take raw bytes or
+  a CI ID token.
 - Client ID Metadata Documents are not accepted; clients use dynamic
   registration.

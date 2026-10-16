@@ -159,7 +159,8 @@ notificationsRoutes.get('/notifications', async (c) => {
       unreadParams,
     );
     let unreadCount = 0;
-    for (const u of unread) if (await vis.can(u.repo_id, u.subject_type)) unreadCount += u.n;
+    for (const u of unread)
+      if (await vis.can(u.repo_id, u.subject_type)) unreadCount += u.n;
     return c.json({
       notifications: shown.map((n) => view(n)),
       names: await principalNames(
@@ -221,11 +222,18 @@ notificationsRoutes.patch('/notifications/:id', async (c) => {
          read_at = CASE WHEN ?1 IS NULL THEN read_at WHEN ?1 = 1 THEN COALESCE(read_at, ?3) ELSE NULL END,
          done_at = CASE WHEN ?2 IS NULL THEN done_at WHEN ?2 = 1 THEN COALESCE(done_at, ?3) ELSE NULL END
        WHERE id = ?4`,
-      [read === undefined ? null : read ? 1 : 0, done === undefined ? null : done ? 1 : 0, now, row.id],
+      [
+        read === undefined ? null : read ? 1 : 0,
+        done === undefined ? null : done ? 1 : 0,
+        now,
+        row.id,
+      ],
     );
-    const after = (await q1<NotificationRow>(c.env, 'SELECT * FROM notifications WHERE id = ?', [
-      row.id,
-    ]))!;
+    const after = (await q1<NotificationRow>(
+      c.env,
+      'SELECT * FROM notifications WHERE id = ?',
+      [row.id],
+    ))!;
     const repo = (await getRepo(c.env, row.repo_id))!;
     return c.json({ notification: view({ ...after, slug: repo.slug }) });
   } catch (err) {
@@ -334,18 +342,20 @@ notificationsRoutes.put('/notifications/settings', async (c) => {
 export const threadSubscriptionInput = z.object({
   state: z
     .enum(['subscribed', 'muted', 'none'])
-    .describe('`muted` stops every update for the thread; `none` drops back to the default'),
+    .describe(
+      '`muted` stops every update for the thread; `none` drops back to the default',
+    ),
 });
 type ThreadState = z.infer<typeof threadSubscriptionInput>['state'];
 
-/** The thread for a subscription route, after the repo guard pulls and issues need. */
+type Guarded = Awaited<ReturnType<typeof loadReadableRepo>>;
+
+/** The thread a subscription route names, once its repo guard passed. */
 async function loadThread(
   c: Context<AppEnv>,
+  loaded: Guarded,
   kind: 'pull' | 'issue',
 ): Promise<{ type: 'pull' | 'issue'; id: string } | Response> {
-  const slug = c.req.param('repo')!;
-  const loaded =
-    kind === 'pull' ? await loadWholeRepo(c, 'read', slug) : await loadReadableRepo(c, slug);
   if (!loaded.ok) return loaded.response;
   const raw = kind === 'pull' ? c.req.param('id') : c.req.param('number');
   const n = z.coerce.number().int().positive().max(999_999_999).safeParse(raw);
@@ -381,49 +391,69 @@ async function threadState(
     : { state: 'subscribed', reason: row.reason };
 }
 
-for (const [kind, path] of [
-  ['pull', '/repos/:repo{.+}/pulls/:id/subscription'],
-  ['issue', '/repos/:repo{.+}/issues/:number/subscription'],
-] as const) {
-  notificationsRoutes.get(path, async (c) => {
-    try {
-      const who = callerOf(c);
-      const thread = await loadThread(c, kind);
-      if (thread instanceof Response) return thread;
-      return c.json(await threadState(c, who, thread));
-    } catch (err) {
-      return errorResponse(c, err);
-    }
-  });
-  notificationsRoutes.put(path, async (c) => {
-    try {
-      const who = callerOf(c);
-      const thread = await loadThread(c, kind);
-      if (thread instanceof Response) return thread;
-      const { state } = parse(threadSubscriptionInput, await readJsonBody(c));
-      const key = inboxOf(who);
-      if (state === 'none')
-        await run(
-          c.env,
-          'DELETE FROM subscriptions WHERE principal = ? AND subject_type = ? AND subject_id = ?',
-          [key, thread.type, thread.id],
-        );
-      else
-        await run(
-          c.env,
-          // subscribing keeps a participation reason (author, comment, ...); a mute replaces it
-          `INSERT INTO subscriptions (principal, subject_type, subject_id, reason, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5)
-           ON CONFLICT (principal, subject_type, subject_id) DO UPDATE SET reason = ?4
-             WHERE ?4 = 'muted' OR subscriptions.reason = 'muted'`,
-          [key, thread.type, thread.id, state === 'muted' ? 'muted' : 'manual', Date.now()],
-        );
-      return c.json(await threadState(c, who, thread));
-    } catch (err) {
-      return errorResponse(c, err);
-    }
-  });
+async function getThread(
+  c: Context<AppEnv>,
+  loaded: Guarded,
+  kind: 'pull' | 'issue',
+): Promise<Response> {
+  try {
+    const who = callerOf(c);
+    const thread = await loadThread(c, loaded, kind);
+    if (thread instanceof Response) return thread;
+    return c.json(await threadState(c, who, thread));
+  } catch (err) {
+    return errorResponse(c, err);
+  }
 }
+
+async function putThread(
+  c: Context<AppEnv>,
+  loaded: Guarded,
+  kind: 'pull' | 'issue',
+): Promise<Response> {
+  try {
+    const who = callerOf(c);
+    const thread = await loadThread(c, loaded, kind);
+    if (thread instanceof Response) return thread;
+    const { state } = parse(threadSubscriptionInput, await readJsonBody(c));
+    const key = inboxOf(who);
+    if (state === 'none')
+      await run(
+        c.env,
+        'DELETE FROM subscriptions WHERE principal = ? AND subject_type = ? AND subject_id = ?',
+        [key, thread.type, thread.id],
+      );
+    else
+      await run(
+        c.env,
+        // subscribing keeps a participation reason (author, comment, ...); a mute replaces it
+        `INSERT INTO subscriptions (principal, subject_type, subject_id, reason, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (principal, subject_type, subject_id) DO UPDATE SET reason = ?4
+           WHERE ?4 = 'muted' OR subscriptions.reason = 'muted'`,
+        [key, thread.type, thread.id, state === 'muted' ? 'muted' : 'manual', Date.now()],
+      );
+    return c.json(await threadState(c, who, thread));
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+}
+
+// pulls show code, so they need the whole repository as the pull routes do
+const PULL_THREAD = '/repos/:repo{.+}/pulls/:id/subscription';
+const ISSUE_THREAD = '/repos/:repo{.+}/issues/:number/subscription';
+notificationsRoutes.get(PULL_THREAD, async (c) =>
+  getThread(c, await loadWholeRepo(c, 'read', c.req.param('repo')), 'pull'),
+);
+notificationsRoutes.put(PULL_THREAD, async (c) =>
+  putThread(c, await loadWholeRepo(c, 'read', c.req.param('repo')), 'pull'),
+);
+notificationsRoutes.get(ISSUE_THREAD, async (c) =>
+  getThread(c, await loadReadableRepo(c, c.req.param('repo')), 'issue'),
+);
+notificationsRoutes.put(ISSUE_THREAD, async (c) =>
+  putThread(c, await loadReadableRepo(c, c.req.param('repo')), 'issue'),
+);
 
 export const watchInput = z.object({
   level: z
@@ -487,7 +517,12 @@ notificationsRoutes.put('/repos/:repo{.+}/subscription', async (c) => {
 
 export const unsubscribeRoutes = new Hono<AppEnv>();
 
-function page(c: Context<AppEnv>, status: 200 | 400, title: string, body: string): Response {
+function page(
+  c: Context<AppEnv>,
+  status: 200 | 400,
+  title: string,
+  body: string,
+): Response {
   return c.html(
     `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
@@ -503,14 +538,14 @@ function page(c: Context<AppEnv>, status: 200 | 400, title: string, body: string
   );
 }
 
-const INVALID = '<p>This link is not valid. Change your notification settings in the forge.</p>';
+const INVALID =
+  '<p>This link is not valid. Change your notification settings in the forge.</p>';
 
 unsubscribeRoutes.get('/notifications/unsubscribe', async (c) => {
   const token = c.req.query('token') ?? '';
   const request = await verifyUnsubscribe(c.env, token);
   if (!request) return page(c, 400, 'Link not valid', INVALID);
-  const what =
-    request.s === 'email' ? 'Stop all notification email' : 'Mute this thread';
+  const what = request.s === 'email' ? 'Stop all notification email' : 'Mute this thread';
   return page(
     c,
     200,
@@ -531,7 +566,12 @@ unsubscribeRoutes.post('/notifications/unsubscribe', async (c) => {
        ON CONFLICT (principal) DO UPDATE SET email = 'off', updated_at = excluded.updated_at`,
       [request.p, JSON.stringify(DEFAULT_SETTINGS.disabled_reasons), now],
     );
-    return page(c, 200, 'Unsubscribed', '<p>You will get no more notification email.</p>');
+    return page(
+      c,
+      200,
+      'Unsubscribed',
+      '<p>You will get no more notification email.</p>',
+    );
   }
   const [type, id] = request.s.split(':', 2) as [string, string];
   await run(
