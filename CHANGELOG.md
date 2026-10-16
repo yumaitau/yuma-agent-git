@@ -23,6 +23,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Dependency alerts and code scanning (#67). Lockfiles (npm, pnpm, yarn,
+  requirements.txt, poetry, go.sum, Cargo, Composer, Gradle, Swift
+  Package.resolved) become a `dependencies` derived graph; the default branch
+  is matched against OSV advisories (CC-BY 4.0, attributed on every alert)
+  loaded from an offline snapshot (`POST /api/v1/admin/advisories`, for
+  `SECURITY_ADMIN_USER_IDS`) or synced hourly from api.osv.dev
+  (`OSV_SYNC=off` stops it). Alerts open, fix and reopen as lockfiles change;
+  `POST …/dependency-alerts/:id/work` files an update work item (risk `low` for a patch bump) for
+  an agent. SARIF 2.1.0 uploads (`POST …/code-scanning/sarif`, agent scope
+  `security_events:write`, or CI with `permissions.security_events: write`)
+  raise code scanning alerts deduplicated by fingerprint, with fixed and
+  reopened states. Pull requests show new findings (`…/pulls/:id/security`),
+  and a `security_alerts` ruleset rule blocks merges that add alerts at or
+  above a severity. Dashboard page, MCP tools and `dependency_alert` and
+  `code_scanning_alert` webhooks.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

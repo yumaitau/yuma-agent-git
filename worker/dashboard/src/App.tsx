@@ -12,6 +12,7 @@ import { MergeQueueView } from './views/MergeQueue';
 import { ImportView } from './views/Import';
 import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
+import { SecurityAlertsView } from './views/SecurityAlerts';
 import { SearchView } from './views/Search';
 import { ReleasesView } from './views/Releases';
 import { MirrorsView } from './views/Mirrors';
@@ -83,6 +84,10 @@ function AppRoutes(): ReactElement {
                 <Route
                   path="/r/:owner/:name/secret-scanning"
                   element={<SecretScanningView />}
+                />
+                <Route
+                  path="/r/:owner/:name/security-alerts"
+                  element={<SecurityAlertsView />}
                 />
                 <Route path="/r/:owner/:name/releases" element={<ReleasesView />} />
                 <Route path="/r/:owner/:name/mirrors" element={<MirrorsView />} />
