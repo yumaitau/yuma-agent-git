@@ -182,7 +182,7 @@ async function changesetFacts(env: Env, repoId: string, ids: string[]) {
     }>(
       env,
       `SELECT s.id, s.model, s.harness, s.tools, s.transcript_sha256
-         FROM changeset_sessions l JOIN sessions s ON s.id = l.session_id
+         FROM changeset_sessions l JOIN agent_sessions s ON s.id = l.session_id
         WHERE l.repo_id = ? AND l.cs_id = ? ORDER BY s.id`,
       [repoId, id],
     );

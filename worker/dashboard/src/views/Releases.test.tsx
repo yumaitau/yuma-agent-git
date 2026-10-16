@@ -38,6 +38,7 @@ const release: Release = {
       size: 2048,
       sha256: sha,
       uploaded_by: 'user:u1',
+      run_id: null,
       created_at: Date.now(),
     },
   ],

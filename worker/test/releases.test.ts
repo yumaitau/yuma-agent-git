@@ -114,13 +114,22 @@ async function createRelease(body: Record<string, unknown>, as: Actor = owner) {
   ).release;
 }
 
-async function upload(releaseId: string, name: string, text: string, as: Actor = owner) {
+async function upload(
+  releaseId: string,
+  name: string,
+  text: string,
+  as: Actor = owner,
+  idToken?: string,
+) {
   return call(
     as,
     'POST',
     repoPath(`/releases/${releaseId}/assets?name=${name}`),
     new TextEncoder().encode(text),
-    { 'content-type': 'application/gzip' },
+    {
+      'content-type': 'application/gzip',
+      ...(idToken ? { 'x-yag-id-token': idToken } : {}),
+    },
   );
 }
 
@@ -501,9 +510,15 @@ describe('build provenance', () => {
 
   it('signs SLSA provenance from a CI ID token that verifies online and offline', async () => {
     const release = await createRelease({ tag: 'v1.1.0' });
-    await json(await upload(release.id, 'app.tar.gz', 'bits'), 201);
-    await json(await upload(release.id, 'app.zip', 'zip bits'), 201);
     const token = await ciToken('v1.1.0');
+    const { asset } = await json<{ asset: { run_id: string | null } }>(
+      await upload(release.id, 'app.tar.gz', 'bits', owner, token),
+      201,
+    );
+    expect(asset.run_id).toEqual(expect.any(String));
+    await json(await upload(release.id, 'app.zip', 'zip bits', owner, token), 201);
+    // a person's upload sits beside the build's, and is left out by default
+    await json(await upload(release.id, 'notes.txt', 'hand made'), 201);
     const { attestation } = await json<{
       attestation: { id: string; envelope: unknown; subjects: unknown[] };
     }>(
@@ -568,7 +583,9 @@ describe('build provenance', () => {
       await call(reader, 'GET', repoPath(`/releases/${release.id}`)),
     );
     expect(full.attestations).toHaveLength(1);
-    expect(uncovered(full.assets, offline.ok ? [offline.statement] : [])).toEqual([]);
+    expect(uncovered(full.assets, offline.ok ? [offline.statement] : [])).toEqual([
+      'notes.txt',
+    ]);
     expect(
       uncovered(
         [{ name: 'other.bin', sha256: digest }],
@@ -580,6 +597,46 @@ describe('build provenance', () => {
       "SELECT target FROM audit_events WHERE action = 'release.attest'",
     );
     expect(JSON.parse(audit!.target)).toMatchObject({ release_id: release.id });
+  });
+
+  it('attests only assets its own run uploaded (#58)', async () => {
+    const release = await createRelease({ tag: 'v1.1.0' });
+    const build = await ciToken('v1.1.0');
+    await json(await upload(release.id, 'app.tar.gz', 'bits', owner, build), 201);
+    await json(await upload(release.id, 'evil.tar.gz', 'swapped'), 201);
+    const attest = (id_token: string, assets?: string[]) =>
+      call(writer, 'POST', repoPath(`/releases/${release.id}/attestations`), {
+        id_token,
+        assets,
+      });
+    const refused = await json<{ error: { code: string; assets: string[] } }>(
+      await attest(build, ['app.tar.gz', 'evil.tar.gz']),
+      409,
+    );
+    expect(refused.error).toMatchObject({
+      code: 'asset_not_from_run',
+      assets: ['evil.tar.gz'],
+    });
+    // another run of the same source did not upload anything here
+    const other = await ciToken('v1.1.0');
+    expect(
+      (await json<{ error: { code: string } }>(await attest(other), 400)).error.code,
+    ).toBe('no_assets');
+    const { attestation } = await json<{ attestation: { subjects: { name: string }[] } }>(
+      await attest(build),
+      201,
+    );
+    expect(attestation.subjects.map((s) => s.name)).toEqual(['app.tar.gz']);
+    // a forged ID token on upload is refused, not silently ignored
+    const [h, p] = build.split('.');
+    expect(
+      (
+        await json<{ error: { code: string } }>(
+          await upload(release.id, 'x.bin', 'x', owner, `${h}.${p}.AAAA`),
+          400,
+        )
+      ).error.code,
+    ).toBe('invalid_id_token');
   });
 
   it('refuses tokens for another audience, forged tokens and other source', async () => {

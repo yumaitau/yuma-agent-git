@@ -17,9 +17,9 @@ CREATE TABLE provenance (
 CREATE INDEX provenance_new_cs ON provenance(repo_id, new_cs);
 CREATE INDEX provenance_ref ON provenance(repo_id, ref, id);
 
--- Agent sessions: who ran, with which model and harness, and a redacted
+-- Agent sessions (`sessions` holds sign-ins): who ran, with which model and harness, and a redacted
 -- transcript in R2 (sessions/<repo_id>/<id>.jsonl) readable by repo writers.
-CREATE TABLE sessions (
+CREATE TABLE agent_sessions (
   id TEXT PRIMARY KEY,                 -- ulid
   repo_id TEXT NOT NULL,
   agent_id TEXT,
@@ -37,7 +37,7 @@ CREATE TABLE sessions (
   created_by TEXT NOT NULL,            -- '<actor kind>:<id>'
   created_at INTEGER NOT NULL
 );
-CREATE INDEX sessions_repo ON sessions(repo_id, id);
+CREATE INDEX agent_sessions_repo ON agent_sessions(repo_id, id);
 
 CREATE TABLE changeset_sessions (
   repo_id TEXT NOT NULL,
