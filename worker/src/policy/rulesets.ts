@@ -10,6 +10,7 @@ import type { CiPolicy } from '../ci/config';
 import type { Change } from '../core/commit';
 import { statBlob } from '../core/blobs';
 import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
+import type { Risk } from '../../shared/work';
 
 /**
  * Rulesets (issue #41): named rules on branches, tags and pushes, owned by a
@@ -32,6 +33,7 @@ export const TARGETS = ['branch', 'tag', 'push'] as const;
 export type Target = (typeof TARGETS)[number];
 export type Enforcement = 'active' | 'evaluate' | 'disabled';
 
+const globSchema = z.string().min(1).max(256);
 const approvalsRule = z.object({
   type: z.literal('pull_request'),
   required_approvals: z.number().int().min(0).max(10),
@@ -66,9 +68,25 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('required_signatures') }),
   // updates carry provenance from a reviewed pull request, signed by the forge (#58)
   z.object({ type: z.literal('required_provenance') }),
+  // every required agent reviewer (#60) passed this revision
+  z.object({
+    type: z.literal('required_agent_review'),
+    /** Raises each reviewer's own `min_confidence` to at least this. */
+    min_confidence: z.number().min(0).max(1).optional(),
+  }),
+  // people (never agents) who must approve, by the change's risk (#60)
+  z.object({
+    type: z.literal('human_approvals_by_risk'),
+    low: z.number().int().min(0).max(10).default(0),
+    medium: z.number().int().min(0).max(10).default(1),
+    high: z.number().int().min(0).max(10).default(2),
+    /** One of the people approving a high risk change owns a changed file. */
+    require_code_owner_for_high: z.boolean().default(true),
+    /** Paths that make a change high risk; default `DEFAULT_SENSITIVE_PATHS`. */
+    sensitive_paths: z.array(globSchema).min(1).max(100).optional(),
+  }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
-const globSchema = z.string().min(1).max(256);
 const pushRuleSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('max_file_size'), max_bytes: z.number().int().min(1) }),
   z.object({
@@ -323,6 +341,23 @@ export interface RefFacts {
      * too large to list them all. Absent when no ruleset asks for owners.
      */
     codeOwners?: { unapproved: readonly string[]; truncated: boolean };
+    /**
+     * Required agent reviewers (#60) and their verdict on this revision.
+     * Absent when no ruleset asks for agent review.
+     */
+    agentReview?: {
+      reviewers: readonly {
+        id: string;
+        passed: boolean;
+        confidence: number | null;
+        min_confidence: number;
+      }[];
+    };
+    /**
+     * The change's risk (#60), people who approved it and whether one owns a
+     * changed file. Absent when no ruleset gates on risk.
+     */
+    risk?: { level: Risk; humanApprovals: number; codeOwnerApproved: boolean };
   };
   /** The merge queue (#43) makes this move. */
   queue?: boolean;
@@ -441,6 +476,37 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
       const more = files.length > 3 ? ` and ${files.length - 3} more` : '';
       return `Code owner approval required for ${shown}${more}.`;
     }
+    case 'required_agent_review': {
+      if (!ref.merge) return null;
+      const review = ref.merge.agentReview;
+      if (!review) return 'Agent review could not be checked for this revision.';
+      if (review.reviewers.length === 0)
+        return 'No required agent reviewer is registered for this repository.';
+      const floor = rule.min_confidence ?? 0;
+      const waiting = review.reviewers
+        .filter(
+          (r) => !r.passed || (r.confidence ?? 0) < Math.max(r.min_confidence, floor),
+        )
+        .map((r) => r.id);
+      if (waiting.length === 0) return null;
+      return `Waiting for a passing agent review from ${waiting.slice(0, 3).join(', ')}${waiting.length > 3 ? ` and ${waiting.length - 3} more` : ''}.`;
+    }
+    case 'human_approvals_by_risk': {
+      if (!ref.merge) return null;
+      const risk = ref.merge.risk;
+      if (!risk) return 'The risk of this change could not be worked out.';
+      const need = rule[risk.level];
+      const level = `${risk.level[0]!.toUpperCase()}${risk.level.slice(1)}`;
+      if (risk.humanApprovals < need)
+        return `${level} risk change: ${need} human approval${need === 1 ? '' : 's'} required (${risk.humanApprovals} so far).`;
+      if (
+        risk.level === 'high' &&
+        rule.require_code_owner_for_high &&
+        !risk.codeOwnerApproved
+      )
+        return 'A code owner must approve this high risk change.';
+      return null;
+    }
     case 'merge_queue':
       return ref.kind === 'update' && !ref.queue
         ? `${name} only changes through the merge queue; add the pull request to the queue.`
@@ -513,6 +579,9 @@ export function evaluate(rulesets: readonly Ruleset[], input: EvalInput): Outcom
           out.requiredApprovals ?? 0,
           rule.required_approvals,
         );
+      // the risk rule says how many approvals it takes, so the default of one goes
+      if (enforcement === 'active' && rule.type === 'human_approvals_by_risk')
+        out.requiredApprovals = out.requiredApprovals ?? 0;
       if (enforcement === 'active' && rule.type === 'required_status_checks' && !bypass)
         out.requireChecks = true;
       if (

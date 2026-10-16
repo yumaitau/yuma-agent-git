@@ -8,6 +8,7 @@ import { budgetAlerts, budgetMicros, jobLimitError, poolFor } from './capacity';
 import { runnerInstance } from './spec';
 import { parseContext, type RunContext } from './context';
 import { emitEvent } from '../webhooks/events';
+import { recordCiUsage } from '../usage/record';
 
 export async function enqueueRun(
   env: Env,
@@ -136,6 +137,8 @@ export async function emitCiRun(
       },
     },
   });
+  // CI compute for cost accounting (#61), once per run
+  if (action === 'completed') await recordCiUsage(env, job, repo);
 }
 
 export interface Admission {

@@ -346,6 +346,33 @@ const SPECS: ToolSpec[] = [
     untrusted: true,
   },
   {
+    name: 'pr_agent_review',
+    title: 'Agent review of a pull request',
+    route: 'GET /api/v1/repos/:repo/pulls/:id/agent-review',
+    description:
+      'Agent review rounds, verdicts with findings, whether a person was asked, and the change risk. An author agent reads this to fix findings before pushing the next revision.',
+    scope: 'contents:read',
+    untrusted: true,
+    params: { id: pullNumber },
+  },
+  {
+    name: 'pr_agent_verdict',
+    title: 'Submit an agent review verdict',
+    route: 'POST /api/v1/repos/:repo/pulls/:id/agent-review',
+    description:
+      'As a registered agent reviewer, pass or fail the current revision (`head_cs` and `revision` from `pr_get`) with a confidence and findings; findings with a path and line become review threads.',
+    scope: 'pulls:write',
+    params: { id: pullNumber },
+  },
+  {
+    name: 'usage_report',
+    title: 'Report usage',
+    route: 'POST /api/v1/usage',
+    description:
+      'Record model tokens (input, output, cached) for work on a repo, against a ticket and pull request when known. Subscription models are recorded at zero dollars.',
+    scope: 'contents:write',
+  },
+  {
     name: 'pr_conflicts',
     title: 'Pull request conflicts',
     route: 'GET /api/v1/repos/:repo/pulls/:id/conflicts',

@@ -5,6 +5,7 @@ import { collaborationRoutes } from './collaboration';
 import { ciStorageRoutes } from './ci-storage';
 import { ciLimitsRoutes } from './ci-limits';
 import { agentsRoutes } from './agents';
+import { agentReviewRoutes } from './agentReview';
 import { auditRoutes } from './audit';
 import { ancestryRoutes } from './ancestry';
 import { blameRoutes } from './blame';
@@ -38,6 +39,7 @@ import { runnerAdminRoutes } from './runners';
 import { searchRoutes } from './search';
 import { secretsRoutes } from './secrets';
 import { secretScanningRoutes } from './secret-scanning';
+import { usageRoutes } from './usage';
 import { workRoutes } from './work';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
@@ -49,9 +51,11 @@ apiRouter.route('/', collaborationRoutes);
 apiRouter.route('/', ciStorageRoutes);
 apiRouter.route('/', ciLimitsRoutes);
 apiRouter.route('/', reviewsRoutes);
+apiRouter.route('/', agentReviewRoutes);
 apiRouter.route('/', mergeQueueRoutes);
 apiRouter.route('/', issuesRoutes);
 apiRouter.route('/', workRoutes);
+apiRouter.route('/', usageRoutes);
 apiRouter.route('/', hooksRoutes);
 apiRouter.route('/', searchRoutes);
 apiRouter.route('/', mirrorsRoutes);

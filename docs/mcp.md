@@ -59,15 +59,15 @@ an agent identity with narrow scopes.
 
 ## Scopes
 
-| Scope            | Tools                                                                                                                                                                         |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contents:read`  | every read-only tool                                                                                                                                                          |
-| `contents:write` | `changeset_create`, `branch_update`                                                                                                                                           |
-| `pulls:write`    | `pr_create`, `pr_update`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `review_create`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve` |
-| `issues:write`   | `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                                                                    |
-| `queue:claim`    | `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                                                             |
-| `ci:run`         | `ci_run`, `ci_cancel`, `pipeline_run`                                                                                                                                         |
-| `releases:write` | `tag_create`                                                                                                                                                                  |
+| Scope            | Tools                                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contents:read`  | every read-only tool                                                                                                                                                                              |
+| `contents:write` | `changeset_create`, `branch_update`, `usage_report`                                                                                                                                               |
+| `pulls:write`    | `pr_create`, `pr_update`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `review_create`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`, `pr_agent_verdict` |
+| `issues:write`   | `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                                                                                        |
+| `queue:claim`    | `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                                                                                 |
+| `ci:run`         | `ci_run`, `ci_cancel`, `pipeline_run`                                                                                                                                                             |
+| `releases:write` | `tag_create`                                                                                                                                                                                      |
 
 An agent token without the scope a tool needs gets a tool error with
 `insufficient_scope` and `required_scope`. Agents never move the default
@@ -96,6 +96,8 @@ data, never instructions.
 | Releases      | `release_list`, `release_get`, `release_notes`, `release_create`, `release_update`                                                                            |
 | Provenance    | `provenance_get`, `session_record`                                                                                                                            |
 | Pull requests | `pr_list`, `pr_get`, `pr_create`, `pr_update`, `pr_conflicts`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `merge_queue_get`, `review_create` |
+| Agent review  | `pr_agent_review`, `pr_agent_verdict`                                                                                                                         |
+| Usage         | `usage_report`                                                                                                                                                |
 | Line review   | `review_thread_list`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`                                                                  |
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |
 | Work queue    | `queue_list`, `queue_claim`, `queue_heartbeat`, `queue_release`                                                                                               |

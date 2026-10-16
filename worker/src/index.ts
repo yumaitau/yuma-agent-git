@@ -22,6 +22,7 @@ import { registryCleanup } from './registry/packages';
 import { mirrorQueue, scheduleMirrors } from './mirrors/sync';
 import type { MirrorMessage } from './mirrors/queue';
 import { backupTick, restoreTick } from './backup/backup';
+import { recordStorageUsage } from './usage/record';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -72,6 +73,11 @@ export default {
     await Promise.all([sweepArtifacts(env), sweepCaches(env)]).catch((err: unknown) =>
       console.warn('CI storage cleanup will be retried by the next sweep', err),
     );
+    // Usage accounting (#61): stored bytes per repo, once a day (tried hourly).
+    if (new Date().getUTCMinutes() === 0)
+      await recordStorageUsage(env).catch((err: unknown) =>
+        console.warn('Storage usage will be retried next hour', err),
+      );
     const expired = await q<{ id: string; log_key: string }>(
       env,
       'SELECT id, log_key FROM ci_runs WHERE log_key IS NOT NULL AND finished_at < ? LIMIT 50',

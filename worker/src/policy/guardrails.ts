@@ -21,6 +21,7 @@ import {
   type PolicyMatch,
 } from './engine';
 import { pauseFor, pauseMessage } from './pause';
+import { budgetStop } from '../usage/record';
 
 /**
  * Agent guardrails (issue #62): the kill switch, the org policy and human
@@ -70,6 +71,7 @@ export type Guard =
       outcome: 'deny' | 'require_approval';
       code:
         | 'agents_paused'
+        | 'budget_exceeded'
         | 'policy_unavailable'
         | 'policy_denied'
         | 'approval_rejected'
@@ -84,8 +86,9 @@ const approvalRowSchema = z.object({
 });
 
 /**
- * Judge one agent action. Allow for people; otherwise the kill switch, then
- * the policy; a held action becomes (or finds) an approval row for its exact
+ * Judge one agent action. Allow for people; otherwise the kill switch, a
+ * hard usage budget for work queue claims (#61), then the policy; a held
+ * action becomes (or finds) an approval row for its exact
  * payload, and that same payload passes once a human approves it.
  */
 export async function guardAgentAction(
@@ -106,6 +109,33 @@ export async function guardAgentAction(
       message: pauseMessage(pause),
       details: { paused_by: pause.paused_by_login ?? pause.paused_by },
     };
+  }
+  // usage budgets (#61): a hard limit stops the agent taking new work
+  if (input.action === 'queue.claim') {
+    const stop = await budgetStop(
+      env,
+      repo,
+      principal.kind === 'agent' ? principal.agentId : null,
+    );
+    if (stop) {
+      const { budget, used } = stop;
+      return {
+        outcome: 'deny',
+        code: 'budget_exceeded',
+        message: `the ${budget.scope} budget of ${budget.hard_limit} ${budget.metric} per ${budget.period} is used up (${used}); new claims wait for the next period`,
+        details: {
+          budget: {
+            id: budget.id,
+            scope: budget.scope,
+            scope_id: budget.scope_id,
+            metric: budget.metric,
+            period: budget.period,
+            hard_limit: budget.hard_limit,
+            used,
+          },
+        },
+      };
+    }
   }
   let version: number;
   let matches: PolicyMatch[];

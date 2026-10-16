@@ -57,6 +57,13 @@ import { fetchObjectsSchema } from './objects';
 import { createChangesetSchema } from './changesets';
 import { alertListQuery, updateAlertSchema } from './secret-scanning';
 import { queueListQuery } from './mergeQueue';
+import { reviewerInput, verdictInput } from '../reviews/agentLoop';
+import {
+  budgetInputSchema,
+  budgetQuery,
+  reportUsageSchema,
+  usageReportQuery,
+} from './usage';
 import { enqueueSchema } from '../queue/mergeQueue';
 import {
   approvalsQuery,
@@ -844,6 +851,24 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: updatePullSchema,
   },
   'GET /api/v1/repos/:repo/pulls/:id/codeowners': { id: 'getPullCodeowners' },
+  'GET /api/v1/repos/:repo/pulls/:id/agent-review': { id: 'getAgentReview' },
+  'POST /api/v1/repos/:repo/pulls/:id/agent-review': {
+    id: 'submitAgentVerdict',
+    body: verdictInput,
+  },
+  'GET /api/v1/repos/:repo/agent-reviewers': { id: 'listAgentReviewers' },
+  'PUT /api/v1/repos/:repo/agent-reviewers/:agent': {
+    id: 'setAgentReviewer',
+    body: reviewerInput,
+  },
+  'DELETE /api/v1/repos/:repo/agent-reviewers/:agent': { id: 'deleteAgentReviewer' },
+  'POST /api/v1/usage': { id: 'reportUsage', body: reportUsageSchema },
+  'GET /api/v1/repos/:repo/usage': { id: 'getRepoUsage', query: usageReportQuery },
+  'GET /api/v1/orgs/:org/usage': { id: 'getOrgUsage', query: usageReportQuery },
+  'GET /api/v1/agents/:id/usage': { id: 'getAgentUsage', query: usageReportQuery },
+  'GET /api/v1/usage/budgets': { id: 'listUsageBudgets', query: budgetQuery },
+  'PUT /api/v1/usage/budgets': { id: 'setUsageBudget', body: budgetInputSchema },
+  'DELETE /api/v1/usage/budgets/:id': { id: 'deleteUsageBudget' },
   'GET /api/v1/repos/:repo/pulls/:id/reviewers': { id: 'listReviewRequests' },
   'PUT /api/v1/repos/:repo/pulls/:id/reviewers': {
     id: 'setReviewRequests',

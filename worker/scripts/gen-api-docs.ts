@@ -390,6 +390,23 @@ const PURPOSES: Record<string, string> = {
     'Commit suggested changes onto the head',
   'GET /api/v1/repos/:repo/pulls/:id/codeowners':
     'Code owners of each changed file and whether one approved',
+  'GET /api/v1/repos/:repo/pulls/:id/agent-review':
+    'Agent review rounds, verdicts, escalation and change risk',
+  'POST /api/v1/repos/:repo/pulls/:id/agent-review':
+    "A registered agent reviewer's verdict on the current revision",
+  'GET /api/v1/repos/:repo/agent-reviewers': 'Agent reviewers registered for the repo',
+  'PUT /api/v1/repos/:repo/agent-reviewers/:agent':
+    'Register or change an agent reviewer',
+  'DELETE /api/v1/repos/:repo/agent-reviewers/:agent': 'Remove an agent reviewer',
+  'GET /api/v1/repos/:repo/usage':
+    'Token, CI and storage usage and cost for the repo (CSV too)',
+  'POST /api/v1/usage': 'Report model token usage for work on a repo',
+  'GET /api/v1/orgs/:org/usage':
+    'Token, CI and storage usage and cost for the org (CSV too)',
+  'GET /api/v1/agents/:id/usage': 'Usage and cost of one agent identity (CSV too)',
+  'GET /api/v1/usage/budgets': 'Budgets of an org or agent with use so far and alerts',
+  'PUT /api/v1/usage/budgets': 'Set an org or agent budget (soft alert, hard stop)',
+  'DELETE /api/v1/usage/budgets/:id': 'Remove a budget',
   'GET /api/v1/repos/:repo/pulls/:id/reviewers': 'Requested reviewers and their state',
   'PUT /api/v1/repos/:repo/pulls/:id/reviewers':
     'Request reviews from people, teams, agents',

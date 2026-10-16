@@ -36,6 +36,8 @@ import { agentKey, changeFacts, enforceAgentAction } from '../policy/guardrails'
 import { recordAgentProvenance } from '../auth/agents';
 import { enforceSecretScan } from '../security/secrets/scan';
 import { pullCodeowners } from './codeowners';
+import { agentReviewFacts } from './agentLoop';
+import { humanApprovals, pullRisk, sensitivePaths } from './risk';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
   authorKey,
@@ -225,11 +227,26 @@ async function checkMerge(
   const rulesets = await rulesetsFor(env, repo);
   const evalActor = await actorFor(env, repo, actor, rulesets);
   const unresolved = await unresolvedThreads(env, pull.id);
+  const rules = rulesets.flatMap((r) => r.rules);
+  const byRisk = rules.some((rule) => rule.type === 'human_approvals_by_risk');
   // owners are only worked out when some ruleset asks for them (#40)
-  const owned = rulesets.some((r) =>
-    r.rules.some((rule) => rule.type === 'require_code_owner_review'),
-  )
-    ? await pullCodeowners(env, repo, pull)
+  const owned =
+    byRisk || rules.some((rule) => rule.type === 'require_code_owner_review')
+      ? await pullCodeowners(env, repo, pull)
+      : null;
+  // risk and agent review (#60), likewise
+  const risk = byRisk
+    ? await Promise.all([
+        pullRisk(env, repo, pull, owned, sensitivePaths(rulesets)),
+        humanApprovals(env, repo, pull, owned),
+      ]).then(([{ level }, people]) => ({
+        level,
+        humanApprovals: people.count,
+        codeOwnerApproved: people.codeOwner,
+      }))
+    : null;
+  const agentReview = rules.some((rule) => rule.type === 'required_agent_review')
+    ? await agentReviewFacts(env, pull)
     : null;
   // a merge commit brings the pull request's own commits in; squash and
   // rebase write new ones, so only `merge` is checked for signatures (#58)
@@ -268,6 +285,8 @@ async function checkMerge(
               },
             }
           : {}),
+        ...(risk ? { risk } : {}),
+        ...(agentReview ? { agentReview } : {}),
       },
     },
   });

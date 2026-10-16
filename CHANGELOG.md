@@ -75,6 +75,28 @@ All notable changes to this project are documented here. The format follows
   Encrypted scheduled backups of D1 and R2 manifests to a separate bucket,
   a tested restore into a fresh environment, and repository export as a Git
   bundle plus metadata JSON (#70, docs/operations/backup-dr.md).
+
+- Agent review loops and risk gates (#60). Repos register agent reviewers
+  (`PUT /api/v1/repos/:repo/agent-reviewers/:agent`) that review every pull
+  request revision: the built-in reviewer runs through the agent runtime, other
+  agents get the `agent_review` webhook and answer with
+  `POST …/pulls/:id/agent-review` (MCP `pr_agent_verdict`). Findings on a line
+  become review threads. After three failing rounds a person is asked to review
+  and agents can no longer push revisions to that pull request. New branch
+  rules: `required_agent_review` and `human_approvals_by_risk` (low 0, medium
+  1, high 2 people including a code owner by default), with risk from changed
+  paths, size, sensitive directories, CODEOWNERS and the work items a pull
+  request closes. Agent approvals never count as a person's, and an agent
+  acting for the author cannot review or approve.
+- Cost and token accounting (#61). Every Workers AI call, reported external
+  usage (`POST /api/v1/usage`, MCP `usage_report`), finished CI run and a daily
+  storage reading becomes an append-only usage event, priced from a versioned
+  table (subscription models at zero dollars with full token counts) and rolled
+  up daily. Reports per repo, org and agent group by day, pull request, ticket,
+  task, agent or model, show cost per merged pull request and export CSV.
+  Org and agent budgets alert once per period at the soft limit and stop new
+  work queue claims at the hard limit (`budget_exceeded`), with the
+  `usage_budget` webhook event. Dashboard: repo and org Usage pages.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

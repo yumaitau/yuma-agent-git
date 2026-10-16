@@ -42,6 +42,7 @@ import { enforceAgentAction } from '../policy/guardrails';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
 import { requestCodeOwners } from '../reviews/codeowners';
+import { assertAgentMayIterate, requestAgentReviews } from '../reviews/agentLoop';
 import { requestPushMirrors } from '../mirrors/queue';
 import { sameNetwork } from '../core/network';
 
@@ -141,16 +142,18 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
     if (!(await getChangeset(c.env, loaded.repo.id, body.head_cs)))
       throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
     const number = await nextNumber(c.env, loaded.repo.id);
+    const author = c.get('principal')!;
     const result = await c.env.DB.prepare(
-      `INSERT INTO pull_requests (repo_id,number,title,body,author_id,base_ref,base_cs,head_cs,state,created_at,updated_at,head_repo_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO pull_requests (repo_id,number,title,body,author_id,author_agent_id,base_ref,base_cs,head_cs,state,created_at,updated_at,head_repo_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
         loaded.repo.id,
         number,
         body.title,
         body.body,
-        c.get('principal')!.userId,
+        author.userId,
+        author.kind === 'agent' ? author.agentId : null,
         loaded.repo.default_branch,
         ref.head,
         body.head_cs,
@@ -181,6 +184,13 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
     const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
     await linkReferences(c, loaded.repo, source, pull.body);
     await requestCodeOwners(c, loaded.repo, pull);
+    await requestAgentReviews(
+      c.env,
+      loaded.repo,
+      pull,
+      actorOf(c.get('principal')),
+      new URL(c.req.url).origin,
+    );
     const ci = await autoCheck(c, loaded.repo, pull);
     return c.json({ pull, ci }, 201);
   } catch (err) {
@@ -251,6 +261,13 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
       }
       const pull = await getPull(c.env, loaded.repo.id, Number(c.req.param('id')));
       const body = await readJsonBody(c);
+      // agent review loop (#60): once escalated, the author agent stops
+      if (
+        action === 'update-branch' ||
+        (action === 'update' &&
+          (body as { head_cs?: unknown } | null)?.head_cs !== undefined)
+      )
+        await assertAgentMayIterate(c.env, pull, c.get('principal'));
       if (action === 'update-branch') {
         // agent guardrails (#62): an agent merging or rebasing the target in
         const how = (body as { method?: unknown } | null)?.method ?? 'merge';
@@ -350,7 +367,16 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
         const moved =
           data.pull.head_cs !== pull.head_cs ||
           (pull.state === 'draft' && data.pull.state === 'open');
-        if (moved) await requestCodeOwners(c, loaded.repo, data.pull);
+        if (moved) {
+          await requestCodeOwners(c, loaded.repo, data.pull);
+          await requestAgentReviews(
+            c.env,
+            loaded.repo,
+            data.pull,
+            actorOf(c.get('principal')),
+            new URL(c.req.url).origin,
+          );
+        }
         const ci = moved
           ? await autoCheck(c, loaded.repo, data.pull)
           : { status: 'unchanged' };

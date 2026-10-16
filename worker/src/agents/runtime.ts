@@ -186,6 +186,24 @@ export class YagAgent extends Agent<Env, AgentState> {
     });
     await this.transition('running');
 
+    if (task.kind === 'pull_review') {
+      // built-in agent reviewer (#60): one model call, then a verdict
+      const { runBuiltinReview } = await import('../reviews/agentLoop');
+      try {
+        const result = await runBuiltinReview(this.env, task);
+        this.setState({ ...this.state, status: 'done', summary: `review ${result}` });
+        await this.transition('landed');
+        await this.flushTranscript();
+        return this.state;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.setState({ ...this.state, status: 'failed', error: message });
+        await this.transition('failed');
+        await this.flushTranscript();
+        throw err; // the queue consumer decides retry vs poison
+      }
+    }
+
     const aiMode =
       opts.mode !== 'echo' && opts.steps === undefined && opts.failAtStep === undefined;
 

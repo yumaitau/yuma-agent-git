@@ -102,6 +102,8 @@ export interface Pull {
   merged_cs?: string | null;
   /** A fork the head comes from (issue #36); null: this repository. */
   head_repo_id?: string | null;
+  /** The agent identity that opened it, when one did (issue #60). */
+  author_agent_id?: string | null;
 }
 export interface Review {
   revision: number;

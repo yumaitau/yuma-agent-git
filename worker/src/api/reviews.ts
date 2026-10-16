@@ -26,6 +26,7 @@ import {
   requestCodeOwners,
 } from '../reviews/codeowners';
 import { resolveRevision } from '../core/read';
+import { requestAgentReviews } from '../reviews/agentLoop';
 import { principalNames, resolveAssignees } from './issues';
 import type { ReviewRequest, ReviewThread } from '../../shared/collaboration';
 
@@ -278,6 +279,13 @@ reviewsRoutes.post(`${base}/suggestions/apply`, async (c) => {
       },
     });
     await requestCodeOwners(c, loaded.repo, data.pull);
+    await requestAgentReviews(
+      c.env,
+      loaded.repo,
+      data.pull,
+      actorOf(c.get('principal')),
+      new URL(c.req.url).origin,
+    );
     return c.json({ ...data, ci: await autoCheck(c, loaded.repo, data.pull) });
   } catch (err) {
     return errorResponse(c, err);

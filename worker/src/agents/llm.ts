@@ -7,6 +7,7 @@ import { remaining } from './budget';
 import { SYSTEM_PROMPT } from './prompt';
 import { timePhase } from '../observability/phase';
 import { recordAi } from '../observability/metrics';
+import { recordModelUsage } from '../usage/record';
 
 /**
  * Workers AI gateway (issue #19) — the model behind think-act-observe.
@@ -178,12 +179,27 @@ export function setChatProvider(custom: ChatProvider | null): void {
   provider = custom ?? defaultProvider;
 }
 
-export async function chat(env: Env, input: ChatInput): Promise<ChatResult> {
+/** Who a model call is charged to (#61): every call records a `tokens` usage event. */
+export interface UsageScope {
+  repo_id: string;
+  task_id?: string | null;
+  agent_id?: string | null;
+  pull_id?: number | null;
+  ticket?: string | null;
+}
+
+export async function chat(
+  env: Env,
+  input: ChatInput,
+  usage?: UsageScope,
+): Promise<ChatResult> {
   try {
     const result = await timePhase('ai', () => provider(env, input));
     const tokens =
       (result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0);
     await recordAi(env, tokens, false);
+    if (usage)
+      await recordModelUsage(env, usage, env.AGENT_MODEL ?? DEFAULT_MODEL, result.usage);
     return result;
   } catch (err) {
     await recordAi(env, 0, true);
