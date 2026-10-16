@@ -214,9 +214,11 @@ function categoryOf(id: string | undefined): string {
 }
 
 /**
- * Fingerprint: the tool's own (`fingerprints`, else `partialFingerprints`
- * such as CodeQL's `primaryLocationLineHash`), else rule, path, line and
- * message. Hashed with the rule id so tools cannot collide across rules.
+ * Fingerprint: the path with the tool's own (`fingerprints`, else
+ * `partialFingerprints` such as CodeQL's `primaryLocationLineHash`, which
+ * hashes line content and so repeats for the same code in two files), else
+ * path, line and message. Hashed with the rule id so tools cannot collide
+ * across rules; rule, path and fingerprint match an alert as on GitHub.
  */
 async function fingerprintOf(result: Result, f: Omit<Finding, 'fingerprint'>) {
   const own = (fps: Record<string, string> | undefined): string | null => {
@@ -226,8 +228,8 @@ async function fingerprintOf(result: Result, f: Omit<Finding, 'fingerprint'>) {
   const source =
     own(result.fingerprints) ??
     own(result.partialFingerprints) ??
-    `${f.path}\n${f.start_line ?? ''}\n${f.message}`;
-  return sha256Hex(new TextEncoder().encode(`${f.rule_id}\n${source}`));
+    `${f.start_line ?? ''}\n${f.message}`;
+  return sha256Hex(new TextEncoder().encode(`${f.rule_id}\n${f.path}\n${source}`));
 }
 
 export async function analysesOf(

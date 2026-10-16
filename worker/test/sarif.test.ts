@@ -104,6 +104,8 @@ describe('SARIF parsing (#67)', () => {
         { rule: 'plain', path: 'src/d.ts', line: 1, fingerprint: 'abc' },
         // same rule, path, line and message: one finding
         { rule: 'plain', path: 'src/d.ts', line: 1, fingerprint: 'abc' },
+        // the same code in another file hashes the same: still its own finding
+        { rule: 'plain', path: 'src/e.ts', line: 1, fingerprint: 'abc' },
       ],
       'CodeQL',
       'js-analysis/run-42',
@@ -118,6 +120,7 @@ describe('SARIF parsing (#67)', () => {
       ['plain', 'high', 'src/c.ts', 1],
       ['plain', 'low', 'src/c.ts', 9],
       ['plain', 'medium', 'src/d.ts', 1],
+      ['plain', 'medium', 'src/e.ts', 1],
     ]);
     expect(analysis!.findings[0]).toMatchObject({
       rule_name: 'Rule sev-9.8',
