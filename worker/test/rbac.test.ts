@@ -227,6 +227,164 @@ describe('path rules (monorepo security)', () => {
   });
 });
 
+describe('org and team roles (issue #26)', () => {
+  beforeEach(async () => {
+    await seedSchema(testEnv);
+    await cleanDb(testEnv);
+    user = await loginAs(testEnv, 1, 'ada');
+    stranger = await loginAs(testEnv, 2, 'mallory');
+  });
+
+  async function sql(text: string, params: unknown[]): Promise<void> {
+    await run(dbEnv, text, params);
+  }
+
+  async function makeOrg(baseRole: 'none' | 'read' | 'write' | 'admin'): Promise<void> {
+    await sql(
+      `INSERT INTO orgs (id, slug, display_name, created_at, base_role) VALUES ('o1', 'acme', 'Acme', 1, ?)`,
+      [baseRole],
+    );
+  }
+
+  async function orgRepo(name: string) {
+    return createRepo(dbEnv, {
+      slug: `acme/${name}`,
+      visibility: 'private',
+      ownerKind: 'org',
+      ownerId: 'o1',
+    });
+  }
+
+  async function team(id: string, parent: string | null): Promise<void> {
+    await sql(
+      `INSERT INTO teams (id, org_id, slug, parent_team_id, created_at) VALUES (?, 'o1', ?, ?, 1)`,
+      [id, id, parent],
+    );
+  }
+
+  const perms = ['read', 'history', 'write', 'admin'] as const;
+  async function permsOf(
+    repo: Awaited<ReturnType<typeof orgRepo>>,
+    userId: string,
+  ): Promise<string[]> {
+    const p = principalOf(userId);
+    const out: string[] = [];
+    for (const perm of perms) if (await can(dbEnv, repo, p, perm)) out.push(perm);
+    return out;
+  }
+
+  it('effective role is the max of direct, team and org base roles', async () => {
+    await makeOrg('read');
+    const repo = await orgRepo('max');
+    await sql(
+      `INSERT INTO org_members (org_id, user_id, role) VALUES ('o1', ?, 'member')`,
+      [user.userId],
+    );
+    // base read only
+    expect(await permsOf(repo, user.userId)).toEqual(['read', 'history']);
+    // direct write beats base read
+    await addMember(repo.id, user.userId, 'write');
+    expect(await permsOf(repo, user.userId)).toEqual(['read', 'history', 'write']);
+    // team admin beats direct write
+    await team('t1', null);
+    await sql(`INSERT INTO team_members (team_id, user_id) VALUES ('t1', ?)`, [
+      user.userId,
+    ]);
+    await sql(
+      `INSERT INTO team_repos (team_id, repo_id, role) VALUES ('t1', ?, 'admin')`,
+      [repo.id],
+    );
+    expect(await permsOf(repo, user.userId)).toEqual(perms.slice());
+    // a lower team grant never lowers a higher direct role
+    await sql(`UPDATE team_repos SET role = 'read'`, []);
+    expect(await permsOf(repo, user.userId)).toEqual(['read', 'history', 'write']);
+  });
+
+  it('org role matrix: owner admin, admin/member base role, billing and outsiders nothing', async () => {
+    await makeOrg('write');
+    const repo = await orgRepo('roles');
+    const expected: Record<string, string[]> = {
+      owner: ['read', 'history', 'write', 'admin'],
+      admin: ['read', 'history', 'write'],
+      member: ['read', 'history', 'write'],
+      billing: [],
+    };
+    let githubId = 10;
+    for (const [role, want] of Object.entries(expected)) {
+      const who = await loginAs(testEnv, githubId++, `u-${role}`);
+      await sql(`INSERT INTO org_members (org_id, user_id, role) VALUES ('o1', ?, ?)`, [
+        who.userId,
+        role,
+      ]);
+      expect(await permsOf(repo, who.userId), role).toEqual(want);
+    }
+    expect(await permsOf(repo, stranger.userId)).toEqual([]);
+  });
+
+  it('team grants follow parent teams two levels up, never down', async () => {
+    await makeOrg('none');
+    const repo = await orgRepo('nested');
+    await team('root', null);
+    await team('mid', 'root');
+    await team('leaf', 'mid');
+    await sql(
+      `INSERT INTO team_repos (team_id, repo_id, role) VALUES ('root', ?, 'write')`,
+      [repo.id],
+    );
+    await sql(`INSERT INTO team_members (team_id, user_id) VALUES ('leaf', ?)`, [
+      user.userId,
+    ]);
+    expect(await permsOf(repo, user.userId)).toEqual(['read', 'history', 'write']);
+    // a grant on the child team does not flow up to parent members
+    await sql(`DELETE FROM team_repos`, []);
+    await sql(
+      `INSERT INTO team_repos (team_id, repo_id, role) VALUES ('leaf', ?, 'write')`,
+      [repo.id],
+    );
+    await sql(`INSERT INTO team_members (team_id, user_id) VALUES ('root', ?)`, [
+      stranger.userId,
+    ]);
+    expect(await permsOf(repo, stranger.userId)).toEqual([]);
+  });
+
+  it('org roles never reach user-owned repos that share the prefix', async () => {
+    await makeOrg('admin');
+    await sql(
+      `INSERT INTO org_members (org_id, user_id, role) VALUES ('o1', ?, 'owner')`,
+      [stranger.userId],
+    );
+    const legacy = await createRepo(dbEnv, {
+      slug: 'acme/legacy',
+      visibility: 'private',
+    });
+    expect(legacy.owner_kind).toBe('user');
+    expect(await permsOf(legacy, stranger.userId)).toEqual([]);
+  });
+
+  it('role-based path rules match the effective (team) role; deny wins', async () => {
+    await makeOrg('none');
+    const repo = await orgRepo('paths');
+    await team('t1', null);
+    await sql(`INSERT INTO team_members (team_id, user_id) VALUES ('t1', ?)`, [
+      user.userId,
+    ]);
+    await sql(
+      `INSERT INTO team_repos (team_id, repo_id, role) VALUES ('t1', ?, 'write')`,
+      [repo.id],
+    );
+    await addRuleFor(repo.id, {
+      path_prefix: 'infra/',
+      effect: 'deny',
+      principal: 'role:write',
+      perms: ['write'],
+    });
+    const p = principalOf(user.userId);
+    expect(await can(dbEnv, repo, p, 'write', 'infra/main.tf')).toBe(false);
+    expect(await can(dbEnv, repo, p, 'read', 'infra/main.tf')).toBe(true);
+    expect(await can(dbEnv, repo, p, 'write', 'src/app.ts')).toBe(true);
+  });
+});
+
 describe('admin CRUD', () => {
   beforeEach(async () => {
     await seedSchema(testEnv);

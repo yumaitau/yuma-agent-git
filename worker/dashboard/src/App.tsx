@@ -13,6 +13,7 @@ import { TreeView } from './views/TreeView';
 import { DiffExplorerView } from './views/DiffExplorer';
 import { AgentsView, TaskDetailView } from './views/Agents';
 import { SettingsView } from './views/Settings';
+import { OrgSettingsView } from './views/OrgSettings';
 import { Empty } from './ui';
 
 function NotFound(): ReactElement {
@@ -45,6 +46,22 @@ function AppRoutes(): ReactElement {
           element={
             <RequireAuth>
               <SettingsView />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/orgs"
+          element={
+            <RequireAuth>
+              <OrgSettingsView />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/orgs/:org"
+          element={
+            <RequireAuth>
+              <OrgSettingsView />
             </RequireAuth>
           }
         />

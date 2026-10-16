@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
-import type { Repo } from './api';
+import type { Org, Repo } from './api';
 import { Field } from './ui';
 
 /**
@@ -89,6 +89,37 @@ function TreePicker({ onClose }: { onClose: () => void }): ReactElement {
   );
 }
 
+/** Org switcher (issue #26): jumps between personal repos and org settings. */
+function OrgSwitcher(): ReactElement {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [orgs, setOrgs] = useState<Org[]>([]);
+  const current = /^\/orgs\/([^/]+)/.exec(pathname)?.[1] ?? '';
+
+  // refetch when the org in the URL changes so a newly created org shows up
+  useEffect(() => {
+    api
+      .listOrgs()
+      .then(setOrgs)
+      .catch(() => setOrgs([]));
+  }, [current]);
+
+  return (
+    <select
+      aria-label="Organisation"
+      value={current}
+      onChange={(e) => navigate(e.target.value === '' ? '/' : `/orgs/${e.target.value}`)}
+    >
+      <option value="">Personal</option>
+      {orgs.map((o) => (
+        <option key={o.id} value={o.slug}>
+          {o.slug}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }): ReactElement {
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -163,8 +194,10 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
         </Link>
         <nav>
           <Link to="/">Repos</Link>
+          <Link to="/orgs">Organisations</Link>
           <Link to="/settings">Settings</Link>
         </nav>
+        {authed && <OrgSwitcher />}
         <span className="spacer" />
         <span className="hint">
           <kbd>/</kbd> filter · <kbd>g</kbd> <kbd>t</kbd> tree picker

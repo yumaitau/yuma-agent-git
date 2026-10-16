@@ -5,14 +5,15 @@ import { parseRepoRow, q } from '../db/client';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { createRepo, getRepoBySlug, listRefs } from '../db/repos';
 import { loadAdminRepo, loadReadableRepo } from '../auth/guards';
-import { decide } from '../auth/rbac';
+import { decide, USER_TEAMS_CTE } from '../auth/rbac';
+import { getOrgBySlug, orgMembership } from './orgs';
 import { commitChanges } from '../core/commit';
 import { moveRefViaDO, validateRefName } from '../core/refs';
 import type { AppEnv } from '../auth/principal';
 
 /**
  * Repo index + creation (issue #14: creators are admins; issue #20's
- * dashboard lists repos here).
+ * dashboard lists repos here; issue #26: repos can belong to an org).
  */
 export const reposRoutes = new Hono<AppEnv>();
 
@@ -24,6 +25,8 @@ const createRepoSchema = z.object({
     .regex(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'slug must be owner/name'),
   visibility: z.enum(['private', 'public']).optional(),
   default_branch: z.string().min(1).max(64).optional(),
+  /** Org slug; must match the slug prefix. */
+  org: z.string().min(1).max(39).optional(),
 });
 
 reposRoutes.post('/api/v1/repos', async (c) => {
@@ -40,6 +43,31 @@ reposRoutes.post('/api/v1/repos', async (c) => {
         })),
       });
     }
+    // A slug prefix naming an org makes the repo org-owned, so an org
+    // namespace cannot be filled by non-members just by omitting `org`.
+    // Org slugs are lowercase, so `Yuma/x` cannot dodge the `yuma` org.
+    const prefix = parsed.data.slug.split('/')[0] as string;
+    const org = await getOrgBySlug(c.env, prefix.toLowerCase());
+    if (
+      (parsed.data.org !== undefined && parsed.data.org !== prefix) ||
+      (org && org.slug !== prefix)
+    ) {
+      return apiError(c, 400, 'invalid_request', 'slug owner must match org');
+    }
+    if (parsed.data.org !== undefined && !org) {
+      return apiError(c, 404, 'org_not_found', `no org ${parsed.data.org}`);
+    }
+    if (org) {
+      const member = await orgMembership(c.env, org.id, user.id);
+      if (!member) return apiError(c, 404, 'org_not_found', `no org ${org.slug}`);
+      const mayCreate =
+        member.role === 'owner' ||
+        member.role === 'admin' ||
+        (member.role === 'member' && org.members_can_create_repos);
+      if (!mayCreate) {
+        return apiError(c, 403, 'forbidden', 'org role does not allow creating repos');
+      }
+    }
     if (await getRepoBySlug(c.env, parsed.data.slug)) {
       return apiError(c, 409, 'repo_exists', `repo ${parsed.data.slug} already exists`);
     }
@@ -49,6 +77,7 @@ reposRoutes.post('/api/v1/repos', async (c) => {
       visibility: parsed.data.visibility,
       defaultBranch: parsed.data.default_branch,
       createdBy: user.id,
+      ...(org ? { ownerKind: 'org' as const, ownerId: org.id } : {}),
     });
     return c.json({ repo }, 201);
   } catch (err) {
@@ -135,11 +164,13 @@ reposRoutes.get('/api/v1/repos', async (c) => {
       cursorCreated = created;
       cursorId = id;
     }
-    // visible: public repos + repos where the caller is a member/creator.
+    // visible: public repos + repos where the caller is a member/creator,
+    // gets a team grant, or holds an org role with access (issue #26).
     // Keyset pagination on (created_at, id) descending.
     const rows = await q(
       c.env,
-      `SELECT * FROM (
+      `WITH RECURSIVE ${USER_TEAMS_CTE}
+       SELECT * FROM (
          SELECT * FROM ${T.repos} WHERE ${C.repos.visibility} = 'public'
          UNION
          SELECT r.* FROM ${T.repos} r
@@ -147,11 +178,24 @@ reposRoutes.get('/api/v1/repos', async (c) => {
           WHERE m.${C.repoMembers.userId} = ?
          UNION
          SELECT * FROM ${T.repos} WHERE created_by = ?
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.teamRepos} tr ON tr.${C.teamRepos.repoId} = r.${C.repos.id}
+          WHERE tr.${C.teamRepos.teamId} IN (SELECT team_id FROM user_teams)
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.orgs} o ON o.${C.orgs.id} = r.${C.repos.ownerId}
+           JOIN ${T.orgMembers} om ON om.${C.orgMembers.orgId} = o.${C.orgs.id}
+          WHERE r.${C.repos.ownerKind} = 'org' AND om.${C.orgMembers.userId} = ?
+            AND (om.${C.orgMembers.role} = 'owner'
+                 OR (om.${C.orgMembers.role} IN ('admin', 'member') AND o.${C.orgs.baseRole} <> 'none'))
        )
        WHERE (? IS NULL OR id = ?) AND ((? = 0) OR created_at < ? OR (created_at = ? AND id < ?))
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
       [
+        userId,
+        userId,
         userId,
         userId,
         tokenRepo,

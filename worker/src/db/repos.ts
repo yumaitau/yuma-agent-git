@@ -19,6 +19,9 @@ export interface CreateRepoInput {
   githubRepoId?: number | null;
   /** Creating user — repo creators are admins (issue #14). */
   createdBy?: string | null;
+  /** Org-owned repos (issue #26) carry the org id; default is the slug prefix. */
+  ownerKind?: 'user' | 'org';
+  ownerId?: string;
 }
 
 /** Insert a repository row (id = ULID). */
@@ -36,14 +39,16 @@ export async function createRepo(
     default_branch: input.defaultBranch ?? 'main',
     created_at: now,
     visibility: input.visibility ?? 'private',
+    owner_kind: input.ownerKind ?? 'user',
+    owner_id: input.ownerId ?? (input.slug.split('/')[0] as string),
   };
   await run(
     env,
     `INSERT INTO ${T.repos}
        (${C.repos.id}, ${C.repos.slug}, ${C.repos.githubInstallationId},
         ${C.repos.githubRepoId}, ${C.repos.defaultBranch}, ${C.repos.createdAt},
-        ${C.repos.visibility}, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ${C.repos.visibility}, created_by, ${C.repos.ownerKind}, ${C.repos.ownerId})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.slug,
@@ -53,6 +58,8 @@ export async function createRepo(
       row.created_at,
       row.visibility,
       row.created_by,
+      row.owner_kind,
+      row.owner_id,
     ],
   );
   return parseRepoRow(row);

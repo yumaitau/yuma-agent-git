@@ -87,7 +87,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
 export type QueryParams = Record<string, string | number | undefined>;
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: QueryParams;
 }
@@ -190,6 +190,8 @@ export const repoSchema = z.object({
   created_by: z.string().nullable().optional(),
   github_installation_id: z.number().nullable().optional(),
   github_repo_id: z.number().nullable().optional(),
+  owner_kind: z.enum(['user', 'org']).optional(),
+  owner_id: z.string().nullable().optional(),
 });
 export type Repo = z.infer<typeof repoSchema>;
 
@@ -388,6 +390,45 @@ export const importJobSchema = z.object({
   error: z.string().nullable().optional(),
 });
 export type ImportJob = z.infer<typeof importJobSchema>;
+
+export const orgRoleSchema = z.enum(['owner', 'admin', 'member', 'billing']);
+export type OrgRole = z.infer<typeof orgRoleSchema>;
+export const orgBaseRoleSchema = z.enum(['none', 'read', 'write', 'admin']);
+export type OrgBaseRole = z.infer<typeof orgBaseRoleSchema>;
+
+export const orgSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  display_name: z.string(),
+  created_at: z.number(),
+  base_role: orgBaseRoleSchema,
+  members_can_create_repos: z.boolean(),
+});
+export type Org = z.infer<typeof orgSchema>;
+
+export const orgMemberSchema = z.object({
+  user_id: z.string(),
+  login: z.string().nullable(),
+  role: orgRoleSchema,
+});
+export type OrgMember = z.infer<typeof orgMemberSchema>;
+
+export const teamSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  parent: z.string().nullable(),
+  created_at: z.number(),
+});
+export type Team = z.infer<typeof teamSchema>;
+
+export const teamDetailSchema = z.object({
+  team: teamSchema,
+  members: z.array(z.object({ user_id: z.string(), login: z.string().nullable() })),
+  repos: z.array(
+    z.object({ repo: z.string(), role: z.enum(['admin', 'write', 'read']) }),
+  ),
+});
+export type TeamDetail = z.infer<typeof teamDetailSchema>;
 
 const okSchema = z.object({ ok: z.literal(true) });
 
@@ -742,6 +783,143 @@ export const api = {
       { method: 'DELETE' },
       okSchema,
     );
+  },
+
+  // -- orgs (issue #26) ------------------------------------------------------
+  async listOrgs(): Promise<(Org & { role: OrgRole })[]> {
+    const body = await requestJson(
+      '/api/v1/orgs',
+      {},
+      z.object({ orgs: z.array(orgSchema.extend({ role: orgRoleSchema })) }),
+    );
+    return body.orgs;
+  },
+
+  async createOrg(input: { slug: string; display_name?: string }): Promise<Org> {
+    const body = await requestJson(
+      '/api/v1/orgs',
+      { method: 'POST', body: input },
+      z.object({ org: orgSchema }),
+    );
+    return body.org;
+  },
+
+  async getOrg(slug: string): Promise<{ org: Org; role: OrgRole }> {
+    return requestJson(
+      `/api/v1/orgs/${slug}`,
+      {},
+      z.object({ org: orgSchema, role: orgRoleSchema }),
+    );
+  },
+
+  async updateOrg(
+    slug: string,
+    input: { base_role?: OrgBaseRole; members_can_create_repos?: boolean },
+  ): Promise<Org> {
+    const body = await requestJson(
+      `/api/v1/orgs/${slug}`,
+      { method: 'PATCH', body: input },
+      z.object({ org: orgSchema }),
+    );
+    return body.org;
+  },
+
+  async listOrgMembers(slug: string): Promise<OrgMember[]> {
+    const body = await requestJson(
+      `/api/v1/orgs/${slug}/members`,
+      {},
+      z.object({ members: z.array(orgMemberSchema) }),
+    );
+    return body.members;
+  },
+
+  async putOrgMember(
+    slug: string,
+    input: { user_login: string; role: OrgRole },
+  ): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/members`,
+      { method: 'PUT', body: input },
+      z.object({ ok: z.boolean() }),
+    );
+  },
+
+  async deleteOrgMember(slug: string, userId: string): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/members/${userId}`,
+      { method: 'DELETE' },
+      okSchema,
+    );
+  },
+
+  async listTeams(slug: string): Promise<Team[]> {
+    const body = await requestJson(
+      `/api/v1/orgs/${slug}/teams`,
+      {},
+      z.object({ teams: z.array(teamSchema) }),
+    );
+    return body.teams;
+  },
+
+  async createTeam(
+    slug: string,
+    input: { slug: string; parent?: string },
+  ): Promise<Team> {
+    const body = await requestJson(
+      `/api/v1/orgs/${slug}/teams`,
+      { method: 'POST', body: input },
+      z.object({ team: teamSchema }),
+    );
+    return body.team;
+  },
+
+  async getTeam(slug: string, team: string): Promise<TeamDetail> {
+    return requestJson(`/api/v1/orgs/${slug}/teams/${team}`, {}, teamDetailSchema);
+  },
+
+  async putTeamMember(slug: string, team: string, userLogin: string): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/teams/${team}/members`,
+      { method: 'PUT', body: { user_login: userLogin } },
+      z.object({ ok: z.boolean() }),
+    );
+  },
+
+  async deleteTeamMember(slug: string, team: string, userId: string): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/teams/${team}/members/${userId}`,
+      { method: 'DELETE' },
+      okSchema,
+    );
+  },
+
+  async putTeamRepo(
+    slug: string,
+    team: string,
+    input: { repo: string; role: 'admin' | 'write' | 'read' },
+  ): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/teams/${team}/repos`,
+      { method: 'PUT', body: input },
+      z.object({ ok: z.boolean() }),
+    );
+  },
+
+  async deleteTeamRepo(slug: string, team: string, repo: string): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${slug}/teams/${team}/repos/${repo}`,
+      { method: 'DELETE' },
+      okSchema,
+    );
+  },
+
+  async listOrgRepos(slug: string): Promise<Repo[]> {
+    const body = await requestJson(
+      `/api/v1/orgs/${slug}/repos`,
+      {},
+      z.object({ repos: z.array(repoSchema) }),
+    );
+    return body.repos;
   },
 
   // -- export -----------------------------------------------------------------

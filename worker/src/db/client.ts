@@ -138,6 +138,9 @@ export const repoRowSchema = z.object({
   visibility: z.enum(['private', 'public']),
   /** Repo creator (migration 0006) — creators are admins. */
   created_by: z.string().nullable().optional(),
+  /** Owner namespace (migration 0012): slug prefix for users, orgs.id for orgs. */
+  owner_kind: z.enum(['user', 'org']).optional(),
+  owner_id: z.string().nullable().optional(),
 });
 export type RepoRecord = z.infer<typeof repoRowSchema>;
 
@@ -267,6 +270,59 @@ export type PathRuleRecord = z.infer<typeof pathRuleRowSchema>;
 
 export function parsePathRuleRow(row: unknown): PathRuleRecord {
   return parseOrThrow(pathRuleRowSchema, 'path_rules', row);
+}
+
+// ---------------------------------------------------------------------------
+// orgs / teams (issue #26)
+// ---------------------------------------------------------------------------
+
+export const orgRowSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  display_name: z.string(),
+  created_at: z.number(),
+  base_role: z.enum(['none', 'read', 'write', 'admin']),
+  members_can_create_repos: z.number().transform((n) => n === 1),
+});
+export type OrgRecord = z.infer<typeof orgRowSchema>;
+
+export function parseOrgRow(row: unknown): OrgRecord {
+  return parseOrThrow(orgRowSchema, 'orgs', row);
+}
+
+export const orgMemberRowSchema = z.object({
+  org_id: z.string(),
+  user_id: z.string(),
+  role: z.enum(['owner', 'admin', 'member', 'billing']),
+});
+export type OrgMemberRecord = z.infer<typeof orgMemberRowSchema>;
+
+export function parseOrgMemberRow(row: unknown): OrgMemberRecord {
+  return parseOrThrow(orgMemberRowSchema, 'org_members', row);
+}
+
+export const teamRowSchema = z.object({
+  id: z.string(),
+  org_id: z.string(),
+  slug: z.string(),
+  parent_team_id: z.string().nullable(),
+  created_at: z.number(),
+});
+export type TeamRecord = z.infer<typeof teamRowSchema>;
+
+export function parseTeamRow(row: unknown): TeamRecord {
+  return parseOrThrow(teamRowSchema, 'teams', row);
+}
+
+export const teamRepoRowSchema = z.object({
+  team_id: z.string(),
+  repo_id: z.string(),
+  role: z.enum(['admin', 'write', 'read']),
+});
+export type TeamRepoRecord = z.infer<typeof teamRepoRowSchema>;
+
+export function parseTeamRepoRow(row: unknown): TeamRepoRecord {
+  return parseOrThrow(teamRepoRowSchema, 'team_repos', row);
 }
 
 // ---------------------------------------------------------------------------

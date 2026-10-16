@@ -10,6 +10,7 @@ import { diffRoutes } from './diff';
 import { exportRoutes } from './export';
 import { importRoutes } from './imports';
 import { objectsRoutes } from './objects';
+import { orgsRoutes } from './orgs';
 import { readRoutes } from './read';
 import { refsRoutes } from './refs';
 
@@ -29,4 +30,5 @@ apiRouter.route('/', exportRoutes);
 apiRouter.route('/', importRoutes);
 apiRouter.route('/', refsRoutes);
 apiRouter.route('/', objectsRoutes);
+apiRouter.route('/', orgsRoutes);
 apiRouter.route('/', readRoutes);

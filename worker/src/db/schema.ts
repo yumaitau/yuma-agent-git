@@ -123,6 +123,11 @@ export const T = {
   exportJobs: 'export_jobs',
   componentMetrics: 'component_metrics',
   superfanFindings: 'superfan_findings',
+  orgs: 'orgs',
+  orgMembers: 'org_members',
+  teams: 'teams',
+  teamMembers: 'team_members',
+  teamRepos: 'team_repos',
 } as const;
 
 /** Column names, per table. */
@@ -135,6 +140,8 @@ export const C = {
     defaultBranch: 'default_branch',
     createdAt: 'created_at',
     visibility: 'visibility',
+    ownerKind: 'owner_kind',
+    ownerId: 'owner_id',
   },
   changesets: {
     id: 'id',
@@ -251,6 +258,35 @@ export const C = {
     createdAt: 'created_at',
     lastUsedAt: 'last_used_at',
     expiresAt: 'expires_at',
+  },
+  orgs: {
+    id: 'id',
+    slug: 'slug',
+    displayName: 'display_name',
+    createdAt: 'created_at',
+    baseRole: 'base_role',
+    membersCanCreateRepos: 'members_can_create_repos',
+  },
+  orgMembers: {
+    orgId: 'org_id',
+    userId: 'user_id',
+    role: 'role',
+  },
+  teams: {
+    id: 'id',
+    orgId: 'org_id',
+    slug: 'slug',
+    parentTeamId: 'parent_team_id',
+    createdAt: 'created_at',
+  },
+  teamMembers: {
+    teamId: 'team_id',
+    userId: 'user_id',
+  },
+  teamRepos: {
+    teamId: 'team_id',
+    repoId: 'repo_id',
+    role: 'role',
   },
   importJobs: {
     id: 'id',
