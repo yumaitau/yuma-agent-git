@@ -322,6 +322,49 @@ it('draws the pipeline job graph by stage and shows line-numbered spec errors', 
   expect(screen.getByText(/Unknown job "x"/)).toBeTruthy();
 });
 
+it('lists a pipeline run\'s artifacts with download links when asked', async () => {
+  const runs = [
+    {
+      id: 'p1',
+      pipeline: '.yuma/pipelines/ci.yml',
+      name: 'ci',
+      event: 'push',
+      ref: 'main',
+      head_cs: 'c'.repeat(64),
+      concurrency_group: null,
+      state: 'passed',
+      errors: null,
+      requested_by: 'u1',
+      created_at: Date.now(),
+      finished_at: Date.now(),
+      jobs: [{ key: 'build', job: 'build', needs: [], state: 'passed', run_id: 'r1', error: null }],
+    },
+  ];
+  const artifact = {
+    id: 'a1',
+    name: 'report.txt',
+    size: 2048,
+    job_key: 'build',
+    created_at: Date.now(),
+    expires_at: Date.now() + 14 * 86400_000,
+  };
+  const fetcher = vi.fn(async (path: string) =>
+    Response.json(
+      path.endsWith('/ci/pipelines/runs/p1/artifacts')
+        ? { artifacts: [artifact] }
+        : path.includes('/ci/pipelines')
+          ? { runs }
+          : overview,
+    ),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  mount(<CiView />);
+  fireEvent.click(await screen.findByText('Artifacts'));
+  const link = await screen.findByText('report.txt');
+  expect(link.getAttribute('href')).toBe('/api/v1/repos/acme/tools/ci/artifacts/a1');
+  expect(screen.getByText(/2\.0 KiB · build · kept until/)).toBeTruthy();
+});
+
 it('retries a run through its retry endpoint and shows deploy jobs waiting for approval', async () => {
   const failed = {
     id: 'r1',
