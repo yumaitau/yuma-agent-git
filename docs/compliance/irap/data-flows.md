@@ -55,6 +55,12 @@ sequenceDiagram
 Code: `git/receive-pack.ts`, `core/commit.ts`, `core/refdo.ts`,
 `security/secrets/scan.ts`, `policy/rulesets.ts`.
 
+Git over SSH (#34, not deployed) adds one hop in front: the client speaks SSH
+to the gateway (`ssh-gateway/`, ADR 0007), which asks
+`POST /internal/ssh/authorize` for a 60-second token for one repo and service,
+then makes the same smart HTTP calls. SSH is decrypted wherever the gateway
+runs (`docs/ssh.md`).
+
 ## 3. CI job
 
 ```mermaid
@@ -67,7 +73,8 @@ sequenceDiagram
   participant Net as Internet
   W->>Q: run admitted (budget and org capacity in D1)
   Q->>DO: claim once, set deadline alarm
-  DO->>VM: start fresh VM, stream source in
+  DO->>VM: start fresh VM with a job token
+  VM->>W: shallow fetch over Git smart HTTP (job token, #78)
   DO->>VM: inject secrets and OIDC token only if opted in and allowed
   VM->>Net: package installs, cloud APIs (no egress control)
   VM->>DO: output (masked)
@@ -75,7 +82,9 @@ sequenceDiagram
   DO->>VM: destroy
 ```
 
-Code: `ci/runs.ts`, `ci/runner.ts`, `ci/inject.ts`, `ci/mask.ts`. Self-hosted
+Code: `ci/runs.ts`, `ci/runner.ts`, `ci/inject.ts`, `ci/mask.ts`. Runs with
+no request origin (schedules) or a commit without Git IDs yet still stream a
+tar of the source through the runner object. Self-hosted
 runners pull jobs over HTTPS instead and run on customer machines
 (`ci/runners.ts`, `docs/runner-protocol.md`).
 

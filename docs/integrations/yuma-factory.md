@@ -103,6 +103,11 @@ Factory (run token, agent:run)
   auth with any user name and the token as password, for example
   `https://x-access-token:yagat_…@forge.example.com/owner/repo.git`, the same
   shape GitHub App installation tokens use.
+- Factory needs only HTTPS. Git over SSH (#34, `docs/ssh.md`) is optional:
+  it signs in people and deploy keys, not agent tokens, and its gateway is
+  not deployed yet (ADR 0007). A sandbox that must use SSH would need a deploy
+  key per repository, which is long-lived and not tied to a task, so the
+  contract does not use it.
 - The agent never exceeds its person: RBAC is the operator's role, cut down to
   the token's scopes and repos. Revoking the run token, disabling the agent, or
   the instance-wide agent pause all stop the next request.
