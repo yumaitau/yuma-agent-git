@@ -3959,8 +3959,10 @@ export interface operations {
               | 'ref'
               | 'pull_request'
               | 'pull_request_review'
+              | 'pull_request_review_thread'
               | 'issues'
               | 'ci_run'
+              | 'work_item'
             )[];
             /**
              * @default yag
@@ -4198,7 +4200,14 @@ export interface operations {
           url?: string;
           secret?: string;
           events?: (
-            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+            | 'push'
+            | 'ref'
+            | 'pull_request'
+            | 'pull_request_review'
+            | 'pull_request_review_thread'
+            | 'issues'
+            | 'ci_run'
+            | 'work_item'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -4917,7 +4926,14 @@ export interface operations {
           url: string;
           secret?: string;
           events: (
-            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+            | 'push'
+            | 'ref'
+            | 'pull_request'
+            | 'pull_request_review'
+            | 'pull_request_review_thread'
+            | 'issues'
+            | 'ci_run'
+            | 'work_item'
           )[];
           /**
            * @default yag
@@ -5077,6 +5093,8 @@ export interface operations {
               | 'pipeline.edit'
               | 'secret.write'
               | 'issue.ready'
+              | 'queue.claim'
+              | 'deploy'
             )[];
             /** @enum {string} */
             effect: 'deny' | 'require_approval';
@@ -5895,7 +5913,9 @@ export interface operations {
                 | 'pipeline.run'
                 | 'pipeline.edit'
                 | 'secret.write'
-                | 'issue.ready';
+                | 'issue.ready'
+                | 'queue.claim'
+                | 'deploy';
               ref?: string;
               files?: {
                 path: string;
@@ -7340,7 +7360,14 @@ export interface operations {
           url: string;
           secret?: string;
           events: (
-            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+            | 'push'
+            | 'ref'
+            | 'pull_request'
+            | 'pull_request_review'
+            | 'pull_request_review_thread'
+            | 'issues'
+            | 'ci_run'
+            | 'work_item'
           )[];
           /**
            * @default yag

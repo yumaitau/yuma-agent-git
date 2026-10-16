@@ -11,9 +11,11 @@ import {
 } from '../auth/guards';
 import { AGENT_KINDS } from '../auth/agents';
 import { errorResponse, readJsonBody } from './errors';
-import { q, q1 } from '../db/client';
+import { q, q1, run } from '../db/client';
 import { ApiError } from '../core/errors';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitEvent } from '../webhooks/events';
+import { enforceAgentAction, guardAgentAction } from '../policy/guardrails';
 import { getIssueRow, type IssueRow } from '../collab/issues';
 import {
   DEFAULT_LEASE_S,
@@ -187,6 +189,20 @@ workRoutes.put(`${base}/work/:number`, async (c) => {
         'approval_required',
         'Only people with triage, or agents granted queue:approve, can mark work ready or change its risk',
       );
+    if (input.readiness === 'ready' && from !== 'ready') {
+      // agent guardrails (#62): an agent marking work ready
+      const ready = {
+        number: issue.number,
+        risk: input.risk ?? current?.risk ?? 'medium',
+      };
+      await enforceAgentAction(
+        c.env,
+        principal,
+        repo,
+        { action: 'issue.ready', risk: ready.risk },
+        { exact: ready, summary: ready },
+      );
+    }
     const deps =
       input.depends_on === undefined
         ? undefined
@@ -272,6 +288,23 @@ workRoutes.put(`${base}/work/:number`, async (c) => {
   }
 });
 
+/** The `work_item` webhook event (#75) for a claim or a release. */
+async function emitWork(
+  c: Context<AppEnv>,
+  repo: RepoWithCreator,
+  action: 'claimed' | 'released',
+  item: unknown,
+  outcome: string | null = null,
+): Promise<void> {
+  await emitEvent(c.env, repo, {
+    event: 'work_item',
+    action,
+    actor: actorOf(c.get('principal')),
+    origin: new URL(c.req.url).origin,
+    data: { work_item: item, ...(outcome ? { outcome } : {}) },
+  });
+}
+
 export const claimWork = z.object({
   lease_seconds: leaseSeconds.optional(),
   /** Highest risk to take; agents are also capped by their own `max_risk`. */
@@ -316,6 +349,25 @@ workRoutes.post(`${base}/work/claim`, async (c) => {
     });
     if (issueId === null) return c.json({ item: null });
     const [item] = await listWork(c.env, repo.id, { issueId });
+    // agent guardrails (#62): judged on the claimed item's risk; a refused or
+    // held claim goes straight back to the queue
+    const claimed = { number: item!.number, risk: item!.risk, claimed_by: claimant };
+    const guard = await guardAgentAction(
+      c.env,
+      principal,
+      repo,
+      { action: 'queue.claim', risk: item!.risk },
+      { exact: claimed, summary: claimed },
+    );
+    if (guard.outcome !== 'allow') {
+      await run(
+        c.env,
+        `UPDATE work_items SET readiness = 'ready', claimed_by = NULL, lease_expires_at = NULL
+          WHERE issue_id = ? AND readiness = 'claimed' AND claimed_by = ?`,
+        [issueId, claimant],
+      );
+      throw new ApiError(403, guard.code, guard.message, guard.details);
+    }
     await recordAudit(
       c,
       {
@@ -330,6 +382,7 @@ workRoutes.post(`${base}/work/claim`, async (c) => {
       },
       [workEventStatement(c.env, issueId, claimant, 'claimed', 'ready', 'claimed')],
     );
+    await emitWork(c, repo, 'claimed', item);
     return c.json({ item });
   } catch (err) {
     return errorResponse(c, err);
@@ -421,7 +474,9 @@ workRoutes.post(`${base}/work/:number/release`, async (c) => {
         ),
       ],
     );
-    return c.json({ item: await itemOf(c, repo, issue) });
+    const item = await itemOf(c, repo, issue);
+    await emitWork(c, repo, 'released', item, input.outcome);
+    return c.json({ item });
   } catch (err) {
     return errorResponse(c, err);
   }

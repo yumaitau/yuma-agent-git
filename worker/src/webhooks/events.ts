@@ -17,8 +17,10 @@ export const WEBHOOK_EVENTS = [
   'ref',
   'pull_request',
   'pull_request_review',
+  'pull_request_review_thread',
   'issues',
   'ci_run',
+  'work_item',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

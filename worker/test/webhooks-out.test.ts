@@ -486,9 +486,12 @@ describe('repository webhooks', () => {
     expect(
       (await api(`${repoPath}/pulls/${pull.id}/review`, 'POST', review, writer)).status,
     ).toBe(200);
-    expect((await api(`${repoPath}/pulls/${pull.id}/merge`, 'POST', at)).status).toBe(
-      200,
-    );
+    const merged = await api(`${repoPath}/pulls/${pull.id}/merge`, 'POST', at);
+    expect(merged.status).toBe(200);
+    // a merge commit (#42), not the head itself, lands on main
+    const mergedCs = ((await merged.json()) as { pull: { merged_cs: string } }).pull
+      .merged_cs;
+    expect(mergedCs).not.toBe(feature);
     await api(`${repoPath}/issues`, 'POST', { title: 'Done' });
     await api(`${repoPath}/issues/2`, 'PATCH', { state: 'closed' });
     await drain();
@@ -514,7 +517,7 @@ describe('repository webhooks', () => {
     expect(bodies[1]!['sender']).toMatchObject({ login: 'writer' });
     expect(bodies[3]!).toMatchObject({
       ref: 'refs/heads/main',
-      after_changeset: feature,
+      after_changeset: mergedCs,
     });
   });
 

@@ -28,6 +28,7 @@ let owner: Login;
 let member: Login;
 let repoId = '';
 let sends: string[] = [];
+let events: string[] = [];
 
 interface Job {
   id: string;
@@ -45,6 +46,12 @@ function ci(): Env {
   return new Proxy(testEnv, {
     get(target, key, receiver) {
       if (key === 'CI_ENABLED') return 'true';
+      if (key === 'EVENTS_QUEUE')
+        return {
+          send: async (m: { event: { event: string; action: string } }) => {
+            events.push(`${m.event.event}:${m.event.action}`);
+          },
+        };
       if (key === 'CI_QUEUE')
         return {
           send: async (body: { run_id: string }) => {
@@ -174,6 +181,7 @@ beforeEach(async () => {
   await seedSchema(testEnv);
   await cleanDb(testEnv);
   sends = [];
+  events = [];
   owner = await loginAs(testEnv, 901, 'olive');
   member = await loginAs(testEnv, 902, 'max');
   expect((await call('/api/v1/orgs', 'POST', { slug: 'yuma' })).status).toBe(201);
@@ -593,5 +601,98 @@ describe('runner administration', () => {
         })
       ).status,
     ).toBe(400);
+  });
+});
+
+describe('agent guardrails on runner jobs (#62)', () => {
+  /** The queued linux job, marked as started by an agent identity. */
+  async function agentJob(environment: string | null = null): Promise<string> {
+    await startPipeline();
+    const build = (await q1<{ id: string }>(
+      testEnv,
+      "SELECT id FROM ci_runs WHERE job_key = 'build' AND state = 'queued'",
+    ))!.id;
+    await run(
+      testEnv,
+      `UPDATE ci_runs SET context = json_set(context, '$.agent_id', 'agt_worker'),
+         config = json_set(config, '$.environment', ?) WHERE id = ?`,
+      [environment, build],
+    );
+    return build;
+  }
+
+  it('the kill switch cancels running and queued agent jobs, and claims skip them', async () => {
+    const { credential } = await register(['linux']);
+    const id = await agentJob();
+    await run(
+      testEnv,
+      `INSERT INTO webhooks (id, scope, owner_id, url, secret_ciphertext, key_owner, key_version,
+                             events, created_by, created_at, updated_at)
+       VALUES ('hook', 'repo', ?, 'https://hooks.example.com', 'x', 'x', 1, '["ci_run"]', ?, 0, 0)`,
+      [repoId, owner.userId],
+    );
+    const job = (await claim(credential))!;
+    expect(job.id).toBe(id);
+    // webhooks (#75) follow the runner job's status
+    expect(events).toEqual(['ci_run:in_progress']);
+    const paused = await call('/api/v1/orgs/yuma/agents/pause', 'POST', {
+      reason: 'stop',
+    });
+    expect(paused.status).toBe(200);
+    expect(await runRow(id)).toMatchObject({
+      state: 'cancelled',
+      error: 'Agents were paused',
+    });
+    expect(events).toEqual(['ci_run:in_progress', 'ci_run:completed']);
+    expect(await (await runner(credential, `/jobs/${id}/heartbeat`)).json()).toEqual({
+      cancel: true,
+    });
+
+    // while paused, a queued agent job is ended at claim time instead of run
+    const next = await agentJob();
+    expect(await claim(credential)).toBeNull();
+    expect((await runRow(next)).state).toBe('cancelled');
+  });
+
+  it('a deploy by an agent waits for the policy, then runs once approved', async () => {
+    const org = (await q1<{ id: string }>(
+      testEnv,
+      "SELECT id FROM orgs WHERE slug = 'yuma'",
+    ))!;
+    await run(
+      testEnv,
+      'INSERT INTO agent_policies (org_id, version, document, created_by, created_at) VALUES (?, 1, ?, ?, ?)',
+      [
+        org.id,
+        JSON.stringify({
+          version: 1,
+          rules: [
+            { id: 'agent-deploys', actions: ['deploy'], effect: 'require_approval' },
+          ],
+        }),
+        owner.userId,
+        Date.now(),
+      ],
+    );
+    const { credential } = await register(['linux']);
+    const id = await agentJob('prod');
+    expect(await claim(credential)).toBeNull();
+    expect((await runRow(id)).state).toBe('queued');
+    const listed = await call('/api/v1/repos/yuma/app/approvals');
+    const { approvals } = (await listed.json()) as {
+      approvals: { id: string; action: string; principal: string }[];
+    };
+    expect(approvals).toMatchObject([
+      { action: 'deploy', principal: 'agent:agt_worker' },
+    ]);
+    const decided = await call(
+      `/api/v1/repos/yuma/app/approvals/${approvals[0]!.id}`,
+      'POST',
+      {
+        decision: 'approve',
+      },
+    );
+    expect(decided.status).toBe(200);
+    expect((await claim(credential))?.id).toBe(id);
   });
 });

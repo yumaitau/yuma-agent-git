@@ -542,7 +542,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 6,
+                        "maxItems": 8,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -551,8 +551,10 @@
                             "ref",
                             "pull_request",
                             "pull_request_review",
+                            "pull_request_review_thread",
                             "issues",
-                            "ci_run"
+                            "ci_run",
+                            "work_item"
                           ]
                         }
                       },
@@ -757,7 +759,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 6,
+                    "maxItems": 8,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -766,8 +768,10 @@
                         "ref",
                         "pull_request",
                         "pull_request_review",
+                        "pull_request_review_thread",
                         "issues",
-                        "ci_run"
+                        "ci_run",
+                        "work_item"
                       ]
                     }
                   },
@@ -1601,7 +1605,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 6,
+                    "maxItems": 8,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1610,8 +1614,10 @@
                         "ref",
                         "pull_request",
                         "pull_request_review",
+                        "pull_request_review_thread",
                         "issues",
-                        "ci_run"
+                        "ci_run",
+                        "work_item"
                       ]
                     }
                   },
@@ -1810,7 +1816,9 @@
                               "pipeline.run",
                               "pipeline.edit",
                               "secret.write",
-                              "issue.ready"
+                              "issue.ready",
+                              "queue.claim",
+                              "deploy"
                             ]
                           }
                         },
@@ -2943,7 +2951,9 @@
                                 "pipeline.run",
                                 "pipeline.edit",
                                 "secret.write",
-                                "issue.ready"
+                                "issue.ready",
+                                "queue.claim",
+                                "deploy"
                               ]
                             },
                             "ref": { "type": "string" },
@@ -4352,7 +4362,7 @@
         "operationId": "createCiRun",
         "summary": "Queue a CI run",
         "security": [{ "session": [] }, { "bearer": [] }],
-        "x-yag-permission": "write (whole repo); admin if `publish`",
+        "x-yag-permission": "write (whole repo); admin if `publish` + agent identity for `refs/agents/<id>/`",
         "x-yag-rate-bucket": "api_write",
         "parameters": [
           {
@@ -5199,7 +5209,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 6,
+                    "maxItems": 8,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5208,8 +5218,10 @@
                         "ref",
                         "pull_request",
                         "pull_request_review",
+                        "pull_request_review_thread",
                         "issues",
-                        "ci_run"
+                        "ci_run",
+                        "work_item"
                       ]
                     }
                   },

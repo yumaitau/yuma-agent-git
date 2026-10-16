@@ -97,7 +97,7 @@ export async function enqueueRun(
 export async function emitCiRun(
   env: Env,
   id: string,
-  action: 'requested' | 'completed',
+  action: 'requested' | 'in_progress' | 'completed',
 ): Promise<void> {
   const job = await q1<CiRun>(env, 'SELECT * FROM ci_runs WHERE id = ?', [id]);
   const repo = job && (await getRepo(env, job.repo_id));

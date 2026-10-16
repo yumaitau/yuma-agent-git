@@ -24,14 +24,16 @@ encrypted with the CI secrets keys (#50, `SECRETS_KEK`) and never returned.
 
 ### Events
 
-| Event                 | Actions                                                                                           | Sent when                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `push`                | none                                                                                              | a branch or tag moves: `git push`, the refs API, merges |
-| `ref`                 | `created`, `deleted`                                                                              | a branch, tag or agent ref is created or deleted        |
-| `pull_request`        | `opened`, `edited`, `synchronize`, `closed`, `reopened`, `ready_for_review`, `converted_to_draft` | pull request changes; a merge is `closed`               |
-| `pull_request_review` | `submitted`                                                                                       | a review is submitted                                   |
-| `issues`              | `opened`, `edited`, `closed`, `reopened`, `deleted`                                               | issue changes                                           |
-| `ci_run`              | `requested`, `completed`                                                                          | a CI run is queued or finishes                          |
+| Event                        | Actions                                                                                           | Sent when                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `push`                       | none                                                                                              | a branch or tag moves: `git push`, the refs API, merges                 |
+| `ref`                        | `created`, `deleted`                                                                              | a branch, tag or agent ref is created or deleted                        |
+| `pull_request`               | `opened`, `edited`, `synchronize`, `closed`, `reopened`, `ready_for_review`, `converted_to_draft` | pull request changes; a merge is `closed`                               |
+| `pull_request_review`        | `submitted`                                                                                       | a review is submitted                                                   |
+| `pull_request_review_thread` | `created`, `replied`, `resolved`, `unresolved`                                                    | a line review thread (#39) is started, answered or resolved             |
+| `issues`                     | `opened`, `edited`, `closed`, `reopened`, `deleted`                                               | issue changes                                                           |
+| `ci_run`                     | `requested`, `in_progress`, `completed`                                                           | a CI run is queued, a self-hosted runner takes it (#48), or it finishes |
+| `work_item`                  | `claimed`, `released`                                                                             | a work queue item (#59) is claimed or released                          |
 
 A push payload lists at most 20 commits (`size` has the full count). Pushes
 through the refs API and merges list only the new head.
@@ -43,7 +45,8 @@ through the refs API and merges list only the new head.
   `pull_request_review`, `issues` and `create`/`delete` (from `ref`), with
   `X-GitHub-Event`, `X-GitHub-Delivery` and `X-Hub-Signature-256`, so existing
   GitHub webhook consumers can read them. GitHub's numeric ids are derived
-  from forge ids and are stable per object. `ci_run` has no GitHub shape.
+  from forge ids and are stable per object. `ci_run`, `pull_request_review_thread`
+  and `work_item` have no GitHub shape.
 
 ### Verifying a delivery
 

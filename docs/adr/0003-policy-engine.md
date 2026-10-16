@@ -84,7 +84,7 @@ Use the typed TypeScript rules DSL.
 - A policy is `{ version: 1, rules: [...] }`. A rule has an `id`, the
   `actions` it covers (`push`, `changeset.create`, `ref.move`, `pr.merge`,
   `release.publish`, `pipeline.run`, `pipeline.edit`, `secret.write`,
-  `issue.ready`), an `effect` (`deny` or `require_approval`) and `when`
+  `issue.ready`, `queue.claim`, `deploy`), an `effect` (`deny` or `require_approval`) and `when`
   conditions that must all hold: `paths`, `refs` (globs, `!glob` excludes,
   last match wins), `max_files`, `max_bytes`, `force_push`, `risk` and
   `registries`. The strictest match wins; no match allows.
@@ -113,11 +113,15 @@ Use the typed TypeScript rules DSL.
 - There is no formal conflict analysis. Policies stay small and every rule
   has an `id` that appears in each refusal, in the audit log and in the
   approval card.
-- `secret.write` and `issue.ready` are accepted actions with nothing to judge
-  yet: agents cannot write secrets (session only) and the ready state arrives
-  with the work queue (#59). Agent identities cannot merge pull requests at
-  all today, so the default `high-risk-merge` rule is a stated intent until
-  that changes.
+- `secret.write` is an accepted action with nothing to judge yet: agents
+  cannot write secrets (session only). The work queue (#59) judges an agent
+  marking work ready (`issue.ready`) and each claim (`queue.claim`, with the
+  item's `risk`); a held claim goes back to the queue. A self-hosted runner
+  claim (#48) judges `deploy` for an agent-started job that names an
+  environment; a held job stays queued until approved. Agent identities cannot
+  merge pull requests at all today; an agent's update-branch (#42) is judged
+  as `pr.merge`, and the `land` tool judges each server-side merge attempt as
+  `ref.move`.
 
 ## Review triggers
 

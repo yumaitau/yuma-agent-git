@@ -6,7 +6,8 @@ import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { errorResponse, readJsonBody } from './errors';
 import { q, q1 } from '../db/client';
 import { ApiError } from '../core/errors';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitEvent } from '../webhooks/events';
 import { linkReferences } from '../collab/references';
 import { getPull, type Pull } from '../reviews/pulls';
 import {
@@ -136,6 +137,24 @@ reviewsRoutes.get(`${base}/threads`, async (c) => {
   }
 });
 
+/** The `pull_request_review_thread` webhook event (#75); returns the thread. */
+async function emitThread(
+  c: Context<AppEnv>,
+  loaded: Loaded,
+  action: 'created' | 'replied' | 'resolved' | 'unresolved',
+  id: number,
+): Promise<ReviewThread> {
+  const thread = await oneThread(c, loaded.pull, id);
+  await emitEvent(c.env, loaded.repo, {
+    event: 'pull_request_review_thread',
+    action,
+    actor: actorOf(c.get('principal')),
+    origin: new URL(c.req.url).origin,
+    data: { pull_request: loaded.pull, thread },
+  });
+  return thread;
+}
+
 reviewsRoutes.post(`${base}/threads`, async (c) => {
   try {
     const repo = await loadWholeRepo(c, 'write', c.req.param('repo'));
@@ -157,7 +176,7 @@ reviewsRoutes.post(`${base}/threads`, async (c) => {
       referenceSource(loaded.repo, loaded.pull),
       input.body,
     );
-    return c.json({ thread: await oneThread(c, loaded.pull, thread_id) }, 201);
+    return c.json({ thread: await emitThread(c, loaded, 'created', thread_id) }, 201);
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -193,7 +212,7 @@ reviewsRoutes.post(`${base}/threads/:thread/replies`, async (c) => {
       ],
     );
     await linkReferences(c, loaded.repo, referenceSource(loaded.repo, loaded.pull), body);
-    return c.json({ thread: await oneThread(c, loaded.pull, thread.id) }, 201);
+    return c.json({ thread: await emitThread(c, loaded, 'replied', thread.id) }, 201);
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -224,7 +243,8 @@ reviewsRoutes.put(`${base}/threads/:thread/resolution`, async (c) => {
         ),
       ],
     );
-    return c.json({ thread: await oneThread(c, loaded.pull, thread.id) });
+    const action = resolved ? 'resolved' : 'unresolved';
+    return c.json({ thread: await emitThread(c, loaded, action, thread.id) });
   } catch (err) {
     return errorResponse(c, err);
   }

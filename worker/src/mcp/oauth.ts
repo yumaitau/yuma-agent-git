@@ -21,6 +21,7 @@ import {
 import { can } from '../auth/rbac';
 import { currentSession, requireRecentMfa } from '../auth/session';
 import { ssoRequirement } from '../auth/sso';
+import { getPause, INSTANCE_SCOPE, pauseMessage } from '../policy/pause';
 import { createApiToken } from '../auth/tokens';
 import type { AppEnv, Principal } from '../auth/principal';
 
@@ -781,6 +782,19 @@ async function issue(
   const now = Date.now();
   const scopes = JSON.parse(grant.scopes) as string[];
   const repoIds = JSON.parse(grant.repos) as string[];
+  const repos = (await Promise.all(repoIds.map((id) => getRepo(c.env, id)))).filter(
+    (r) => r !== null,
+  );
+  // kill switch (#62): no new tokens while the instance or an org is paused
+  const agent = await getAgent(c.env, grant.agent_id);
+  for (const scope of new Set([
+    INSTANCE_SCOPE,
+    ...(agent?.owner_kind === 'org' ? [agent.owner_id] : []),
+    ...repos.flatMap((r) => (r.owner_kind === 'org' && r.owner_id ? [r.owner_id] : [])),
+  ])) {
+    const pause = await getPause(c.env, scope);
+    if (pause) return oauthError(c, 400, 'invalid_grant', pauseMessage(pause));
+  }
   const access = await newAgentToken(
     c.env,
     {
@@ -801,9 +815,6 @@ async function issue(
       'UPDATE mcp_grants SET refresh_token_hash = ?, refresh_expires_at = ? WHERE id = ?',
     ).bind(await hash(refresh), now + REFRESH_TTL_MS, grant.id),
   ];
-  const repos = (await Promise.all(repoIds.map((id) => getRepo(c.env, id)))).filter(
-    (r) => r !== null,
-  );
   for (const [i, repo] of [...(repos.length > 0 ? repos : [null])].entries()) {
     await recordAudit(
       c,

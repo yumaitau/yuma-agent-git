@@ -20,6 +20,8 @@ export const runContextSchema = z.object({
   /** Request origin, the issuer fallback when CI_OIDC_ISSUER is unset; null for schedules. */
   origin: z.string().url().nullable(),
   approval_id: z.string().nullable().default(null),
+  /** The agent identity (#57) that started the run, for guardrails (#62). */
+  agent_id: z.string().nullable().optional(),
 });
 export type RunContext = z.infer<typeof runContextSchema>;
 
@@ -37,11 +39,16 @@ export function actorKindOf(principal: Principal | null): 'human' | 'agent' {
   return principal?.kind === 'user' ? 'human' : 'agent';
 }
 
+export function agentIdOf(principal: Principal | null): string | null {
+  return principal?.kind === 'agent' ? principal.agentId : null;
+}
+
 /** Who started a run or pipeline, from the request that did. */
 export interface Trigger {
   actor: string;
   actor_kind: RunContext['actor_kind'];
   origin: string | null;
+  agent_id?: string | null;
 }
 
 export function triggerOf(c: Context<AppEnv>): Trigger {
@@ -50,6 +57,7 @@ export function triggerOf(c: Context<AppEnv>): Trigger {
     actor: principal!.userId,
     actor_kind: actorKindOf(principal),
     origin: new URL(c.req.url).origin,
+    agent_id: agentIdOf(principal),
   };
 }
 
@@ -69,6 +77,7 @@ export function contextFor(
     actor_kind: trigger.actor_kind,
     origin: trigger.origin,
     approval_id: null,
+    agent_id: trigger.agent_id ?? null,
   };
 }
 

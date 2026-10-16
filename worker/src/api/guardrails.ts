@@ -15,6 +15,8 @@ import {
   type Policy,
 } from '../policy/engine';
 import { DEFAULT_POLICY } from '../policy/guardrails';
+import { finishRun } from '../ci/runners';
+import { advancePipelines } from '../ci/planner';
 import { getPause, INSTANCE_SCOPE, type Pause } from '../policy/pause';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { loadOrg } from './orgs';
@@ -193,7 +195,10 @@ guardrailsRoutes.post('/policy/test', async (c) => {
 
 export const pauseSchema = z.object({ reason: z.string().trim().max(500).default('') });
 
-/** Pause agents in `scope` (an org id or `_instance`): revoke tokens, stop runs. */
+/**
+ * Pause agents in `scope` (an org id or `_instance`): revoke tokens, stop runs
+ * and agent-started runner jobs, end MCP sessions.
+ */
 async function pause(
   c: Context<AppEnv>,
   scope: string,
@@ -243,8 +248,33 @@ async function pause(
                 AND ${C.agentTasks.repoId} IN (${orgRepos})`,
             )
             .bind(now, org),
+      // MCP sessions (#56) of the paused agents end; clients must reconnect
+      org === null
+        ? db.prepare("DELETE FROM mcp_sessions WHERE holder LIKE 'agent:%'")
+        : db
+            .prepare(
+              `DELETE FROM mcp_sessions WHERE holder LIKE 'agent:%' AND (
+                substr(holder, 7, instr(substr(holder, 7), ':') - 1) IN (
+                  SELECT id FROM agents WHERE owner_kind = 'org' AND owner_id = ?)
+                OR substr(holder, 7, instr(substr(holder, 7), ':') - 1) IN (
+                  SELECT g.agent_id FROM mcp_grants g, json_each(g.repos) j
+                   WHERE j.value IN (${orgRepos})))`,
+            )
+            .bind(org, org),
     ],
   );
+  // self-hosted runner jobs (#48) that agents started stop; a running job's
+  // runner sees the cancel on its next heartbeat
+  const jobs = await q<{ id: string }>(
+    c.env,
+    `SELECT id FROM ci_runs WHERE state IN ('queued', 'running') AND runs_on IS NOT NULL
+        AND json_extract(context, '$.agent_id') IS NOT NULL
+        ${org === null ? '' : `AND repo_id IN (${orgRepos})`}`,
+    org === null ? [] : [org],
+  );
+  for (const job of jobs)
+    await finishRun(c.env, job.id, 'cancelled', 'Agents were paused');
+  if (jobs.length) await advancePipelines(c.env);
   return getPause(c.env, scope);
 }
 

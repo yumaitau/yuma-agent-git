@@ -26,9 +26,17 @@ import { pullPipelines, pushPipelines } from '../ci/triggers';
 import { requestRun } from '../ci/environments';
 import { advancePipelines } from '../ci/planner';
 import { stopSelfHosted } from '../ci/runners';
-import { actorKindOf, contextFor, parseContext, runRef, triggerOf } from '../ci/context';
+import {
+  actorKindOf,
+  agentIdOf,
+  contextFor,
+  parseContext,
+  runRef,
+  triggerOf,
+} from '../ci/context';
 import { actorOf, recordAudit } from '../audit/record';
 import { emitEvent, emitRefUpdate } from '../webhooks/events';
+import { enforceAgentAction } from '../policy/guardrails';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
 
@@ -196,6 +204,18 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
       }
       const pull = await getPull(c.env, loaded.repo.id, Number(c.req.param('id')));
       const body = await readJsonBody(c);
+      if (action === 'update-branch') {
+        // agent guardrails (#62): an agent merging or rebasing the target in
+        const how = (body as { method?: unknown } | null)?.method ?? 'merge';
+        const update = { pull: pull.number, head_cs: pull.head_cs, method: how };
+        await enforceAgentAction(
+          c.env,
+          c.get('principal'),
+          loaded.repo,
+          { action: 'pr.merge', ref: pull.base_ref },
+          { exact: update, summary: { ...update, base_ref: pull.base_ref } },
+        );
+      }
       const stub = c.env.REF_LOCK.get(
         c.env.REF_LOCK.idFromName(`${loaded.repo.id}:${pull.base_ref}`),
       );
@@ -438,6 +458,7 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
         actor_kind: actorKindOf(c.get('principal')),
         origin: new URL(c.req.url).origin,
         approval_id: null,
+        agent_id: agentIdOf(c.get('principal')),
       },
     );
     if (started.approval) {
@@ -495,6 +516,7 @@ collaborationRoutes.post(`${base}/ci/runs/:id/retry`, async (c) => {
           actor_kind: trigger.actor_kind,
           origin: trigger.origin,
           approval_id: null,
+          agent_id: trigger.agent_id ?? null,
         }
       : contextFor(
           trigger,
@@ -700,6 +722,7 @@ export async function autoCheck(
           actor_kind: trigger.actor_kind,
           origin: trigger.origin,
           approval_id: null,
+          agent_id: trigger.agent_id ?? null,
         })
       : null;
     const pipelines = await pullPipelines(env, pull, trigger);

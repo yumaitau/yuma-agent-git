@@ -23,6 +23,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
+  the item's risk; a held claim goes back to the queue), an agent marking work
+  ready (`issue.ready`), update-branch by an agent (`pr.merge`), each
+  server-side merge in the `land` tool (`ref.move`) and deploys of
+  agent-started self-hosted runner jobs (`deploy`, held jobs stay queued). The
+  kill switch also cancels agent-started runner jobs, ends MCP sessions and
+  refuses MCP refresh grants. Webhooks add `pull_request_review_thread`,
+  `work_item` and `ci_run` `in_progress`; merge events carry the merge commit.
+  MCP adds `pr_conflicts`, `pr_update_branch`, `review_thread_*`,
+  `issue_labels_set`, `issue_assignees_set` and `queue_*` tools. MCP clients
+  and OAuth apps share `/oauth/authorize` and `/oauth/token`, dispatched by
+  client id, and `/mcp`, `/oauth/*` and `/.well-known/oauth-*` now run the
+  Worker before static assets.
+
 - Agent guardrails (#62). Org policies, written in a typed rules DSL
   (`docs/adr/0003-policy-engine.md`) with a default pack in
   `policies/default.json`, judge agent pushes, commits, ref moves, tags and

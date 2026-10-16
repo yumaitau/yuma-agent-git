@@ -36,7 +36,16 @@ interface Delivery {
   redelivery_of: string | null;
 }
 
-const EVENTS = ['push', 'ref', 'pull_request', 'pull_request_review', 'issues', 'ci_run'];
+const EVENTS = [
+  'push',
+  'ref',
+  'pull_request',
+  'pull_request_review',
+  'pull_request_review_thread',
+  'issues',
+  'ci_run',
+  'work_item',
+];
 const STATUS_KIND = {
   pending: 'info',
   retrying: 'warn',

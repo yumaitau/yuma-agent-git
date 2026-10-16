@@ -12,9 +12,11 @@ import { globMatch } from './rulesets';
  * must hold for the rule to match (an empty `when` always matches). The
  * strictest matching effect wins: deny, then require_approval, else allow.
  * A push or commit that changes `.yuma/pipelines/**` is also judged as
- * `pipeline.edit`. `secret.write` and `issue.ready` are accepted for policies
- * written now: agents cannot write secrets (sessions only) and the ready
- * state arrives with the work queue (#59), which calls the engine then.
+ * `pipeline.edit`. `secret.write` is accepted for policies written now:
+ * agents cannot write secrets (sessions only). The work queue (#59) judges
+ * `issue.ready` and `queue.claim` (with the item's risk), a self-hosted runner
+ * claim judges `deploy` for an agent-started job that names an environment
+ * (#48), and update-branch by an agent is `pr.merge` (#42).
  */
 
 export const POLICY_ACTIONS = [
@@ -27,6 +29,8 @@ export const POLICY_ACTIONS = [
   'pipeline.edit',
   'secret.write',
   'issue.ready',
+  'queue.claim',
+  'deploy',
 ] as const;
 export type PolicyAction = (typeof POLICY_ACTIONS)[number];
 

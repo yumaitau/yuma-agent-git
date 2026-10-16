@@ -770,3 +770,172 @@ describe('MCP Streamable HTTP (#56)', () => {
     );
   });
 });
+
+describe('MCP with guardrails, threads, queue and merges (wave 2b)', () => {
+  it('a tool call is judged by the agent policy: a workflow change waits for approval', async () => {
+    const { access } = await oauthToken(['contents:read', 'contents:write']);
+    const mcp = await connect(access);
+    const held = await mcp.call('changeset_create', {
+      repo: 'acme/app',
+      first_parent: mainCs,
+      message: 'ci',
+      author,
+      changes: [
+        { path: '.github/workflows/ci.yml', op: 'add', content_b64: btoa('on: push\n') },
+      ],
+    });
+    expect(held.isError).toBe(true);
+    expect(JSON.parse(held.text)).toMatchObject({
+      error: { code: 'approval_required' },
+    });
+  });
+
+  it('exposes review thread, merge strategy, issue and queue tools', async () => {
+    const names = [...mcpTools().keys()];
+    for (const name of [
+      'pr_conflicts',
+      'pr_update_branch',
+      'review_thread_list',
+      'review_thread_create',
+      'review_thread_reply',
+      'review_thread_resolve',
+      'issue_labels_set',
+      'issue_assignees_set',
+      'queue_list',
+      'queue_claim',
+      'queue_heartbeat',
+      'queue_release',
+    ])
+      expect(names).toContain(name);
+    const { access } = await oauthToken([
+      'contents:read',
+      'contents:write',
+      'pulls:write',
+    ]);
+    const mcp = await connect(access);
+    const committed = await mcp.call('changeset_create', {
+      repo: 'acme/app',
+      first_parent: mainCs,
+      message: 'agent change',
+      author,
+      changes: [{ path: 'NEW.md', op: 'add', content_b64: btoa('new\n') }],
+    });
+    const head = (committed.structured?.changeset as { id: string }).id;
+    const pr = await mcp.call('pr_create', {
+      repo: 'acme/app',
+      title: 'PR',
+      head_cs: head,
+    });
+    expect(pr.isError, pr.text).toBe(false);
+    const pull = (pr.structured?.pull as { id: number; revision: number }) ?? null;
+    expect(pull).toBeTruthy();
+    const conflicts = await mcp.call('pr_conflicts', { repo: 'acme/app', id: pull.id });
+    expect(conflicts.isError, conflicts.text).toBe(false);
+    expect(conflicts.structured).toMatchObject({ mergeable: true, conflicts: [] });
+    const thread = await mcp.call('review_thread_create', {
+      repo: 'acme/app',
+      id: pull.id,
+      // the thread schema is an intersection, so it nests under `body`
+      body: {
+        head_cs: head,
+        revision: pull.revision,
+        path: 'NEW.md',
+        side: 'head',
+        line: 1,
+        body: 'Is this right?',
+      },
+    });
+    expect(thread.isError, thread.text).toBe(false);
+    const threadId = (thread.structured?.thread as { id: number }).id;
+    const resolved = await mcp.call('review_thread_resolve', {
+      repo: 'acme/app',
+      id: pull.id,
+      thread: threadId,
+      resolved: true,
+    });
+    expect(resolved.isError, resolved.text).toBe(false);
+    expect(resolved.structured?.thread).toMatchObject({ id: threadId });
+    // queue tools need queue:claim, which this grant lacks
+    const claim = await mcp.call('queue_claim', { repo: 'acme/app' });
+    expect(claim.isError).toBe(true);
+    expect(JSON.parse(claim.text)).toMatchObject({
+      error: { code: 'insufficient_scope', required_scope: 'queue:claim' },
+    });
+  });
+
+  it('the kill switch ends MCP sessions and refuses refresh grants', async () => {
+    const { access, refresh, clientId } = await oauthToken(['contents:read']);
+    const mcp = await connect(access);
+    expect(
+      await q(dbEnv, 'SELECT id FROM mcp_sessions WHERE id = ?', [mcp.session]),
+    ).toHaveLength(1);
+    const admin = makeApp(
+      new Proxy(testEnv, {
+        get: (target, key, receiver) =>
+          key === 'AGENTS_ADMIN_USER_IDS'
+            ? owner.userId
+            : Reflect.get(target, key, receiver),
+      }),
+    );
+    const paused = await admin(
+      new Request(`${ORIGIN}/api/v1/admin/agents/pause`, {
+        method: 'POST',
+        headers: { ...owner.headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'incident' }),
+      }),
+    );
+    expect(paused.status).toBe(200);
+    expect(await q(dbEnv, 'SELECT id FROM mcp_sessions')).toHaveLength(0);
+    expect((await mcp.rpc('tools/list')).status).toBe(401);
+    const refused = await token({
+      grant_type: 'refresh_token',
+      refresh_token: refresh,
+      client_id: clientId,
+    });
+    expect(refused.status).toBe(400);
+    expect(await json(refused)).toMatchObject({ error: 'invalid_grant' });
+    const resumed = await admin(
+      new Request(`${ORIGIN}/api/v1/admin/agents/pause`, {
+        method: 'DELETE',
+        headers: owner.headers,
+      }),
+    );
+    expect(resumed.status).toBe(200);
+    const again = await token({
+      grant_type: 'refresh_token',
+      refresh_token: refresh,
+      client_id: clientId,
+    });
+    expect(again.status).toBe(200);
+  });
+});
+
+describe('shared OAuth endpoints (#56 x #75)', () => {
+  it('serves the dashboard consent page for clients that are not MCP clients', async () => {
+    const withAssets = makeApp(
+      new Proxy(testEnv, {
+        get: (target, key, receiver) =>
+          key === 'ASSETS'
+            ? { fetch: async () => new Response('<div id="root"></div>') }
+            : Reflect.get(target, key, receiver),
+      }),
+    );
+    const spa = await withAssets(
+      new Request(`${ORIGIN}/oauth/authorize?client_id=oa_app&response_type=code`, {
+        headers: owner.headers,
+      }),
+    );
+    expect(await spa.text()).toBe('<div id="root"></div>');
+    // an MCP client still gets the server-rendered MCP consent form
+    const clientId = await register();
+    const { challenge } = await pkce();
+    const mcp = await withAssets(
+      new Request(
+        `${ORIGIN}/oauth/authorize?${new URLSearchParams(authorizeQuery(clientId, challenge))}`,
+        { headers: owner.headers },
+      ),
+    );
+    expect(mcp.status).toBe(200);
+    expect(await mcp.text()).toContain('name="csrf"');
+  });
+});

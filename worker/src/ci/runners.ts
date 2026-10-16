@@ -15,6 +15,9 @@ import { parsePolicy, type CiRun } from './config';
 import { parseContext } from './context';
 import { prepareJob } from './inject';
 import { advancePipelines } from './planner';
+import { emitCiRun } from './runs';
+import { guardAgentAction } from '../policy/guardrails';
+import { pauseFor, pauseMessage } from '../policy/pause';
 import { labelsSchema, runnerServices } from './spec';
 
 /**
@@ -141,9 +144,9 @@ export async function finishRun(
   state: 'passed' | 'failed' | 'cancelled' | 'timed_out',
   error: string | null,
 ): Promise<void> {
-  const row = await q1<{ runner_id: string | null }>(
+  const row = await q1<{ runner_id: string | null; state: string }>(
     env,
-    'SELECT runner_id FROM ci_runs WHERE id = ?',
+    'SELECT runner_id, state FROM ci_runs WHERE id = ?',
     [id],
   );
   await env.DB.batch([
@@ -160,6 +163,8 @@ export async function finishRun(
       row?.runner_id ?? '',
     ),
   ]);
+  if (row?.state === 'queued' || row?.state === 'running')
+    await emitCiRun(env, id, 'completed');
 }
 
 /** Cancel a self-hosted run; false when the run belongs to the built-in pool. */
@@ -366,6 +371,46 @@ async function claim(env: Env, runner: RunnerRow, job: CiRun, origin: string) {
   }
   if (!repo || !commit) return null;
   const policy = parsePolicy(JSON.parse(job.config));
+  const context = parseContext(job.context);
+  if (context?.agent_id) {
+    // agent guardrails (#62): the kill switch ends a job an agent started,
+    // and a deploy waits for the policy (held: stays queued until approved)
+    const pause = await pauseFor(env, repo);
+    if (pause) {
+      await finishRun(env, job.id, 'cancelled', pauseMessage(pause));
+      await advancePipelines(env);
+      return null;
+    }
+    if (policy.environment) {
+      const deploy = {
+        run: job.id,
+        job: job.job_key ?? null,
+        environment: policy.environment,
+        head_cs: job.head_cs,
+      };
+      const agent: Principal = {
+        kind: 'agent',
+        userId: job.requested_by,
+        agentId: context.agent_id,
+        jti: `ci-run:${job.id}`,
+        taskId: null,
+        scopes: [],
+        repoIds: [job.repo_id],
+      };
+      const guard = await guardAgentAction(
+        env,
+        agent,
+        repo,
+        { action: 'deploy', ...(context.ref ? { ref: context.ref } : {}) },
+        { exact: deploy, summary: deploy },
+      );
+      if (guard.outcome === 'deny') {
+        await finishRun(env, job.id, 'failed', guard.message);
+        await advancePipelines(env);
+      }
+      if (guard.outcome !== 'allow') return null;
+    }
+  }
   const now = Date.now();
   const deadline = now + policy.timeout_seconds * 1000;
   const token = `${CLONE_PREFIX}${randomB64url(32)}`;
@@ -391,6 +436,7 @@ async function claim(env: Env, runner: RunnerRow, job: CiRun, origin: string) {
     await advancePipelines(env);
     return null;
   }
+  await emitCiRun(env, job.id, 'in_progress');
   return {
     id: job.id,
     repo: repo.slug,

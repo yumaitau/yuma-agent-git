@@ -409,7 +409,12 @@ it('shows inline review threads and starts, resolves and applies them', async ()
         review_requests: [{ principal: 'user:u2', state: 'pending' }],
         names: { 'user:u2': 'grace' },
       });
-    return Response.json({ pull, reviews: [], gate: { mergeable: false, reasons: [] } });
+    if (path.endsWith('/conflicts')) return Response.json(clean);
+    return Response.json({
+      pull,
+      reviews: [],
+      gate: { mergeable: false, reasons: [], methods: ['merge'], method: 'merge' },
+    });
   });
   vi.stubGlobal('fetch', fetcher);
   mount(<PullView />, 'pulls/:id');
