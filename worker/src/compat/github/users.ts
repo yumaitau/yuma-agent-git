@@ -38,7 +38,7 @@ export const usersRoutes = new Hono<AppEnv>();
 usersRoutes.get(
   PREFIX,
   gh(async (c) => {
-    await native(c, 'GET', '');
+    await native(c, 'GET', '/user'); // any signed-in caller
     return c.json({
       current_user_url: apiUrl(c, '/user'),
       repository_url: apiUrl(c, '/repos/{owner}/{repo}'),

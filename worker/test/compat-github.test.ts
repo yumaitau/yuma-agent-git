@@ -464,6 +464,12 @@ describe('GitHub REST compatibility (access and aliases)', () => {
   });
 
   it('serves the GitHub Enterprise /api/v3 path gh uses with GH_HOST', async () => {
+    const root = await call('GET', '/api/v3/', ownerToken);
+    expect(root.status).toBe(200);
+    expect(await root.json()).toMatchObject({
+      current_user_url: 'https://forge.test/api/github/v3/user',
+    });
+    expect((await call('GET', '/api/v3/', null)).status).toBe(401);
     const gh = octokit(ownerToken, 'https://forge.test/api/v3');
     const issue = await gh.rest.issues.create({
       owner: 'team',

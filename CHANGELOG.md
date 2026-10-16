@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- GitHub compatibility (#74). A GitHub REST compatible subset under
+  `/api/github/v3` (and `/api/v3` for GitHub Enterprise clients) covers
+  repos, contents, Git refs, commits, issues, comments, labels, pull requests,
+  reviews, check runs, statuses, releases and issue search, translated onto
+  the native routes as the caller. `yag` gains gh-style `issue`, `pr`
+  (create, list, view, checkout, merge, review, checks), `run`, `repo`, `api`
+  and `auth` commands, with tokens in the OS keychain and a Git credential
+  helper. See docs/compat/github.md.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

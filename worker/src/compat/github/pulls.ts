@@ -69,7 +69,7 @@ export async function ghPull(c: Ctx, repo: Repo, pull: Pull, gate?: PullDetail['
     html_url: base['html_url'] as string,
     url,
     issue_url: apiUrl(c, `/repos/${repo.record.slug}/issues/${pull.number}`),
-    statuses_url: apiUrl(c, `/repos/${repo.record.slug}/statuses/${head.sha}`),
+    statuses_url: apiUrl(c, `/repos/${repo.record.slug}/commits/${head.sha}/statuses`),
     head: side(head, pull.head_cs),
     base: side(base['base'] as { ref: string; sha: string }, pull.base_cs),
     merge_commit_sha: pull.merged_cs
