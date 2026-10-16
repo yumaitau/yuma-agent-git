@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { C, T } from '../db/schema';
 import { parseImportJobRow, q1, run } from '../db/client';
+import { startSecretScan } from '../security/secrets/history';
 import { getChangeset } from '../core/changesets';
 import { commitChanges } from '../core/commit';
 import { putBlob } from '../core/blobs';
@@ -203,6 +204,8 @@ export async function runImportMessage(env: Env, message: ImportMessage): Promis
       await fullHistoryImport(env, job);
     }
     await updateJob(env, job.id, { status: 'done' });
+    // imported history is scanned for secrets in the background (#66)
+    await startSecretScan(env, job.repo_id, { kind: 'system', id: 'import' });
     return;
   }
   await incrementalSyncFromPush(env, message);

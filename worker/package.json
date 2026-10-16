@@ -15,7 +15,8 @@
     "build": "vite build && node ../scripts/check-bundle-size.mjs && node ../scripts/check-dashboard-startup.mjs",
     "build:dashboard": "npm run build",
     "docs:api": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-api-docs.ts",
-    "bench:policy": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-policy.ts"
+    "bench:policy": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-policy.ts",
+    "bench:secrets": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-secrets.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "latest",

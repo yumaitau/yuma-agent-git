@@ -10,6 +10,11 @@ import {
   storeRaw,
   type DerivedMessage,
 } from '../core/derived';
+import {
+  isSecretScanMessage,
+  secretScanMessage,
+  type SecretScanMessage,
+} from '../security/secrets/history';
 
 /**
  * `derived-data` queue consumer (architecture §1.5): computes deferred kinds
@@ -26,6 +31,11 @@ export async function derivedQueue(
 ): Promise<void> {
   for (const message of batch.messages.slice(0, 10)) {
     await recordQueue(env);
+    // secret scanning history scans (#66) share this queue
+    if (isSecretScanMessage(message.body)) {
+      await secretScanMessage(env, message as unknown as Message<SecretScanMessage>);
+      continue;
+    }
     const { repo_id: repoId, kind, cs_id: csId, compaction } = message.body;
     try {
       if (compaction) {

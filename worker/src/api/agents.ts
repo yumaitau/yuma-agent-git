@@ -19,6 +19,7 @@ import type { AgentState } from '../agents/runtime';
 import { SUPERFAN_COMPONENTS, superfanName } from '../agents/superfan';
 import { r2 } from '../observability/phase';
 import { recordAudit } from '../audit/record';
+import { redactDeep } from '../security/secrets/detectors';
 
 /**
  * Agent task lifecycle API (issue #17) — mounted under /api/v1:
@@ -179,7 +180,9 @@ agentsRoutes.get('/agents/tasks/:id/transcript', async (c) => {
       .split('\n')
       .filter((line) => line.trim() !== '')
       .map((line) => JSON.parse(line) as { t: number })
-      .filter((entry) => entry.t >= since);
+      .filter((entry) => entry.t >= since)
+      // transcripts written before redaction (#66) are redacted on the way out
+      .map(redactDeep);
     return c.json({ entries }, 200, { 'cache-control': 'private, no-store' });
   } catch (err) {
     return errorResponse(c, err);

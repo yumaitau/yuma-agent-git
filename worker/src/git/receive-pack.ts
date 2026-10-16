@@ -11,6 +11,7 @@ import { triggerOf } from '../ci/context';
 import { linkLanded, linkPushed } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
 import { emitRefUpdate } from '../webhooks/events';
+import { recordBypass } from '../security/secrets/scan';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
 import { MAX_CHANGED_FILES } from '../core/changesets';
@@ -86,6 +87,7 @@ const ZERO_SHA = '0'.repeat(40);
 const CAPABILITIES = [
   'report-status',
   'delete-refs',
+  'push-options',
   'side-band-64k',
   'quiet',
   'atomic',
@@ -222,12 +224,13 @@ async function diffTrees(
   if (target) out.trees.push({ path: prefix, names: after.map((e) => e.name) });
   const path = (name: string): string => (prefix === '' ? name : `${prefix}/${name}`);
   const isTree = (e: GitTreeItem | undefined): boolean => e?.mode === TREE_MODE;
-  const file = (op: GitChange['op'], e: GitTreeItem): GitChange => {
+  const file = (op: GitChange['op'], e: GitTreeItem, oldSha?: string): GitChange => {
     const object = push.objects.get(e.sha);
     return {
       path: path(e.name),
       op,
       sha: e.sha,
+      ...(oldSha ? { oldSha } : {}),
       mode: e.mode,
       size: object?.body.length,
     };
@@ -248,7 +251,8 @@ async function diffTrees(
     } else {
       if (isTree(old))
         await diffTrees(push, (old as GitTreeItem).sha, null, path(entry.name), out);
-      out.changes.push(file(old && !isTree(old) ? 'mod' : 'add', entry));
+      if (old && !isTree(old)) out.changes.push(file('mod', entry, old.sha));
+      else out.changes.push(file('add', entry));
     }
   }
   for (const old of before.values()) {
@@ -386,6 +390,17 @@ export async function receivePack(
     });
   }
   if (updates.length === 0) return FLUSH;
+  // `git push -o`: option lines and a flush between the commands and the pack
+  const pushOptions: string[] = [];
+  if (caps.includes('push-options')) {
+    for (;;) {
+      const pkt = reader.next();
+      if (pkt === null || pkt.kind === 'flush') break;
+      if (pkt.kind !== 'data')
+        throw new GitProtocolError('unexpected packet in push options');
+      pushOptions.push(pktText(pkt.data));
+    }
+  }
   const useSideband = caps.includes('side-band-64k');
   const atomic = caps.includes('atomic');
   const messages: string[] = [];
@@ -471,6 +486,7 @@ export async function receivePack(
       principal,
       decider,
       commits,
+      pushOptions,
       async refChanges(u) {
         const out = { changes: [] as GitChange[], trees: [] };
         const head = u.deleting ? null : await treeOf(push, u.newSha);
@@ -570,6 +586,17 @@ export async function receivePack(
         via: 'git-push',
       },
     });
+    if (u.secretBypass) {
+      const found = u.secretBypass.found.map((f) => ({
+        ...f,
+        changeset: f.commit ? push.csOf.get(f.commit) : undefined,
+      }));
+      await recordBypass(c, repo, found, u.secretBypass.bypass, {
+        source: 'push',
+        via: 'git-push',
+        ref: u.name,
+      });
+    }
     if (u.pushRules) {
       await recordOutcome(env, u.pushRules, {
         repo,

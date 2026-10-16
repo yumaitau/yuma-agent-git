@@ -15,6 +15,7 @@ import {
 } from '../auth/guards';
 import type { AppEnv } from '../auth/principal';
 import { changesetProvenance, recordAgentProvenance } from '../auth/agents';
+import { bypassSchema, enforceSecretScan, recordBypass } from '../security/secrets/scan';
 
 /**
  * Changeset routes (architecture §2):
@@ -29,8 +30,16 @@ import { changesetProvenance, recordAgentProvenance } from '../auth/agents';
  *
  * Agent tokens (#57) always commit as `{agent: <agent id>}`, and the agent,
  * the human and the task are recorded as the changeset's `provenance`.
+ *
+ * Secret scanning (#66) refuses commits that add a secret unless a repository
+ * admin sends `secret_scanning_bypass` with a reason.
  */
 export const changesetsRoutes = new Hono<AppEnv>();
+
+/** The commit request plus an optional push-protection bypass. */
+export const createChangesetSchema = commitRequestSchema.extend({
+  secret_scanning_bypass: bypassSchema.optional(),
+});
 
 /** Metadata routes are principal-dependent: never cache them (issue #21). */
 const NO_STORE = 'private, no-store';
@@ -47,7 +56,7 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
     const repo = loaded.repo;
 
     const body = await readJsonBody(c);
-    const parsed = commitRequestSchema.safeParse(body);
+    const parsed = createChangesetSchema.safeParse(body);
     if (parsed.success) {
       // per-repo write burst guard (issue #21): huge commits get 429, not a
       // wedged D1 row / R2 write storm
@@ -89,6 +98,16 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
       parsed.data.changes,
       'commit',
     );
+    const { secret_scanning_bypass: bypass, ...commit } = parsed.data;
+    const secrets = await enforceSecretScan(
+      c.env,
+      repo,
+      principal,
+      commit.changes,
+      commit.first_parent,
+      bypass,
+    );
+
     // agent guardrails (#62): the approval binds the whole request
     if (agentKey(principal) !== null) {
       await enforceAgentAction(
@@ -112,10 +131,19 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
 
     const request =
       principal?.kind === 'agent'
-        ? { ...parsed.data, author: { agent: principal.agentId } }
-        : parsed.data;
+        ? { ...commit, author: { agent: principal.agentId } }
+        : commit;
     const result = await commitChanges(c.env, repo.id, request);
     await recordAgentProvenance(c.env, repo.id, [result.changeset.id], principal);
+    if (secrets && bypass) {
+      await recordBypass(
+        c,
+        repo,
+        secrets.map((f) => ({ ...f, changeset: result.changeset.id })),
+        bypass,
+        { source: 'commit', via: 'api' },
+      );
+    }
     return c.json(
       { changeset: result.changeset, deduped: result.deduped },
       result.deduped ? 200 : 201,

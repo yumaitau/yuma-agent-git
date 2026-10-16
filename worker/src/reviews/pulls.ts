@@ -28,6 +28,7 @@ import {
 import { commitChanges } from '../core/commit';
 import { agentKey, changeFacts, enforceAgentAction } from '../policy/guardrails';
 import { recordAgentProvenance } from '../auth/agents';
+import { enforceSecretScan } from '../security/secrets/scan';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
   authorKey,
@@ -581,6 +582,8 @@ export async function mutatePullLocked(
     const repo = await getRepo(env, pull.repo_id);
     if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
     const { changes, threadIds } = await suggestionChanges(env, pull, ids as number[]);
+    // secret scanning (#66): suggestions are commits; no bypass from a review
+    await enforceSecretScan(env, repo, principal, changes, pull.head_cs, undefined);
     // agent guardrails (#62): a suggestion commit is a changeset like any other
     if (agentKey(principal) !== null) {
       const files = changes.map((ch) => ch.path);

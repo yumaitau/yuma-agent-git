@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { commitRequestSchema } from '../core/commit';
 import { policySchema } from '../ci/config';
 import { pathRuleInputSchema } from '../auth/rbac';
 import { createTokenSchema } from '../auth/tokens';
@@ -54,6 +53,8 @@ import {
   updateMilestone,
 } from './issues';
 import { fetchObjectsSchema } from './objects';
+import { createChangesetSchema } from './changesets';
+import { alertListQuery, updateAlertSchema } from './secret-scanning';
 import {
   approvalsQuery,
   decisionSchema,
@@ -471,7 +472,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   },
   'POST /api/v1/repos/:repo/changesets': {
     id: 'createChangeset',
-    body: commitRequestSchema,
+    body: createChangesetSchema,
   },
   'GET /api/v1/repos/:repo/changesets/:id': { id: 'getChangeset' },
   'GET /api/v1/repos/:repo/checkout-info': {
@@ -669,6 +670,15 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'deleteRepoSecret',
     query: environmentQuery,
   },
+  'GET /api/v1/repos/:repo/secret-scanning/alerts': {
+    id: 'listSecretScanningAlerts',
+    query: alertListQuery,
+  },
+  'PATCH /api/v1/repos/:repo/secret-scanning/alerts/:id': {
+    id: 'updateSecretScanningAlert',
+    body: updateAlertSchema,
+  },
+  'POST /api/v1/repos/:repo/secret-scanning/scans': { id: 'startSecretScan' },
   'GET /api/v1/repos/:repo/variables': {
     id: 'listRepoVariables',
     query: environmentQuery,

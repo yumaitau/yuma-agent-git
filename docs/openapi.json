@@ -542,7 +542,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 8,
+                        "maxItems": 9,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -554,7 +554,8 @@
                             "pull_request_review_thread",
                             "issues",
                             "ci_run",
-                            "work_item"
+                            "work_item",
+                            "secret_scanning_alert"
                           ]
                         }
                       },
@@ -759,7 +760,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 8,
+                    "maxItems": 9,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -771,7 +772,8 @@
                         "pull_request_review_thread",
                         "issues",
                         "ci_run",
-                        "work_item"
+                        "work_item",
+                        "secret_scanning_alert"
                       ]
                     }
                   },
@@ -1605,7 +1607,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 8,
+                    "maxItems": 9,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1617,7 +1619,8 @@
                         "pull_request_review_thread",
                         "issues",
                         "ci_run",
-                        "work_item"
+                        "work_item",
+                        "secret_scanning_alert"
                       ]
                     }
                   },
@@ -3952,6 +3955,17 @@
                       "minItems": 2,
                       "maxItems": 2
                     }
+                  },
+                  "secret_scanning_bypass": {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "enum": ["false_positive", "test_data", "will_fix"]
+                      },
+                      "comment": { "type": "string", "maxLength": 500 }
+                    },
+                    "required": ["reason"]
                   }
                 },
                 "required": ["first_parent", "message", "author", "changes"]
@@ -5209,7 +5223,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 8,
+                    "maxItems": 9,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5221,7 +5235,8 @@
                         "pull_request_review_thread",
                         "issues",
                         "ci_run",
-                        "work_item"
+                        "work_item",
+                        "secret_scanning_alert"
                       ]
                     }
                   },
@@ -8076,6 +8091,139 @@
         },
         "responses": {
           "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/secret-scanning/alerts": {
+      "get": {
+        "operationId": "listSecretScanningAlerts",
+        "summary": "Secret scanning alerts (location and detector; never the secret) and the last history scan",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "resolved"] }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/secret-scanning/alerts/{id}": {
+      "patch": {
+        "operationId": "updateSecretScanningAlert",
+        "summary": "Resolve (revoked, false positive, test data, won't fix) or reopen an alert",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": { "type": "string", "const": "resolved" },
+                      "resolution": {
+                        "type": "string",
+                        "enum": ["revoked", "false_positive", "test_data", "wont_fix"]
+                      }
+                    },
+                    "required": ["state", "resolution"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": { "state": { "type": "string", "const": "open" } },
+                    "required": ["state"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/secret-scanning/scans": {
+      "post": {
+        "operationId": "startSecretScan",
+        "summary": "Queue a history scan for secrets (also started after an import)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }

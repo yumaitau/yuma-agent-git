@@ -92,6 +92,18 @@ A push is checked in full before anything becomes visible:
    - `unsafe_path`, `case_collision`, `submodule`: a `.git` path in any
      spelling, two names in one directory that differ only in case, or a
      submodule.
+   - `secret_scanning`: a file the push adds or changes holds a secret (AWS,
+     GitHub, Yuma, Cloudflare, Slack and Stripe tokens, private keys, and
+     high-entropy values assigned to secret-looking names). The message names
+     the detector, the file, the line and the commit. Secrets the file already
+     held before the push do not count. A repository admin (never an agent)
+     can push past it with `git push -o secret-scanning.bypass=<reason>`,
+     where the reason is `false_positive`, `test_data` or `will_fix`, plus an
+     optional `-o secret-scanning.comment=<text>`. Each bypass is audited as
+     `secret_scanning.bypass` and raises an alert; only the SHA-256 of the
+     secret and its location are stored. The commit RPC
+     (`secret_scanning_bypass` in the body), the agent `commit` tool and
+     applied review suggestions run the same detectors.
 4. Changesets are created with `commitChanges`, parents first, keeping author,
    committer, time zones, extra headers and the signature. Each must rebuild to
    the pushed commit SHA, so a clone after a push returns identical SHAs; a

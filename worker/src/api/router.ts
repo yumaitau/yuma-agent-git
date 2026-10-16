@@ -24,6 +24,7 @@ import { reviewsRoutes } from './reviews';
 import { rulesetsRoutes } from './rulesets';
 import { runnerAdminRoutes } from './runners';
 import { secretsRoutes } from './secrets';
+import { secretScanningRoutes } from './secret-scanning';
 import { workRoutes } from './work';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
@@ -37,6 +38,7 @@ apiRouter.route('/', issuesRoutes);
 apiRouter.route('/', workRoutes);
 apiRouter.route('/', hooksRoutes);
 apiRouter.route('/', secretsRoutes);
+apiRouter.route('/', secretScanningRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);
 apiRouter.route('/', ancestryRoutes);

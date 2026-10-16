@@ -86,6 +86,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
           ['Board', '/board'],
           ['Pull requests', '/pulls'],
           ['CI', '/ci'],
+          ['Security', '/secret-scanning'],
         ].map(([name, tail]) => (
           <Link
             key={name}

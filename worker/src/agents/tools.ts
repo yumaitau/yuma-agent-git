@@ -4,6 +4,7 @@ import type { Principal } from '../auth/principal';
 import { can, pathDecider, restrictingDecision, type PathDecider } from '../auth/rbac';
 import { getRepo } from '../db/repos';
 import { enforcePushRules } from '../policy/rulesets';
+import { enforceSecretScan } from '../security/secrets/scan';
 import {
   agentKey,
   changeFacts,
@@ -429,8 +430,18 @@ export const tools: Tool[] = [
           changes,
           'agent.commit',
         );
+        // secret scanning (#66): agents never bypass; the finding goes back to the model
+        await enforceSecretScan(
+          env,
+          repo,
+          ctx.principal,
+          changes,
+          ctx.head_cs,
+          undefined,
+        );
       } catch (err) {
-        if (err instanceof ApiError) return { error: err.code, message: err.message };
+        if (err instanceof ApiError)
+          return { error: err.code, message: err.message, ...err.details };
         throw err;
       }
       const guard = await guardAgentAction(
