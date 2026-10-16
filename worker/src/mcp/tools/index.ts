@@ -126,6 +126,24 @@ const SPECS: ToolSpec[] = [
     untrusted: true,
   },
   {
+    name: 'code_search',
+    title: 'Search code',
+    route: 'GET /api/v1/search/code',
+    description:
+      'Search file contents across every repository you can read (or one `repo`, at `rev`). Text by default, a regular expression with `regex=1`; filter by `path` and `lang`. Returns matching lines with match ranges.',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
+    name: 'file_find',
+    title: 'Find files',
+    route: 'GET /api/v1/search/paths',
+    description:
+      'Find files by path: the characters of `q` in order, best matches first, across every repository you can read (or one `repo`).',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
     name: 'changeset_list',
     title: 'List changesets',
     route: 'GET /api/v1/repos/:repo/changesets',

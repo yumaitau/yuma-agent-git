@@ -10,6 +10,7 @@ record's status.
 | [0001](0001-forge-strategy.md) | Forge strategy                          | Accepted (spikes not run) |
 | [0002](0002-saml-sso.md)       | SAML sign-in waits for a safe verifier  | Accepted                  |
 | [0003](0003-policy-engine.md)  | Agent policies use a typed TS rules DSL | Accepted                  |
+| [0004](0004-code-search.md)    | Code search uses a trigram index in D1  | Accepted                  |
 
 ## Template
 

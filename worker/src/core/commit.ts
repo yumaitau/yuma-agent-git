@@ -15,6 +15,7 @@ import {
 import { PayloadTooLargeError, RequestValidationError } from './errors';
 import { computeEager } from './derived';
 import { scheduleGitIds } from './derived/gitIds';
+import { scheduleCodeSearch } from './derived/codeSearch';
 import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
@@ -239,7 +240,8 @@ async function commitChangesInner(
  * Eager derived data, computed inside the commit path via the generic
  * framework (issue #9): `skip_list` (issue #8) + `changed_paths`, rows written
  * in one D1 batch. Deferred kinds compute cache-aside or via the queue.
- * Git IDs (issue #30) compute here for small changes, else in the queue.
+ * Git IDs (issue #30) and the code search index (issue #45) compute here
+ * for small changes, else in the queue.
  */
 export async function onChangesetCreated(
   env: Env,
@@ -248,6 +250,7 @@ export async function onChangesetCreated(
 ): Promise<void> {
   await computeEager(env, repoId, cs);
   await scheduleGitIds(env, repoId, cs);
+  await scheduleCodeSearch(env, repoId, cs);
 }
 
 // ---------------------------------------------------------------------------

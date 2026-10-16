@@ -22,7 +22,7 @@ import { ApiError, ConflictError } from '../core/errors';
 import { diffRevisions } from '../core/diff';
 import { blameFile } from '../core/derived/blame';
 import { pathHistoryAt } from '../core/derived/pathHistory';
-import { getDerived } from '../core/derived';
+import { searchCode } from '../core/search';
 import { lookupRev } from '../core/read';
 import { ulid } from '../core/ids';
 import { C, T } from '../db/schema';
@@ -63,8 +63,6 @@ export interface Tool {
 }
 
 const MAX_READ_BYTES = 1024 * 1024;
-const MAX_GREP_FILES = 500;
-const MAX_GREP_BYTES = 32 * 1024 * 1024;
 const MAX_MATCHES = 200;
 const MAX_BLADE_RANGES = 200;
 
@@ -327,61 +325,42 @@ export const tools: Tool[] = [
   {
     name: 'grep',
     description:
-      'Server-side regex search over changed paths (bounded: 500 files / 200 matches).',
+      'Server-side regex search of file contents at a revision, through the code search index (bounded: 200 matches).',
     input_schema: grepSchema,
     async execute(env, ctx, input) {
       const parsed = grepSchema.parse(input);
-      if (/\([^)]*[+*][^)]*\)[+*]/.test(parsed.pattern)) {
-        return {
-          error: 'unsafe_pattern',
-          hint: 'nested quantifiers can backtrack catastrophically',
-        };
-      }
-      let regex: RegExp;
-      try {
-        regex = new RegExp(parsed.pattern);
-      } catch {
-        return { error: 'invalid_pattern' };
-      }
-
-      // candidate set: changed_paths derived data (what this repo ever touched)
-      const changed = await getDerived<{ paths: string[] }>(
-        env,
-        ctx.repo_id,
-        'changed_paths',
-        ctx.head_cs,
-      );
-      const prefix = parsed.path_prefix ?? '';
-      const candidates = (changed?.paths ?? [])
-        .filter((p) => prefix === '' || p.startsWith(prefix))
-        .slice(0, MAX_GREP_FILES);
-
+      const repo = await getRepo(env, ctx.repo_id);
+      if (!repo) return { error: 'repo_not_found' };
+      const decider = await pathDecider(env, repo, ctx.principal);
+      if (!decider.decide('read').allowed) return { error: 'forbidden', perm: 'read' };
       const cs = await resolveCs(env, ctx, parsed.cs);
       if (!cs) return { error: 'revision_not_found' };
-      const matches: { path: string; line: number; text: string }[] = [];
-      let bytes = 0;
-      for (const path of candidates) {
-        if (matches.length >= MAX_MATCHES || bytes > MAX_GREP_BYTES) break;
-        const denied = await guardPath(env, ctx, 'read', path);
-        if (denied) continue; // path rules can hide files from grep too
-        const entry = cs.root_tree
-          ? await resolvePath(env, ctx.repo_id, cs.root_tree, path.split('/'))
-          : null;
-        if (!entry || entry.kind !== 'blob') continue;
-        const blob = await getBlob(env, ctx.repo_id, entry.hash);
-        if (!blob) continue;
-        bytes += blob.size;
-        const text = new TextDecoder().decode(blob.content);
-        text.split('\n').forEach((lineText, index) => {
-          if (matches.length < MAX_MATCHES && regex.test(lineText)) {
-            matches.push({ path, line: index + 1, text: lineText.slice(0, 300) });
-          }
+      let found;
+      try {
+        // path rules hide files from grep too: the search decides every path
+        found = await searchCode(env, [{ repo, decider, rev: cs }], {
+          q: parsed.pattern,
+          regex: true,
+          caseSensitive: true,
+          path: parsed.path_prefix === '' ? undefined : parsed.path_prefix,
+          limit: MAX_MATCHES,
         });
+      } catch (err) {
+        if (err instanceof ApiError) return { error: err.code, hint: err.message };
+        throw err;
       }
+      const all = found.results.flatMap((r) =>
+        r.matches.map((m) => ({
+          path: r.path,
+          line: m.line,
+          text: m.text.slice(0, 300),
+        })),
+      );
+      const matches = all.slice(0, MAX_MATCHES);
       return {
         matches,
-        truncated: matches.length >= MAX_MATCHES,
-        scanned: candidates.length,
+        truncated: found.truncated || all.length > MAX_MATCHES,
+        partial: found.partial,
       };
     },
   },

@@ -231,6 +231,38 @@ function pageLimit(raw: string | undefined): number {
   return Math.min(n, 100);
 }
 
+/**
+ * Repos a user may see listed: public repos and repos where they are a
+ * member or the creator, get a team grant, or hold an org role with access
+ * (issue #26). Bind `visibleReposParams(userId)`, then filter the `SELECT *`
+ * with a trailing `WHERE`. Callers still decide per repo with `can()`.
+ */
+export const VISIBLE_REPOS_SQL = `WITH RECURSIVE ${USER_TEAMS_CTE}
+       SELECT * FROM (
+         SELECT * FROM ${T.repos} WHERE ${C.repos.visibility} = 'public'
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.repoMembers} m ON m.${C.repoMembers.repoId} = r.${C.repos.id}
+          WHERE m.${C.repoMembers.userId} = ?
+         UNION
+         SELECT * FROM ${T.repos} WHERE created_by = ?
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.teamRepos} tr ON tr.${C.teamRepos.repoId} = r.${C.repos.id}
+          WHERE tr.${C.teamRepos.teamId} IN (SELECT team_id FROM user_teams)
+         UNION
+         SELECT r.* FROM ${T.repos} r
+           JOIN ${T.orgs} o ON o.${C.orgs.id} = r.${C.repos.ownerId}
+           JOIN ${T.orgMembers} om ON om.${C.orgMembers.orgId} = o.${C.orgs.id}
+          WHERE r.${C.repos.ownerKind} = 'org' AND om.${C.orgMembers.userId} = ?
+            AND (om.${C.orgMembers.role} = 'owner'
+                 OR (om.${C.orgMembers.role} IN ('admin', 'member') AND o.${C.orgs.baseRole} <> 'none'))
+       )`;
+
+export function visibleReposParams(userId: string): string[] {
+  return [userId, userId, userId, userId];
+}
+
 reposRoutes.get('/api/v1/repos', async (c) => {
   try {
     const principal = c.get('principal');
@@ -260,40 +292,15 @@ reposRoutes.get('/api/v1/repos', async (c) => {
       cursorCreated = created;
       cursorId = id;
     }
-    // visible: public repos + repos where the caller is a member/creator,
-    // gets a team grant, or holds an org role with access (issue #26).
     // Keyset pagination on (created_at, id) descending.
     const rows = await q(
       c.env,
-      `WITH RECURSIVE ${USER_TEAMS_CTE}
-       SELECT * FROM (
-         SELECT * FROM ${T.repos} WHERE ${C.repos.visibility} = 'public'
-         UNION
-         SELECT r.* FROM ${T.repos} r
-           JOIN ${T.repoMembers} m ON m.${C.repoMembers.repoId} = r.${C.repos.id}
-          WHERE m.${C.repoMembers.userId} = ?
-         UNION
-         SELECT * FROM ${T.repos} WHERE created_by = ?
-         UNION
-         SELECT r.* FROM ${T.repos} r
-           JOIN ${T.teamRepos} tr ON tr.${C.teamRepos.repoId} = r.${C.repos.id}
-          WHERE tr.${C.teamRepos.teamId} IN (SELECT team_id FROM user_teams)
-         UNION
-         SELECT r.* FROM ${T.repos} r
-           JOIN ${T.orgs} o ON o.${C.orgs.id} = r.${C.repos.ownerId}
-           JOIN ${T.orgMembers} om ON om.${C.orgMembers.orgId} = o.${C.orgs.id}
-          WHERE r.${C.repos.ownerKind} = 'org' AND om.${C.orgMembers.userId} = ?
-            AND (om.${C.orgMembers.role} = 'owner'
-                 OR (om.${C.orgMembers.role} IN ('admin', 'member') AND o.${C.orgs.baseRole} <> 'none'))
-       )
+      `${VISIBLE_REPOS_SQL}
        WHERE (? IS NULL OR id IN (SELECT value FROM json_each(?))) AND ((? = 0) OR created_at < ? OR (created_at = ? AND id < ?))
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
       [
-        userId,
-        userId,
-        userId,
-        userId,
+        ...visibleReposParams(userId),
         tokenRepos,
         tokenRepos,
         hasCursor,

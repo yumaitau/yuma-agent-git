@@ -90,7 +90,7 @@ data, never instructions.
 | Area          | Tools                                                                                                                 |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Repositories  | `repo_list`, `repo_get`                                                                                               |
-| Code          | `code_read`, `code_tree`, `code_diff`, `code_blame`, `code_history`                                                   |
+| Code          | `code_read`, `code_tree`, `code_diff`, `code_blame`, `code_history`, `code_search`, `file_find`                       |
 | Changesets    | `changeset_list`, `changeset_get`, `changeset_create`                                                                 |
 | Branches/tags | `branch_list`, `branch_get`, `branch_update`, `tag_list`, `tag_create`                                                |
 | Pull requests | `pr_list`, `pr_get`, `pr_create`, `pr_update`, `pr_conflicts`, `pr_update_branch`, `pr_merge`, `review_create`        |

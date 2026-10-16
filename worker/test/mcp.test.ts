@@ -619,6 +619,21 @@ describe('MCP Streamable HTTP (#56)', () => {
     ).toBeTruthy();
   });
 
+  it('code_search and file_find search as the caller (#45)', async () => {
+    const { access } = await oauthToken(['contents:read']);
+    const mcp = await connect(access);
+    const found = await mcp.call('code_search', { q: 'hello mcp' });
+    expect(found.isError, found.text).toBe(false);
+    expect(found.structured?.results).toMatchObject([
+      { repo: 'acme/app', path: 'README.md', matches: [{ line: 1, ranges: [[0, 9]] }] },
+    ]);
+    const files = await mcp.call('file_find', { q: 'readme', repo: 'acme/app' });
+    expect(files.isError, files.text).toBe(false);
+    expect(files.structured?.files).toMatchObject([
+      { repo: 'acme/app', path: 'README.md' },
+    ]);
+  });
+
   it('a token without issues:write gets a tool error, not a transport error', async () => {
     const { access } = await oauthToken(['contents:read']);
     const mcp = await connect(access);

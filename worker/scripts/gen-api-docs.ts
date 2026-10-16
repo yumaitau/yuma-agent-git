@@ -145,6 +145,10 @@ const PURPOSES: Record<string, string> = {
   'PATCH /api/v1/agents/:id': 'Disable (kill switch, revokes tokens) or enable an agent',
   'DELETE /api/v1/agents/:id/tokens': 'Revoke every live token of an agent',
   'GET /api/v1/repos': 'List repos visible to the caller (keyset paged)',
+  'GET /api/v1/search/code':
+    'Search file contents across readable repos (text or regex; repo, path, lang, rev filters)',
+  'GET /api/v1/search/paths':
+    'Find files by path across readable repos (fuzzy file finder)',
   'POST /api/v1/repos': 'Create a repo (creator becomes admin)',
   'GET /api/v1/repos/:owner/:name': 'Repo metadata plus `can_admin`',
   'POST /api/v1/repos/:owner/:name/initialize':

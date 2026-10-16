@@ -126,6 +126,12 @@ export const apiErrorSchema = z.object({
 const flag = z.literal('1');
 const rev = z.string().describe('Revision: changeset id, `ref:<name>` or a ref name');
 const page = { cursor: z.string().optional(), limit: z.int().min(1).optional() };
+const searchRepo = z.string().optional().describe('Only this repository (`owner/name`)');
+const searchPath = z
+  .string()
+  .optional()
+  .describe('Path prefix, or a glob when it holds `*` or `?`');
+const searchLang = z.string().optional().describe('Language, for example `typescript`');
 
 // Pull request actions are validated by hand in reviews/pulls.ts (inside the
 // ref-lock Durable Object); these describe what that code accepts.
@@ -404,6 +410,38 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'PUT /api/v1/orgs/:org/teams/:team/repos': { id: 'putTeamRepo', body: grantSchema },
   'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo': { id: 'deleteTeamRepo' },
 
+  'GET /api/v1/search/code': {
+    id: 'searchCode',
+    query: z.object({
+      q: z
+        .string()
+        .min(1)
+        .max(200)
+        .describe('Text, or a regular expression with `regex=1`'),
+      regex: flag.optional(),
+      case: flag.optional().describe('`1` matches case exactly'),
+      repo: searchRepo,
+      path: searchPath,
+      lang: searchLang,
+      rev: rev
+        .optional()
+        .describe('Revision to search (needs `repo`); default branch when omitted'),
+      limit: z.int().min(1).max(100).optional(),
+    }),
+  },
+  'GET /api/v1/search/paths': {
+    id: 'searchPaths',
+    query: z.object({
+      q: z.string().min(1).max(200).describe('Characters of the path, in order'),
+      repo: searchRepo,
+      path: searchPath,
+      lang: searchLang,
+      rev: rev
+        .optional()
+        .describe('Revision to list (needs `repo`); default branch when omitted'),
+      limit: z.int().min(1).max(200).optional(),
+    }),
+  },
   'GET /api/v1/repos': { id: 'listRepos', query: z.object(page) },
   'POST /api/v1/repos': { id: 'createRepo', body: createRepoSchema },
   'GET /api/v1/repos/:owner/:name': { id: 'getRepo' },

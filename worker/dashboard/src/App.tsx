@@ -10,6 +10,7 @@ import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
 import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
+import { SearchView } from './views/Search';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
@@ -56,6 +57,7 @@ function AppRoutes(): ReactElement {
             <RequireAuth>
               <Routes>
                 <Route path="/" element={<HomeView />} />
+                <Route path="/search" element={<SearchView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/security" element={<SecurityView />} />
                 <Route path="/orgs" element={<OrgSettingsView />} />
