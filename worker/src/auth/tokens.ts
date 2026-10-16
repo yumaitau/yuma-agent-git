@@ -9,6 +9,7 @@ import { ulid } from '../core/ids';
 import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import type { AppEnv, Principal } from './principal';
 import { recordAudit } from '../audit/record';
+import { requireRecentMfa } from './session';
 
 /**
  * Machine/agent API tokens (issue #12): `yag_` + 40 hex chars, SHA-256 at
@@ -198,6 +199,8 @@ tokensRoutes.post('/api/v1/tokens', async (c) => {
   try {
     const user = c.get('user');
     if (!user) return apiError(c, 401, 'unauthorized', 'session required');
+    const mfa = await requireRecentMfa(c);
+    if (mfa) return mfa;
     const body = await readJsonBody(c);
     const parsed = createTokenSchema.safeParse(body);
     if (!parsed.success) {

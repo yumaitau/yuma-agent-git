@@ -1,14 +1,31 @@
+import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { api, GITHUB_LOGIN_URL } from '../api';
+import { api, asApiError, GITHUB_LOGIN_URL, type ApiError } from '../api';
 import { usePolling } from '../hooks';
+import { getPasskey, passkeysSupported } from '../passkeys';
 import { ErrorNotice, Loading } from '../ui';
 
-/** `/login` — GitHub OAuth button (the Worker owns the whole flow). */
+/** `/login` — every configured sign-in method (the Worker owns each flow). */
 export function LoginView(): ReactElement {
   const { data: auth, error } = usePolling(() => api.authStatus(), 30_000);
+  const [passkeyError, setPasskeyError] = useState<ApiError | null>(null);
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
+  const providers = auth?.providers ?? [];
+  const nothingConfigured = auth && !auth.github_configured && providers.length === 0;
+
+  const passkeySignIn = async (): Promise<void> => {
+    setPasskeyError(null);
+    try {
+      const credential = await getPasskey(await api.passkeySignInOptions());
+      await api.signInWithPasskey(credential);
+      window.location.assign(from ?? '/');
+    } catch (err) {
+      setPasskeyError(asApiError(err));
+    }
+  };
+
   return (
     <div
       className="panel"
@@ -16,8 +33,9 @@ export function LoginView(): ReactElement {
     >
       <h1>Sign in</h1>
       <p className="muted">
-        Sign in to create repositories, review changes and run CI on Yuma. GitHub verifies
-        your identity; your repositories and builds are hosted here.
+        Sign in to create repositories, review changes and run CI on Yuma. Your
+        organisation's identity provider or a passkey verifies who you are; your
+        repositories and builds are hosted here.
       </p>
       {from && (
         <div className="notice info small">
@@ -25,21 +43,37 @@ export function LoginView(): ReactElement {
         </div>
       )}
       {error && <ErrorNotice error={error} />}
+      {passkeyError && <ErrorNotice error={passkeyError} />}
       {!auth && !error && <Loading label="Checking sign-in availability…" />}
-      {auth?.github_configured === false && (
+      {nothingConfigured && (
         <div className="notice warn" role="alert">
           <strong>Sign-in setup is incomplete</strong>
           <p>
-            The site administrator needs to configure GitHub sign-in before private
+            The site administrator needs to configure an identity provider before private
             repositories can be opened in the browser. No GitHub repository connection is
             required.
           </p>
         </div>
       )}
-      {auth?.github_configured && (
-        <a className="btn primary" href={GITHUB_LOGIN_URL}>
-          Sign in with GitHub
-        </a>
+      {auth && !nothingConfigured && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {providers.map((p) => (
+            <a key={p.id} className="btn primary" href={`/auth/oidc/${p.id}`}>
+              Sign in with {p.name}
+            </a>
+          ))}
+          {passkeysSupported() && (
+            <button onClick={() => void passkeySignIn()}>Sign in with a passkey</button>
+          )}
+          {auth.github_configured && (
+            <a
+              className={providers.length > 0 ? 'btn' : 'btn primary'}
+              href={GITHUB_LOGIN_URL}
+            >
+              Sign in with GitHub
+            </a>
+          )}
+        </div>
       )}
       <div className="small faint" style={{ marginTop: 14 }}>
         <Link to="/">Back to repositories</Link>

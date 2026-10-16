@@ -10,11 +10,12 @@ import {
   githubUserSchema,
   randomHex,
   revokeSessionToken,
+  sessionCookie,
   sessionTokenFrom,
   SESSION_COOKIE,
-  SESSION_MAX_AGE,
   upsertUser,
 } from './session';
+import { oidcProviders } from './oidc';
 import type { AppEnv } from './principal';
 import { recordAudit } from '../audit/record';
 
@@ -44,7 +45,10 @@ function requireGithubEnv(env: Env): { clientId: string; clientSecret: string } 
 
 authRoutes.get('/auth/status', (c) => {
   c.header('Cache-Control', 'no-store');
-  return c.json({ github_configured: requireGithubEnv(c.env) !== null });
+  return c.json({
+    github_configured: requireGithubEnv(c.env) !== null,
+    providers: oidcProviders(c.env).map((p) => ({ id: p.id, name: p.name })),
+  });
 });
 
 authRoutes.get('/auth/github', async (c) => {
@@ -147,19 +151,19 @@ authRoutes.get('/auth/github/callback', async (c) => {
       email: primary?.email,
     });
 
-    const session = await createSession(c.env, user.id);
+    if (user.active === 0) {
+      return apiError(c, 403, 'account_disabled', 'this account has been deprovisioned');
+    }
+
+    const session = await createSession(c.env, user.id, Date.now(), { method: 'github' });
     await recordAudit(c, {
       action: 'auth.login',
       actor: { kind: 'user', id: user.id },
       target: { user_id: user.id, login: user.login, method: 'github' },
     });
-    const secure = baseUrl(c.req.url).startsWith('https://') ? '; Secure' : '';
     return new Response(null, {
       status: 302,
-      headers: {
-        location: '/',
-        'set-cookie': `${SESSION_COOKIE}=${session.token}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE}`,
-      },
+      headers: { location: '/', 'set-cookie': sessionCookie(c.req.url, session.token) },
     });
   } catch (err) {
     return errorResponse(c, err);

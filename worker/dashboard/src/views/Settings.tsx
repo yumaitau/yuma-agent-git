@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
+import { Link } from 'react-router-dom';
 import {
   api,
   asApiError,
@@ -550,8 +551,9 @@ export function SettingsView(): ReactElement {
       <PathRulesPanel repos={repos} />
       <SuperfansPanel repos={repos} />
       <div className="small faint">
-        Session identity is a GitHub OAuth cookie — managed on{' '}
-        <a href="/auth/github">/auth/github</a>. Machine access uses the tokens above.
+        Sign-in methods and second factors are managed on{' '}
+        <Link to="/security">Security</Link>. Creating a token needs a second factor from
+        the last 12 hours once you have one. Machine access uses the tokens above.
       </div>
     </div>
   );

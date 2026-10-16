@@ -181,7 +181,7 @@ Client = `yag` CLI (thin): bounded local object cache in `~/.yag/objects`, worki
 
 ## 3. Auth + GitHub bridge
 
-- **GitHub OAuth** (login) → session token in HttpOnly cookie; sessions in D1.
+- **Sign-in** → OIDC (Google Workspace, Entra ID, any issuer; PKCE + nonce), passkeys, or optional GitHub OAuth → session token in HttpOnly cookie; sessions in D1 record the method and last MFA time. Passkeys or TOTP are the second factor; creating API tokens needs MFA within 12 hours once a factor is enrolled. SCIM 2.0 (`/scim/v2/Users`) provisions and deprovisions users.
 - **GitHub App** (repo bridge) → installation per org/repo; app JWT + installation tokens minted server-side.
 - **Webhooks** → GitHub App events (push, PR, installation) land on `POST /webhooks/github`, HMAC-verified against raw body before parsing.
 - **Organisations** (issue #26): repos are owned by a user or an org (`repos.owner_kind`, `owner_id`). Orgs have members (owner/admin/member/billing), a base role, and teams nested through `parent_team_id` that are granted repo roles. A principal's effective repo role is the maximum of the direct role, team grants (parent teams included, walked by a recursive CTE capped at depth 5) and the org base role; org owners are admin on every org repo. Roles are read from D1 on every request, so membership changes apply immediately.

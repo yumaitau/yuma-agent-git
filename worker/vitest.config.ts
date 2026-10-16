@@ -42,6 +42,7 @@ export default defineConfig({
           TEST_GITHUB_APP_PUBLIC_KEY: publicKey,
           GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
           CACHE_SIGNING_KEY: 'test-cache-signing-key',
+          TOTP_ENCRYPTION_KEY: 'test-totp-encryption-key',
           RATE_LIMIT_BUCKETS:
             '{"api_read":100000,"api_write":100000,"agent_run":100000,"object_fetch":100000,"auth":100000}',
         },

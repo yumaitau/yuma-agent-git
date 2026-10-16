@@ -14,6 +14,7 @@ import { DiffExplorerView } from './views/DiffExplorer';
 import { AgentsView, TaskDetailView } from './views/Agents';
 import { SettingsView } from './views/Settings';
 import { OrgSettingsView } from './views/OrgSettings';
+import { SecurityView } from './views/Security';
 import { Empty } from './ui';
 
 function NotFound(): ReactElement {
@@ -48,6 +49,7 @@ function AppRoutes(): ReactElement {
               <Routes>
                 <Route path="/" element={<HomeView />} />
                 <Route path="/settings" element={<SettingsView />} />
+                <Route path="/security" element={<SecurityView />} />
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />

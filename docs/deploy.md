@@ -83,6 +83,44 @@ https://github.com/settings/apps with:
 - Subscribe to: `installation`, `installation_repositories`, `push`
 - Where can it be installed: any account (org installation supported)
 
+## 3a. Yuma sign-in: OIDC, passkeys, TOTP and SCIM
+
+GitHub is optional. To sign people in with Google Workspace, Microsoft Entra ID or
+another OIDC provider, set the `OIDC_PROVIDERS` var (a JSON string, no secrets)
+in `env.prod.vars`, for example:
+
+```json
+[
+  {
+    "id": "google",
+    "preset": "google",
+    "client_id": "…",
+    "allowed_domains": ["example.com"]
+  },
+  { "id": "entra", "preset": "entra", "tenant": "<tenant id>", "client_id": "…" }
+]
+```
+
+Register the redirect URI `https://<your-worker>/auth/oidc/<id>/callback` with the
+provider, then store each client secret as a Worker secret named after the id:
+
+```sh
+npx wrangler secret put OIDC_GOOGLE_CLIENT_SECRET --env prod -c worker/wrangler.jsonc
+npx wrangler secret put TOTP_ENCRYPTION_KEY --env prod -c worker/wrangler.jsonc   # long random string; encrypts TOTP seeds
+```
+
+- `allowed_domains` limits sign-in to verified emails in those domains (and, for
+  Google, the Workspace `hd` claim). Leave it out to accept any account.
+- Entra needs the tenant id (a GUID), not a domain name.
+- Passkeys need no configuration. The relying party is the hostname people use.
+- SCIM: set `SCIM_ADMIN_USER_IDS` (comma-separated Yuma user ids). Those users,
+  after verifying a passkey or authenticator code, mint a provisioning token with
+  `POST /api/v1/scim/tokens` and give the IdP `https://<your-worker>/scim/v2` with
+  that bearer token. Deactivating a user revokes all their sessions and API tokens.
+
+Rotating `TOTP_ENCRYPTION_KEY` makes enrolled authenticator apps unreadable, so
+people would need to enrol again.
+
 ## 4. Deploy
 
 ```sh

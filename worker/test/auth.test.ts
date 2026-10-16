@@ -77,12 +77,12 @@ describe('oauth login', () => {
     const configured = await app('/auth/status');
     expect(configured.status).toBe(200);
     expect(configured.headers.get('cache-control')).toBe('no-store');
-    expect(await configured.json()).toEqual({ github_configured: true });
+    expect(await configured.json()).toEqual({ github_configured: true, providers: [] });
     for (const missing of ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
       const response = await makeApp({ ...dbEnv, [missing]: undefined })(
         new Request('https://x/auth/status'),
       );
-      expect(await response.json()).toEqual({ github_configured: false });
+      expect(await response.json()).toEqual({ github_configured: false, providers: [] });
     }
   });
 

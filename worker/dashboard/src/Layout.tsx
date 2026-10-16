@@ -196,6 +196,7 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
           <Link to="/">Repos</Link>
           <Link to="/orgs">Organisations</Link>
           <Link to="/settings">Settings</Link>
+          <Link to="/security">Security</Link>
         </nav>
         {authed && <OrgSwitcher />}
         <span className="spacer" />

@@ -55,23 +55,36 @@ describe('migration 0012 on a pre-org fixture database', () => {
     }>();
     expect(applied.results.some((r) => r.name.startsWith('0012'))).toBe(false);
 
-    const ada = await loginAs(testEnv, 1, 'ada');
-    const bob = await loginAs(testEnv, 2, 'bob');
-    const eve = await loginAs(testEnv, 3, 'eve');
-    // legacy rows written with the pre-org column set
+    // legacy rows written with the pre-org column set (sign-in code needs
+    // later migrations, so users are inserted directly and signed in after)
+    for (const [id, gh, login] of [
+      ['legacy-ada', 1, 'ada'],
+      ['legacy-bob', 2, 'bob'],
+      ['legacy-eve', 3, 'eve'],
+    ] as const) {
+      await testEnv.DB.prepare(
+        `INSERT INTO users (id, github_id, login, created_at) VALUES (?, ?, ?, 1)`,
+      )
+        .bind(id, gh, login)
+        .run();
+    }
     await testEnv.DB.prepare(
       `INSERT INTO repos (id, slug, default_branch, created_at, visibility, created_by)
        VALUES ('legacy1', 'acme/legacy', 'main', 1, 'private', ?)`,
     )
-      .bind(ada.userId)
+      .bind('legacy-ada')
       .run();
     await testEnv.DB.prepare(
       `INSERT INTO repo_members (repo_id, user_id, role) VALUES ('legacy1', ?, 'write')`,
     )
-      .bind(bob.userId)
+      .bind('legacy-bob')
       .run();
 
     await seedSchema(testEnv); // applies 0012 on top
+    const ada = await loginAs(testEnv, 1, 'ada');
+    const bob = await loginAs(testEnv, 2, 'bob');
+    const eve = await loginAs(testEnv, 3, 'eve');
+    expect([ada.userId, bob.userId]).toEqual(['legacy-ada', 'legacy-bob']);
 
     const repo = await getRepoBySlug(dbEnv, 'acme/legacy');
     expect(repo).toMatchObject({ owner_kind: 'user', owner_id: 'acme' });

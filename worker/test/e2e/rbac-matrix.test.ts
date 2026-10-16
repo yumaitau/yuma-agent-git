@@ -108,6 +108,21 @@ const PUBLIC = new Set([
   'POST /auth/logout',
   'GET /auth/github/install-callback',
   'POST /webhooks/github', // HMAC-verified
+  // sign-in (#27): OIDC redirect/callback and passkey assertions
+  'GET /auth/oidc/:provider',
+  'GET /auth/oidc/:provider/callback',
+  'POST /auth/passkey/options',
+  'POST /auth/passkey',
+  // MFA step-up: each handler refuses without a session cookie
+  'POST /auth/mfa/totp',
+  'POST /auth/mfa/passkey/options',
+  'POST /auth/mfa/passkey',
+  // SCIM 2.0 (#27): its own middleware demands a SCIM bearer token
+  'GET /scim/v2/Users',
+  'POST /scim/v2/Users',
+  'GET /scim/v2/Users/:id',
+  'PATCH /scim/v2/Users/:id',
+  'DELETE /scim/v2/Users/:id',
 ]);
 
 /**
