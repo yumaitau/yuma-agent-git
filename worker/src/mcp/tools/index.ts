@@ -532,6 +532,24 @@ const SPECS: ToolSpec[] = [
     description: 'Start a pipeline from `.yuma/pipelines/` with a manual trigger.',
     scope: 'ci:run',
   },
+  // notifications (#44): agents poll for review requests and CI failures on their PRs
+  {
+    name: 'notifications_list',
+    title: 'List notifications',
+    route: 'GET /api/v1/notifications',
+    description:
+      'Your notification inbox, newest first: review requests, mentions, CI failures and more, with `unread_count` (cursor paged).',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
+    name: 'notification_update',
+    title: 'Mark notification',
+    route: 'PATCH /api/v1/notifications/:id',
+    description: 'Mark one of your notifications read or unread, done or back in the inbox.',
+    scope: 'contents:read',
+    idempotent: true,
+  },
 ];
 
 function build(spec: ToolSpec): Tool {
