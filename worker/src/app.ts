@@ -17,6 +17,7 @@ import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
 import { oidcRoutes } from './ci/oidc';
+import { ciCodeScanningRoutes } from './api/code-scanning';
 import { runnerRoutes } from './ci/runners';
 import { mcpOAuthRoutes } from './mcp/oauth';
 import { mcpServerRoutes } from './mcp/server';
@@ -64,6 +65,8 @@ app.route('/', gitRoutes);
 // CI workload identity (issue #50): public discovery + JWKS for cloud IAM,
 // and the token endpoint, which authenticates with a per-run request token.
 app.route('/', oidcRoutes);
+// CI SARIF uploads with the run's request token (issue #67).
+app.route('/', ciCodeScanningRoutes);
 
 // Self-hosted runners (issue #48): a one-time registration token, then the
 // runner's own credential. Outside /api: runners are not users.

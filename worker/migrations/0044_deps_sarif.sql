@@ -46,7 +46,7 @@ CREATE INDEX repo_dependencies_package ON repo_dependencies(ecosystem, name);
 
 CREATE TABLE dependency_snapshots (
   repo_id TEXT PRIMARY KEY,
-  cs_id TEXT,                          -- matched head; NULL asks for a rematch
+  cs_id TEXT,                          -- matched head, NULL asks for a rematch
   queued_cs TEXT,
   queued_at INTEGER,
   truncated INTEGER NOT NULL DEFAULT 0,

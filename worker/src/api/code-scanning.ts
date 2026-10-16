@@ -1,14 +1,15 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
+import type { Env } from '../env';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { actorOf, recordAudit, type AuditActor } from '../audit/record';
 import { q, q1, type RepoRecord } from '../db/client';
-import { getRef, getRepoBySlug } from '../db/repos';
+import { getRef, getRepo } from '../db/repos';
 import { getChangeset } from '../core/changesets';
 import { ApiError } from '../core/errors';
 import { changesetForSha1 } from '../git/mapping';
-import { jobForRequest, REQUEST_TOKEN_PREFIX } from '../ci/oidc';
+import { jobForRequest } from '../ci/oidc';
 import { parsePolicy } from '../ci/config';
 import { parseContext } from '../ci/context';
 import { emitEvent } from '../webhooks/events';
@@ -22,6 +23,7 @@ import {
   normaliseRef,
   uploadSarifSchema,
   type CodeScanningAlert,
+  type UploadSarif,
 } from '../security/code-scanning';
 import { OSV_ATTRIBUTION, SEVERITIES } from '../security/deps/osv';
 import { pullSecurity } from '../security/pull-security';
@@ -33,10 +35,9 @@ import { apiError, errorResponse, readJsonBody } from './errors';
  *   GET   /api/v1/repos/:repo/code-scanning/alerts        ?ref=&state=&severity=&tool=&cursor=
  *   PATCH /api/v1/repos/:repo/code-scanning/alerts/:id    dismiss or reopen
  *   GET   /api/v1/repos/:repo/pulls/:id/security          new findings on a pull request
- * Uploads need whole-repository write (agents also `security_events:write`),
- * or a CI request token from a job whose pipeline grants
- * `permissions.security_events: write`; that job uploads for its own
- * changeset and ref only. Agents cannot dismiss or reopen alerts.
+ * Uploads need whole-repository write (agents also `security_events:write`);
+ * CI jobs upload through `POST /ci/code-scanning/sarif` below. Agents cannot
+ * dismiss or reopen alerts.
  */
 export const codeScanningRoutes = new Hono<AppEnv>();
 
@@ -55,44 +56,8 @@ export const updateCodeScanningAlert = z.union([
 
 const PULL_REF = /^refs\/pull\/\d+\/(head|merge)$/;
 
-interface Uploader {
-  repo: RepoRecord;
-  actor: AuditActor;
-  /** Set for a CI job: it uploads for its own changeset and ref. */
-  job?: { head_cs: string; ref: string | null };
-}
-
-/** A CI request token whose job may upload to `slug`, or null when none was sent. */
-async function ciUploader(c: Context<AppEnv>, slug: string): Promise<Uploader | null> {
-  const header = c.req.header('authorization') ?? '';
-  const raw = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (c.get('principal') || !raw.startsWith(REQUEST_TOKEN_PREFIX)) return null;
-  const job = await jobForRequest(c.env, raw, undefined);
-  const repo = await getRepoBySlug(c.env, slug);
-  if (!repo || repo.id !== job.repo_id)
-    throw new ApiError(404, 'repo_not_found', 'Repository not found');
-  let allowed = false;
-  try {
-    allowed =
-      parsePolicy(JSON.parse(job.config)).permissions.security_events === 'write';
-  } catch {
-    allowed = false;
-  }
-  if (!allowed)
-    throw new ApiError(
-      403,
-      'insufficient_scope',
-      'The pipeline needs permissions.security_events: write to upload SARIF',
-    );
-  return {
-    repo,
-    actor: { kind: 'system', id: `ci-run:${job.id}`, onBehalfOf: job.requested_by },
-    job: { head_cs: job.head_cs, ref: parseContext(job.context)?.ref ?? null },
-  };
-}
-
 /** The changeset a `commit_sha` (Git SHA-1 or changeset id) names, or 422. */
-async function changesetOf(env: AppEnv['Bindings'], repoId: string, sha: string) {
+async function changesetOf(env: Env, repoId: string, sha: string): Promise<string> {
   const csId =
     sha.length === 40
       ? await changesetForSha1(env, repoId, sha)
@@ -101,67 +66,109 @@ async function changesetOf(env: AppEnv['Bindings'], repoId: string, sha: string)
   return csId;
 }
 
+/** Parse, store and audit one upload; the 202 body. */
+async function ingest(
+  c: Context<AppEnv>,
+  repo: RepoRecord,
+  at: { ref: string; csId: string },
+  body: UploadSarif,
+  actor: AuditActor,
+): Promise<Response> {
+  const sarif = await decodeSarif(body.sarif);
+  const analyses = await analysesOf(sarif, body);
+  const stored = await ingestAnalyses(
+    c.env,
+    repo,
+    at,
+    analyses,
+    actor,
+    new URL(c.req.url).origin,
+  );
+  await recordAudit(c, {
+    action: 'code_scanning.upload',
+    repo,
+    actor,
+    target: {
+      ref: at.ref,
+      changeset: at.csId,
+      analyses: stored.map((a) => ({
+        id: a.id,
+        tool: a.tool,
+        category: a.category,
+        results: a.results,
+      })),
+    },
+  });
+  return c.json({ ref: at.ref, commit: at.csId, analyses: stored }, 202);
+}
+
+function parseUpload(value: unknown): UploadSarif {
+  const parsed = uploadSarifSchema.safeParse(value);
+  if (!parsed.success)
+    throw new ApiError(400, 'invalid_request', 'Send sarif (gzip then base64), commit_sha and ref');
+  return parsed.data;
+}
+
 codeScanningRoutes.post('/repos/:repo{.+}/code-scanning/sarif', async (c) => {
   try {
-    const slug = c.req.param('repo');
-    let uploader = await ciUploader(c, slug);
-    if (!uploader) {
-      const loaded = await loadWholeRepo(c, 'write', slug);
-      if (!loaded.ok) return loaded.response;
-      const scope = requireAgentScope(c, 'security_events:write');
-      if (scope) return scope;
-      uploader = { repo: loaded.repo, actor: actorOf(c.get('principal')) };
-    }
-    const { repo, actor, job } = uploader;
-    const parsed = uploadSarifSchema.safeParse(await readJsonBody(c));
-    if (!parsed.success)
-      return apiError(
-        c,
-        400,
-        'invalid_request',
-        'Send sarif (gzip then base64), commit_sha and ref',
-      );
-    const body = parsed.data;
-    let csId: string;
-    let ref: string;
-    if (job) {
-      if (!job.ref) throw new ApiError(422, 'no_ref', 'The run has no ref to upload for');
-      csId = job.head_cs;
-      ref = normaliseRef(job.ref);
-    } else {
-      if (!body.commit_sha || !body.ref)
-        return apiError(c, 400, 'invalid_request', 'commit_sha and ref are required');
-      csId = await changesetOf(c.env, repo.id, body.commit_sha);
-      ref = normaliseRef(body.ref);
-      if (!PULL_REF.test(ref) && !(await getRef(c.env, repo.id, ref)))
-        throw new ApiError(422, 'unknown_ref', `No ref ${body.ref} in this repository`);
-    }
-    const sarif = await decodeSarif(body.sarif);
-    const analyses = await analysesOf(sarif, body);
-    const stored = await ingestAnalyses(
+    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const scope = requireAgentScope(c, 'security_events:write');
+    if (scope) return scope;
+    const repo = loaded.repo;
+    const body = parseUpload(await readJsonBody(c));
+    if (!body.commit_sha || !body.ref)
+      return apiError(c, 400, 'invalid_request', 'commit_sha and ref are required');
+    const csId = await changesetOf(c.env, repo.id, body.commit_sha);
+    const ref = normaliseRef(body.ref);
+    if (!PULL_REF.test(ref) && !(await getRef(c.env, repo.id, ref)))
+      throw new ApiError(422, 'unknown_ref', `No ref ${body.ref} in this repository`);
+    return await ingest(c, repo, { ref, csId }, body, actorOf(c.get('principal')));
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
+/**
+ * `POST /ci/code-scanning/sarif` (outside `/api`, like the OIDC token
+ * endpoint): a running CI job uploads with its request token
+ * (`YAG_CODE_SCANNING_TOKEN`) when its pipeline grants
+ * `permissions.security_events: write`. The job's repository, changeset and
+ * ref are used; `commit_sha` and `ref` in the body are ignored.
+ */
+export const ciCodeScanningRoutes = new Hono<AppEnv>();
+
+ciCodeScanningRoutes.post('/ci/code-scanning/sarif', async (c) => {
+  try {
+    const header = c.req.header('authorization') ?? '';
+    const job = await jobForRequest(
       c.env,
-      repo,
-      { ref, csId },
-      analyses,
-      actor,
-      new URL(c.req.url).origin,
+      header.startsWith('Bearer ') ? header.slice(7).trim() : '',
+      undefined,
     );
-    await recordAudit(c, {
-      action: 'code_scanning.upload',
-      repo,
-      actor,
-      target: {
-        ref,
-        changeset: csId,
-        analyses: stored.map((a) => ({
-          id: a.id,
-          tool: a.tool,
-          category: a.category,
-          results: a.results,
-        })),
-      },
+    let allowed = false;
+    try {
+      allowed =
+        parsePolicy(JSON.parse(job.config)).permissions.security_events === 'write';
+    } catch {
+      allowed = false;
+    }
+    if (!allowed)
+      throw new ApiError(
+        403,
+        'insufficient_scope',
+        'The pipeline needs permissions.security_events: write to upload SARIF',
+      );
+    const repo = await getRepo(c.env, job.repo_id);
+    const ref = parseContext(job.context)?.ref;
+    if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
+    if (!ref) throw new ApiError(422, 'no_ref', 'The run has no ref to upload for');
+    const body = parseUpload(await readJsonBody(c));
+    return await ingest(c, repo, { ref: normaliseRef(ref), csId: job.head_cs }, body, {
+      kind: 'system',
+      id: `ci-run:${job.id}`,
+      onBehalfOf: job.requested_by,
     });
-    return c.json({ ref, commit: csId, analyses: stored }, 202);
   } catch (err) {
     return errorResponse(c, err);
   }

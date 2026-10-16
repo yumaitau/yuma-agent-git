@@ -201,7 +201,7 @@ export async function prepareJob(
         access.mask.push(request);
       }
       Object.assign(access.env, {
-        YAG_CODE_SCANNING_URL: `${context.origin}/api/v1/repos/${repo.slug}/code-scanning/sarif`,
+        YAG_CODE_SCANNING_URL: `${context.origin}/ci/code-scanning/sarif`,
         YAG_CODE_SCANNING_TOKEN: request,
       });
       notes.push('code scanning upload');
