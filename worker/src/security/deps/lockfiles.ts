@@ -135,12 +135,17 @@ export function pypiName(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, '-');
 }
 
-/** Exact pins (`name==1.2.3`) only; ranges, URLs and options are skipped. */
+/**
+ * Exact pins (`name==1.2.3`) only; ranges, URLs and options are skipped.
+ * Continuation lines are joined and per-requirement options such as
+ * `--hash=` (pip-compile --generate-hashes) are dropped from a pin.
+ */
 function requirements(text: string): Package[] {
   const out: Package[] = [];
-  for (const raw of text.split('\n')) {
+  for (const raw of text.replace(/\\\r?\n/g, ' ').split('\n')) {
     const line = raw
       .replace(/\s#.*$/, '')
+      .replace(/\s--.*$/, '')
       .split(';')[0]!
       .trim();
     const m =

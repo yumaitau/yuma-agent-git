@@ -145,6 +145,22 @@ describe('lockfile parsers (#67)', () => {
       ['requests', '2.31.0'],
       ['urllib3', '1.26.5'],
     ]);
+    // pip-compile --generate-hashes output, and an inline hash
+    expect(
+      parse(
+        'requirements.txt',
+        [
+          'requests==2.31.0 \\',
+          '    --hash=sha256:abc \\',
+          '    --hash=sha256:abd',
+          '    # via -r requirements.in',
+          'flask==3.0.0 --hash=sha256:def',
+        ].join('\n'),
+      ),
+    ).toEqual([
+      ['flask', '3.0.0'],
+      ['requests', '2.31.0'],
+    ]);
     expect(
       parse(
         'poetry.lock',
