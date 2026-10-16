@@ -17,6 +17,10 @@
       "/*.git/*",
       "/ci/oidc/*",
       "/runner/*",
+      // MCP (#56): the consent page is a browser navigation, which would get the SPA
+      "/mcp",
+      "/oauth/*",
+      "/.well-known/oauth-*",
     ],
   },
   "observability": {

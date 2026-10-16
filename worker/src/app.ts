@@ -18,6 +18,8 @@ import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
 import { oidcRoutes } from './ci/oidc';
 import { runnerRoutes } from './ci/runners';
+import { mcpOAuthRoutes } from './mcp/oauth';
+import { mcpServerRoutes } from './mcp/server';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -71,6 +73,11 @@ app.route('/', runnerRoutes);
 app.route('/', authRoutes);
 app.route('/', identityRoutes);
 app.route('/', tokensRoutes);
+// MCP (issue #56): OAuth metadata, consent and code/refresh grants (before
+// the token exchange, which shares POST /oauth/token), and `/mcp` itself.
+// MCP reads a clone of the token request, so it goes before OAuth apps.
+app.route('/', mcpOAuthRoutes);
+app.route('/', mcpServerRoutes);
 // before agent identities: it takes the app and OAuth app grants at /oauth/token
 app.route('/', oauthAppsRoutes);
 app.route('/', appsRoutes);
@@ -94,6 +101,9 @@ app.notFound((c) => {
     path.startsWith('/healthz') ||
     path.startsWith('/ci/oidc/') ||
     path.startsWith('/runner/') ||
+    path === '/mcp' ||
+    path.startsWith('/oauth/') ||
+    path.startsWith('/.well-known/oauth-') ||
     /^\/[^/]+\/[^/]+\.git\//.test(path);
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);

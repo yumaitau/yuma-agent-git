@@ -381,6 +381,7 @@ export const AGENT_SCOPES = [
   'pulls:write',
   'ci:run',
   'releases:write',
+  'issues:write',
 ] as const;
 
 export const agentIdentitySchema = z.object({

@@ -80,10 +80,12 @@ function principalOf(c: Context<AppEnv>): Principal {
   return c.get('principal') as Principal; // `/api/*` already refused anonymous callers
 }
 
-/** Opening issues and commenting are writes: tokens need `repo:write` (agents `contents:write`). */
+/** Opening issues and commenting are writes: tokens need `repo:write`, agents `issues:write`. */
 function requireWriteScope(c: Context<AppEnv>): void {
   const principal = principalOf(c);
-  if (principal.kind !== 'user' && !hasScope(principal, 'repo:write'))
+  if (principal.kind === 'agent' && !hasScope(principal, 'issues:write'))
+    throw new ApiError(403, 'insufficient_scope', 'Agent token requires issues:write');
+  if (principal.kind === 'token' && !hasScope(principal, 'repo:write'))
     throw new ApiError(403, 'insufficient_scope', 'Token requires repo:write');
 }
 

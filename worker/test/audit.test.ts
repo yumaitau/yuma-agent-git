@@ -499,6 +499,8 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /api/v1/tokens/:id': 'token.revoke',
   // also app.token.issue and oauth.token.issue (#75)
   'POST /oauth/token': 'agent.token.issue',
+  'POST /oauth/register': 'mcp.client.register',
+  'POST /oauth/authorize': 'mcp.grant.create',
   'POST /api/v1/agents': 'agent.create',
   'PATCH /api/v1/agents/:id': 'agent.disable',
   'DELETE /api/v1/agents/:id/tokens': 'agent.token.revoke',
@@ -659,6 +661,8 @@ const EXEMPT: Record<string, string> = {
   'POST /runner/v1/jobs/:id/complete': 'job lifecycle on the run row',
   'POST /api/v1/repos/:repo{.+}/work/:number/heartbeat':
     'extends a lease the caller already holds; the claim and its expiry are audited',
+  'POST /mcp': 'each tool calls an /api route, which audits its own change',
+  'DELETE /mcp': 'ends a protocol session; no repository or credential change',
 };
 
 describe('audit coverage', () => {

@@ -39,6 +39,7 @@ interface RouteContract {
   query?: ZodLike & { shape: Record<string, ZodLike> };
   body?: ZodLike;
   rawBody?: string;
+  deprecated?: boolean;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -101,7 +102,7 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/tokens': 'Create an API token (raw value returned once)',
   'DELETE /api/v1/tokens/:id': 'Revoke one of your API tokens',
   'POST /oauth/token':
-    'Token endpoint: agent token exchange (RFC 8693), app installation tokens (JWT bearer) and OAuth app codes (PKCE)',
+    'Token endpoint: RFC 8693 exchange (`agent:run` API token to agent), app installation tokens (JWT bearer), OAuth app and MCP authorization codes (PKCE) and MCP refresh grants',
   'GET /api/v1/user': 'The person a session or user token belongs to (OAuth sign-in)',
   'GET /api/v1/oauth-apps': 'OAuth apps you manage',
   'POST /api/v1/oauth-apps': 'Register an OAuth app (client secret returned once)',
@@ -127,6 +128,18 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/hooks/:id/deliveries':
     'Recent deliveries: status, attempts, response code',
   'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'Send a delivery again',
+  'POST /oauth/register': 'RFC 7591 dynamic registration of a public MCP client',
+  'GET /oauth/authorize':
+    'Consent page: MCP clients pick agent, repos and scopes; OAuth apps get the dashboard',
+  'POST /oauth/authorize': 'Approve or deny MCP consent; 302 back to the client',
+  'GET /.well-known/oauth-authorization-server': 'RFC 8414 authorization server metadata',
+  'GET /.well-known/oauth-protected-resource':
+    'RFC 9728 metadata for the `/mcp` resource',
+  'GET /.well-known/oauth-protected-resource/mcp':
+    'RFC 9728 metadata for `/mcp` (path-inserted form)',
+  'POST /mcp': 'MCP Streamable HTTP: one JSON-RPC message (docs/mcp.md)',
+  'GET /mcp': 'MCP: resume an SSE stream after `Last-Event-ID`',
+  'DELETE /mcp': 'MCP: end the session',
   'GET /api/v1/agents': 'Agent identities you manage, with live token counts',
   'POST /api/v1/agents': 'Create an agent identity (you or an org own it)',
   'PATCH /api/v1/agents/:id': 'Disable (kill switch, revokes tokens) or enable an agent',
@@ -136,7 +149,8 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:owner/:name': 'Repo metadata plus `can_admin`',
   'POST /api/v1/repos/:owner/:name/initialize':
     'Seed `README.md` on an empty repo default branch',
-  'POST /api/v1/repos/:repo/agents/mcp': 'MCP JSON-RPC 2.0 endpoint',
+  'POST /api/v1/repos/:repo/agents/mcp':
+    'Deprecated per-repo MCP JSON-RPC subset; use `/mcp`',
   'GET /api/v1/repos/:repo/agents/superfans':
     "List the repo's superfans and their findings",
   'POST /api/v1/repos/:repo/agents/superfans':
@@ -404,6 +418,10 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
   if (path === '/runner/v1/register') return { auth: 'registration token', perm: '—' };
   if (path.startsWith('/runner/')) return { auth: 'runner credential', perm: 'own jobs' };
+  if (path === '/mcp') {
+    return { auth: 'token', perm: 'per tool: the API route it calls' };
+  }
+  if (path === '/oauth/authorize') return { auth: 'session', perm: '—' };
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',
@@ -649,6 +667,7 @@ function operation(mod: WorkerModule, row: Row, path: string): JsonObject {
     security,
     'x-yag-permission': row.perm,
     'x-yag-rate-bucket': row.bucket,
+    ...(contract?.deprecated ? { deprecated: true } : {}),
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(requestBody ? { requestBody } : {}),
     responses,

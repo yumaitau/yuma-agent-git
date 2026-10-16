@@ -28,6 +28,13 @@ import { exportRequestSchema } from '../bridge/exportPush';
 import { importRequestSchema } from '../bridge/import';
 import { mintSchema } from '../middleware/cachetier';
 import { rpcSchema } from '../agents/mcp';
+import {
+  authorizeQuery,
+  codeGrantSchema as mcpCodeGrantSchema,
+  refreshGrantSchema,
+  registerClientSchema,
+} from '../mcp/oauth';
+import { mcpMessageSchema } from '../mcp/protocol';
 import { memberSchema } from './admin';
 import { createTaskSchema, superfanSchema } from './agents';
 import { querySchema as auditQuerySchema } from './audit';
@@ -89,8 +96,8 @@ import { completeSchema, registerSchema, stepSchema } from '../ci/runners';
 /**
  * The public API contract (issue #28): one entry per HTTP route, keyed like
  * docs/api.md (`METHOD display-path`). `scripts/gen-api-docs.ts` walks the
- * real router and turns these into docs/openapi.json; the MCP server (#56) can
- * reuse the same `id`s and zod schemas as tool names and input schemas.
+ * real router and turns these into docs/openapi.json; the MCP server (#56)
+ * builds its tools' input schemas from the same zod schemas (mcp/tools).
  *
  * Request bodies are the zod schemas the handlers actually parse with. Query
  * parameters are read ad hoc by handlers, so they are declared here; the
@@ -103,6 +110,8 @@ export interface RouteContract {
   body?: z.ZodType;
   /** Non-JSON request body media type (streams, git packs, raw bytes). */
   rawBody?: string;
+  /** Marked `deprecated` in OpenAPI (docs/api-versioning.md). */
+  deprecated?: boolean;
 }
 
 /** The `{ error: { code, message } }` envelope every `/api` error uses. */
@@ -234,8 +243,28 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'DELETE /scim/v2/Groups/:id': { id: 'scimDeleteGroup' },
   'POST /oauth/token': {
     id: 'exchangeAgentToken',
-    body: z.union([exchangeSchema, appTokenGrantSchema, codeGrantSchema]),
+    body: z.union([
+      exchangeSchema,
+      appTokenGrantSchema,
+      codeGrantSchema,
+      mcpCodeGrantSchema,
+      refreshGrantSchema,
+    ]),
   },
+  'POST /oauth/register': { id: 'registerOAuthClient', body: registerClientSchema },
+  'GET /oauth/authorize': { id: 'startOAuthAuthorization', query: authorizeQuery },
+  'POST /oauth/authorize': {
+    id: 'decideOAuthAuthorization',
+    rawBody: 'application/x-www-form-urlencoded',
+  },
+  'GET /.well-known/oauth-authorization-server': { id: 'getOAuthServerMetadata' },
+  'GET /.well-known/oauth-protected-resource': { id: 'getProtectedResourceMetadata' },
+  'GET /.well-known/oauth-protected-resource/mcp': {
+    id: 'getMcpProtectedResourceMetadata',
+  },
+  'POST /mcp': { id: 'postMcpMessage', body: mcpMessageSchema },
+  'GET /mcp': { id: 'resumeMcpStream' },
+  'DELETE /mcp': { id: 'deleteMcpSession' },
   'GET /:owner/:repo.git/info/refs': {
     id: 'gitInfoRefs',
     query: z.object({ service: z.enum(['git-upload-pack', 'git-receive-pack']) }),
@@ -389,7 +418,11 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: superfanSchema,
   },
   'DELETE /api/v1/repos/:repo/agents/superfans/:component': { id: 'stopSuperfan' },
-  'POST /api/v1/repos/:repo/agents/mcp': { id: 'callMcp', body: rpcSchema },
+  'POST /api/v1/repos/:repo/agents/mcp': {
+    id: 'callMcp',
+    body: rpcSchema,
+    deprecated: true,
+  },
   'GET /api/v1/repos/:repo/agents/tasks': {
     id: 'listAgentTasks',
     query: z.object({
@@ -410,7 +443,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/blame': {
     id: 'getBlame',
     query: z.object({
-      cs: rev.optional(),
+      cs: rev,
       path: z.string(),
       background: flag.optional(),
       annotate: flag.optional(),
@@ -495,7 +528,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/file': {
     id: 'getFile',
     query: z.object({
-      cs: rev.optional(),
+      cs: rev,
       path: z.string(),
       format: z.enum(['json', 'raw']).optional(),
     }),
@@ -698,7 +731,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/tree': {
     id: 'getTree',
     query: z.object({
-      cs: rev.optional(),
+      cs: rev,
       path: z.string().optional(),
       recursive: flag.optional(),
     }),

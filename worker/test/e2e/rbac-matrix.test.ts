@@ -108,8 +108,22 @@ const PUBLIC = new Set([
   'POST /auth/logout',
   'GET /auth/github/install-callback',
   'POST /webhooks/github', // HMAC-verified
-  // agent token exchange (#57): the subject token in the body authenticates
+  // agent token exchange (#57): the subject token in the body authenticates;
+  // MCP code and refresh grants (#56) authenticate with the code or token
   'POST /oauth/token',
+  // MCP OAuth (#56): public metadata and client registration; the consent
+  // page needs a session cookie and its POST a session-bound CSRF token
+  'GET /.well-known/oauth-protected-resource',
+  'GET /.well-known/oauth-protected-resource/mcp',
+  'GET /.well-known/oauth-authorization-server',
+  'POST /oauth/register',
+  'GET /oauth/authorize',
+  'POST /oauth/authorize',
+  // MCP server (#56): its own bearer auth, 401 + WWW-Authenticate with
+  // resource_metadata; each tool calls an /api route as the caller (mcp.test.ts)
+  'POST /mcp',
+  'GET /mcp',
+  'DELETE /mcp',
   // sign-in (#27): OIDC redirect/callback and passkey assertions
   'GET /auth/oidc/:provider',
   'GET /auth/oidc/:provider/callback',

@@ -47,14 +47,20 @@ export const AGENT_SCOPES = [
   // work queue (#59): claim, heartbeat and release; approve marks work ready
   'queue:claim',
   'queue:approve',
+  'issues:write',
 ] as const;
 export type AgentScope = (typeof AGENT_SCOPES)[number];
-const DEFAULT_SCOPES: AgentScope[] = ['contents:read', 'contents:write', 'pulls:write'];
+const DEFAULT_SCOPES: AgentScope[] = [
+  'contents:read',
+  'contents:write',
+  'pulls:write',
+  'issues:write',
+];
 
 export const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
 export const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
 const DEFAULT_TTL_S = 15 * 60;
-const MAX_TTL_S = 60 * 60;
+export const MAX_TTL_S = 60 * 60;
 
 const agentRowSchema = z.object({
   id: z.string(),
@@ -104,7 +110,7 @@ function parseAgent(raw: unknown): Agent {
   };
 }
 
-async function getAgent(env: Env, id: string): Promise<Agent | null> {
+export async function getAgent(env: Env, id: string): Promise<Agent | null> {
   const row = await q1(env, 'SELECT * FROM agents WHERE id = ?', [id]);
   return row ? parseAgent(row) : null;
 }
@@ -127,7 +133,11 @@ async function canManage(env: Env, agent: Agent, userId: string): Promise<boolea
 }
 
 /** Who may delegate to an agent: its owning user, or any member of its org. */
-async function canDelegate(env: Env, agent: Agent, userId: string): Promise<boolean> {
+export async function canDelegate(
+  env: Env,
+  agent: Agent,
+  userId: string,
+): Promise<boolean> {
   if (agent.owner_kind === 'user') return agent.owner_id === userId;
   const role = await orgRole(env, agent.owner_id, userId);
   return role === 'owner' || role === 'admin' || role === 'member';
@@ -198,6 +208,47 @@ export async function resolveAgentToken(
     repoIds: JSON.parse(token.repos) as string[],
     authMethod: token.auth_method,
   };
+}
+
+/**
+ * A fresh agent token: the raw value (returned once), its id and the insert,
+ * for the caller to batch with its audit event.
+ */
+export async function newAgentToken(
+  env: Env,
+  token: {
+    agentId: string;
+    userId: string;
+    taskId: string | null;
+    scopes: string[];
+    repoIds: string[];
+    /** The delegating API token; the agent token dies with it. */
+    subjectTokenId: string;
+    ttlS: number;
+  },
+  now: number = Date.now(),
+): Promise<{ raw: string; jti: string; expiresAt: number; insert: D1PreparedStatement }> {
+  const raw = `${AGENT_TOKEN_PREFIX}${randomHex(20)}`;
+  const jti = ulid(now);
+  const expiresAt = now + token.ttlS * 1000;
+  const insert = env.DB.prepare(
+    `INSERT INTO agent_tokens
+       (jti, token_hash, agent_id, on_behalf_of, task_id, scopes, repos, created_at, expires_at,
+        subject_token_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    jti,
+    await hashToken(raw),
+    token.agentId,
+    token.userId,
+    token.taskId,
+    JSON.stringify(token.scopes),
+    JSON.stringify(token.repoIds),
+    now,
+    expiresAt,
+    token.subjectTokenId,
+  );
+  return { raw, jti, expiresAt, insert };
 }
 
 // ---------------------------------------------------------------------------
@@ -373,28 +424,16 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
       if (pause) return apiError(c, 403, 'agents_paused', pauseMessage(pause));
     }
 
-    const now = Date.now();
     const ttl = input.expires_in ?? DEFAULT_TTL_S;
-    const raw = `${AGENT_TOKEN_PREFIX}${randomHex(20)}`;
-    const jti = ulid(now);
-    const expiresAt = now + ttl * 1000;
-    const insert = c.env.DB.prepare(
-      `INSERT INTO agent_tokens
-         (jti, token_hash, agent_id, on_behalf_of, task_id, scopes, repos, created_at, expires_at,
-          subject_token_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      jti,
-      await hashToken(raw),
-      agent.id,
-      subject.userId,
-      input.task_id ?? null,
-      JSON.stringify(scopes),
-      JSON.stringify(repos.map((r) => r.id)),
-      now,
-      expiresAt,
-      subject.tokenId,
-    );
+    const { raw, jti, expiresAt, insert } = await newAgentToken(c.env, {
+      agentId: agent.id,
+      userId: subject.userId,
+      taskId: input.task_id ?? null,
+      scopes,
+      repoIds: repos.map((r) => r.id),
+      subjectTokenId: subject.tokenId,
+      ttlS: ttl,
+    });
     // one event per repo so each owner's chain shows it; the first carries the insert
     for (const [i, repo] of repos.entries()) {
       await recordAudit(

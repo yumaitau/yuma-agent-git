@@ -73,6 +73,8 @@ export type AuditAction =
   | 'agent.enable'
   | 'agent.token.issue'
   | 'agent.token.revoke'
+  | 'mcp.client.register'
+  | 'mcp.grant.create'
   | 'repo.settings.update'
   | 'tag.create'
   | 'org.create'

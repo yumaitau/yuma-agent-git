@@ -17,8 +17,25 @@ import { newBudget, remaining } from './budget';
  *
  *   POST /api/v1/repos/:repo/agents/mcp   {method, params, id}
  *     initialize | tools/list | tools/call
+ *
+ * Deprecated by the org-wide MCP server at `/mcp` (issue #56, mcp/server.ts);
+ * kept unchanged for one release, with RFC 9745 / 8594 deprecation headers.
  */
 export const mcpRoutes = new Hono<AppEnv>();
+
+/** 2026-10-16, and the earliest removal 90 days later (docs/api-versioning.md). */
+export const LEGACY_MCP_DEPRECATION = {
+  deprecation: '@1792108800',
+  sunset: 'Thu, 14 Jan 2027 00:00:00 GMT',
+  link: '</mcp>; rel="successor-version", <https://github.com/yumaitau/yuma-agent-git/blob/main/docs/api-versioning.md>; rel="deprecation"',
+};
+
+mcpRoutes.use('/repos/:repo{.+}/agents/mcp', async (c, next) => {
+  await next();
+  c.header('deprecation', LEGACY_MCP_DEPRECATION.deprecation);
+  c.header('sunset', LEGACY_MCP_DEPRECATION.sunset);
+  c.header('link', LEGACY_MCP_DEPRECATION.link);
+});
 
 export const rpcSchema = z.object({
   jsonrpc: z.literal('2.0').optional(),
