@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import { q, q1 } from '../db/client';
 import { b64urlDecode } from '../auth/encoding';
 import { dagMergeBases } from '../core/ancestry';
+import { storageId } from '../core/network';
 import { USER_EMAIL_DOMAIN } from './identity';
 
 /**
@@ -960,20 +961,26 @@ export async function signatureFacts(
   return { unverified: await unverifiedPushed(env, repoId, ids), truncated: false };
 }
 
-/** Of `csIds`, the ones pushed without a verified signature. */
+/**
+ * Of `csIds`, the ones pushed without a verified signature to any repo of
+ * `repoId`'s fork network (`<root>` and `<root>~<ulid>`): a fork pull request
+ * brings in commits pushed to the fork only.
+ */
 export async function unverifiedPushed(
   env: Env,
   repoId: string,
   csIds: readonly string[],
 ): Promise<string[]> {
+  const root = storageId(repoId);
   const out: string[] = [];
   for (let i = 0; i < csIds.length; i += 90) {
     const slice = csIds.slice(i, i + 90);
     const rows = await q<{ cs_id: string }>(
       env,
-      `SELECT cs_id FROM commit_signatures WHERE repo_id = ? AND status != 'verified'
-         AND cs_id IN (${slice.map(() => '?').join(',')})`,
-      [repoId, ...slice],
+      `SELECT DISTINCT cs_id FROM commit_signatures
+        WHERE (repo_id = ? OR (repo_id > ? AND repo_id < ?)) AND status != 'verified'
+          AND cs_id IN (${slice.map(() => '?').join(',')})`,
+      [root, `${root}~`, `${root}\x7f`, ...slice],
     );
     out.push(...rows.map((r) => r.cs_id));
   }

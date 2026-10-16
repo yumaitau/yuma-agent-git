@@ -6,7 +6,7 @@ import { createRepo } from '../src/db/repos';
 import { q, q1, run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
 import { encodeCommit, gitObjectId } from '../src/git/objects';
-import { signedPayload } from '../src/git/signatures';
+import { signedPayload, unverifiedPushed } from '../src/git/signatures';
 import { USER_EMAIL_DOMAIN } from '../src/git/identity';
 import { blob, packOf, parseReport, pushBody, tree, ZERO, type Obj } from './git-helpers';
 
@@ -602,5 +602,24 @@ describe('required_signatures', () => {
     await addKey('ssh', key.line);
     const signed = await signedCommit(ownerEmail, 'signed\n', key.sign);
     expect((await push(signed.objects, signed.sha)).refs['refs/heads/main']).toBe('ok');
+  });
+
+  it('counts commits pushed unsigned to a fork, which a fork pull request brings in', async () => {
+    const sig = (repoId: string, cs: string, status: string) =>
+      run(
+        dbEnv,
+        'INSERT INTO commit_signatures (repo_id, cs_id, status, checked_at) VALUES (?,?,?,0)',
+        [repoId, cs, status],
+      );
+    await sig('ROOT1~FORK1', 'cs-fork', 'unsigned');
+    await sig('ROOT1', 'cs-base', 'unverified');
+    await sig('ROOT1~FORK2', 'cs-ok', 'verified');
+    await sig('ROOT1X', 'cs-other', 'unsigned');
+    const ids = ['cs-fork', 'cs-base', 'cs-ok', 'cs-other', 'cs-api'];
+    for (const repoId of ['ROOT1', 'ROOT1~FORK1'])
+      expect((await unverifiedPushed(dbEnv, repoId, ids)).sort()).toEqual([
+        'cs-base',
+        'cs-fork',
+      ]);
   });
 });
