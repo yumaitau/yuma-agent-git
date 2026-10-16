@@ -76,7 +76,7 @@ function requireSession(c: Context<AppEnv>): Response | null {
 }
 
 /** Org secrets reach every org repo, so they need the org's SSO like those repos. */
-async function requireOrgSso(c: Context<AppEnv>, orgId: string): Promise<void> {
+export async function requireOrgSso(c: Context<AppEnv>, orgId: string): Promise<void> {
   const sso = (await unmetSso(c.env, c.get('principal'))).get(orgId);
   if (sso)
     throw new ApiError(403, 'sso_required', ssoMessage(sso, new URL(c.req.url).origin), {

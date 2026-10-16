@@ -21,6 +21,7 @@ import { readRoutes } from './read';
 import { refsRoutes } from './refs';
 import { reviewsRoutes } from './reviews';
 import { rulesetsRoutes } from './rulesets';
+import { runnerAdminRoutes } from './runners';
 import { secretsRoutes } from './secrets';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
@@ -44,6 +45,7 @@ apiRouter.route('/', guardrailsRoutes);
 apiRouter.route('/', importRoutes);
 apiRouter.route('/', refsRoutes);
 apiRouter.route('/', rulesetsRoutes);
+apiRouter.route('/', runnerAdminRoutes);
 apiRouter.route('/', objectsRoutes);
 apiRouter.route('/', orgsRoutes);
 apiRouter.route('/', pipelineRoutes);

@@ -50,6 +50,17 @@ All notable changes to this project are documented here. The format follows
   be requested from people, teams and agents (`/pulls/:id/reviewers`). The
   branch rule `required_review_thread_resolution` blocks merges until every
   thread is resolved. The dashboard diff takes inline comments.
+- Self-hosted runners (#48). Pipeline jobs pick runners with `runs-on`
+  labels; jobs without it stay on the built-in Cloudflare pool. Org owners and
+  repo admins create one-time registration tokens; each runner gets its own
+  revocable credential and pulls jobs over HTTPS (`/runner/v1`: long-poll
+  claim, heartbeats, per-step logs, step results, artifacts, cancellation).
+  Claims are at most once, revocation takes effect within one poll round,
+  ephemeral runners take one job and deregister, and `trusted_only` runners
+  never run public repo or fork jobs. Jobs clone over Git smart HTTP with a
+  per-run read-only token. Logs are capped per step (512 KiB) and per run
+  (4 MiB). `runner/` is a small Node 22 reference runner; the dashboard has a
+  Runners page for orgs and repos. See `docs/runner-protocol.md`.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).

@@ -6,7 +6,8 @@
   "workspaces": [
     "worker",
     "cli",
-    "sdk"
+    "sdk",
+    "runner"
   ],
   "scripts": {
     "dev": "npm run dev -w worker",

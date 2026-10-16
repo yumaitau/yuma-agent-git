@@ -40,6 +40,10 @@ export interface CiRun {
   job_key?: string | null;
   /** Trigger context JSON (issue #50); null for older runs. */
   context?: string | null;
+  /** Self-hosted runner labels JSON (issue #48); null for the built-in pool. */
+  runs_on?: string | null;
+  /** The runner that claimed the run; `cloudflare` for the built-in pool. */
+  runner_id?: string | null;
 }
 /** A line-numbered problem in a pipeline file. */
 export interface SpecError {

@@ -915,6 +915,7 @@ export function CiView(): ReactElement {
         <h1>Continuous integration</h1>
         <div className="row">
           <Link to={`/r/${slug}/ci/access`}>Secrets and environments</Link>
+          {data?.can_admin && <Link to={`/r/${slug}/ci/runners`}>Runners</Link>}
           {config && data?.can_admin && (
             <button onClick={() => setEdit(!edit)}>
               {edit ? 'Close setup' : 'Edit pipeline'}

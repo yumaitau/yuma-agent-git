@@ -76,6 +76,9 @@ start pipelines, because a job reads the whole tree. Agent refs never trigger.
 - `timeout_seconds`: 30 to 600, 300 by default.
 - `services`: up to 4 containers started with host networking before the steps,
   so a service listens on `localhost`.
+- `runs-on`: labels a self-hosted runner must all carry, such as
+  `[macos, arm64]`. Without it (or with `cloudflare`) the job runs on the
+  built-in container pool. See `docs/runner-protocol.md`.
 
 Each job is one CI run: it reserves its own share of the monthly budget and
 takes one of the two runner slots. Jobs wait when the slots are full or the

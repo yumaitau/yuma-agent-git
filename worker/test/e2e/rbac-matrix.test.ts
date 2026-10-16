@@ -141,6 +141,15 @@ const PUBLIC = new Set([
   'GET /ci/oidc/jwks',
   'GET /ci/oidc/token',
   'POST /ci/oidc/token',
+  // self-hosted runners (#48): a one-time registration token in the body,
+  // then the runner's own credential (test/ci-runners.test.ts)
+  'POST /runner/v1/register',
+  'POST /runner/v1/jobs/claim',
+  'POST /runner/v1/jobs/:id/heartbeat',
+  'POST /runner/v1/jobs/:id/logs',
+  'POST /runner/v1/jobs/:id/steps/:step',
+  'PUT /runner/v1/jobs/:id/artifacts/:name',
+  'POST /runner/v1/jobs/:id/complete',
 ]);
 
 /**
@@ -221,6 +230,10 @@ const EXEMPT: Record<string, string> = {
   'POST /api/v1/repos/:repo{.+}/environment-approvals/:id': 'secrets.test.ts',
   'GET /api/v1/repos/:repo{.+}/approvals': 'policy.test.ts',
   'POST /api/v1/repos/:repo{.+}/approvals/:id': 'policy.test.ts',
+  'POST /api/v1/repos/:repo{.+}/runners/registration-token': 'ci-runners.test.ts',
+  'GET /api/v1/repos/:repo{.+}/runners': 'ci-runners.test.ts',
+  'PATCH /api/v1/repos/:repo{.+}/runners/:id': 'ci-runners.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/runners/:id': 'ci-runners.test.ts',
 };
 
 /**

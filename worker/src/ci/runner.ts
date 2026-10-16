@@ -47,8 +47,9 @@ export class CiRunnerDO extends DurableObject<Env> {
       return new Response('CI disabled', { status: 503 });
     const policy = parsePolicy(JSON.parse(job.config));
     const deadline = Date.now() + policy.timeout_seconds * 1000;
+    // The built-in pool claims like a self-hosted runner (ci/runners.ts), at most once.
     const claimed = await this.env.DB.prepare(
-      "UPDATE ci_runs SET state = 'running', started_at = ?, deadline = ? WHERE id = ? AND state = 'queued'",
+      "UPDATE ci_runs SET state = 'running', runner_id = 'cloudflare', started_at = ?, deadline = ? WHERE id = ? AND state = 'queued' AND runs_on IS NULL",
     )
       .bind(Date.now(), deadline, id)
       .run();

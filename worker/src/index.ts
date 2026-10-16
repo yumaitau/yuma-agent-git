@@ -7,6 +7,7 @@ import { importQueue } from './queues/import';
 import { agentJobsQueue } from './queues/agentJobs';
 import { ciQueue } from './ci/runs';
 import { sweepPipelines } from './ci/triggers';
+import { sweepRunners } from './ci/runners';
 import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
@@ -49,7 +50,7 @@ export default {
     if (env.CI_RUNNER) {
       const overdue = await q<{ id: string }>(
         env,
-        "SELECT id FROM ci_runs WHERE state = 'running' AND deadline < ? LIMIT 2",
+        "SELECT id FROM ci_runs WHERE state = 'running' AND deadline < ? AND runs_on IS NULL LIMIT 2",
         [Date.now()],
       );
       for (const job of overdue) {
@@ -69,9 +70,11 @@ export default {
     // An undelivered queued message cannot hold a slot forever. Running VMs own a durable alarm.
     await run(
       env,
-      "UPDATE ci_runs SET state = 'failed', finished_at = ?, error = 'Queue delivery expired; retry manually' WHERE state = 'queued' AND created_at < ?",
+      "UPDATE ci_runs SET state = 'failed', finished_at = ?, error = 'Queue delivery expired; retry manually' WHERE state = 'queued' AND created_at < ? AND runs_on IS NULL",
       [Date.now(), Date.now() - 15 * 60_000],
     );
+    // Self-hosted runs: unclaimed for an hour, lost leases and deadlines (issue #48).
+    await sweepRunners(env);
     await sweepPipelines(env);
   },
 

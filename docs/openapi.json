@@ -1586,6 +1586,119 @@
         }
       }
     },
+    "/api/v1/orgs/{org}/runners": {
+      "get": {
+        "operationId": "listOrgRunners",
+        "summary": "Org self-hosted runners",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/runners/{id}": {
+      "patch": {
+        "operationId": "updateOrgRunner",
+        "summary": "Disable, enable or mark an org runner trusted-only",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "disabled": { "type": "boolean" },
+                  "trusted_only": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrgRunner",
+        "summary": "Revoke an org runner and fail its running job",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/runners/registration-token": {
+      "post": {
+        "operationId": "createOrgRunnerToken",
+        "summary": "One-time org runner registration token (1 hour, recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "trusted_only": { "default": false, "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/orgs/{org}/secrets": {
       "get": {
         "operationId": "listOrgSecrets",
@@ -7063,6 +7176,143 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/runners": {
+      "get": {
+        "operationId": "listRepoRunners",
+        "summary": "Repo self-hosted runners",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/runners/{id}": {
+      "patch": {
+        "operationId": "updateRepoRunner",
+        "summary": "Disable, enable or mark a repo runner trusted-only",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "disabled": { "type": "boolean" },
+                  "trusted_only": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRepoRunner",
+        "summary": "Revoke a repo runner and fail its running job",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/runners/registration-token": {
+      "post": {
+        "operationId": "createRepoRunnerToken",
+        "summary": "One-time repo runner registration token (1 hour, recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "trusted_only": { "default": false, "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/secrets": {
       "get": {
         "operationId": "listRepoSecrets",
@@ -8170,6 +8420,266 @@
         }
       }
     },
+    "/runner/v1/jobs/{id}/artifacts/{name}": {
+      "put": {
+        "operationId": "uploadRunnerArtifact",
+        "summary": "Upload a job artifact (100 MiB at most)",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/complete": {
+      "post": {
+        "operationId": "completeRunnerJob",
+        "summary": "Report the job result and release the runner",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "result": { "type": "string", "enum": ["passed", "failed"] }
+                },
+                "required": ["result"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/heartbeat": {
+      "post": {
+        "operationId": "runnerHeartbeat",
+        "summary": "Extend the job lease; says whether it was cancelled",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/logs": {
+      "post": {
+        "operationId": "appendRunnerLog",
+        "summary": "Append a masked log chunk to a step (`?step=`)",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "step",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer", "minimum": 0, "maximum": 63 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "text/plain": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/{id}/steps/{step}": {
+      "post": {
+        "operationId": "reportRunnerStep",
+        "summary": "Report a step state and exit code",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "step",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": ["running", "passed", "failed", "skipped"]
+                  },
+                  "name": { "type": "string", "maxLength": 100 },
+                  "exit_code": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": ["state"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/jobs/claim": {
+      "post": {
+        "operationId": "claimRunnerJob",
+        "summary": "Long-poll for a job matching the runner labels (`?wait=`)",
+        "security": [{ "runnerBearer": [] }],
+        "x-yag-permission": "own jobs",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Long-poll seconds (default 30)",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/runner/v1/register": {
+      "post": {
+        "operationId": "registerRunner",
+        "summary": "Register a self-hosted runner with a one-time token (credential returned once)",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "labels": {
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9._-]{0,49}$"
+                    }
+                  },
+                  "ephemeral": { "default": false, "type": "boolean" },
+                  "capabilities": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "os": { "type": "string", "maxLength": 40 },
+                      "arch": { "type": "string", "maxLength": 40 },
+                      "version": { "type": "string", "maxLength": 40 }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["token", "name", "labels"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/scim/v2/Groups": {
       "get": {
         "operationId": "scimListGroups",
@@ -8473,6 +8983,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Per-run CI request token (`yagjob_…`) from `YAG_ID_TOKEN_REQUEST_TOKEN` in the job"
+      },
+      "runnerBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Self-hosted runner credential (`yagrun_…`) from `POST /runner/v1/register`"
       },
       "githubSignature": {
         "type": "apiKey",

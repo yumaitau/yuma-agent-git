@@ -606,6 +606,14 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/orgs/:org/variables/:name': 'variable.set',
   'DELETE /api/v1/orgs/:org/variables/:name': 'variable.delete',
   'POST /api/v1/admin/secrets/rewrap': 'secret.kek.rewrap',
+  'POST /api/v1/orgs/:org/runners/registration-token': 'runner.registration_token.create',
+  'PATCH /api/v1/orgs/:org/runners/:id': 'runner.update',
+  'DELETE /api/v1/orgs/:org/runners/:id': 'runner.delete',
+  'POST /api/v1/repos/:repo{.+}/runners/registration-token':
+    'runner.registration_token.create',
+  'PATCH /api/v1/repos/:repo{.+}/runners/:id': 'runner.update',
+  'DELETE /api/v1/repos/:repo{.+}/runners/:id': 'runner.delete',
+  'POST /runner/v1/register': 'runner.register',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -623,6 +631,14 @@ const EXEMPT: Record<string, string> = {
   'POST /auth/passkey/options': 'issues a one-time challenge; sign-in is audited',
   'POST /api/v1/repos/:repo{.+}/agents/mcp':
     'tool calls audit their own state changes (land records ref.move)',
+  // runner job lifecycle: recorded on the run (ci_runs, ci_run_steps, the log);
+  // the run's start and cancel and the runner's credential are audited
+  'POST /runner/v1/jobs/claim': 'job lifecycle on the run row',
+  'POST /runner/v1/jobs/:id/heartbeat': 'job lifecycle on the run row',
+  'POST /runner/v1/jobs/:id/logs': 'job lifecycle on the run row',
+  'POST /runner/v1/jobs/:id/steps/:step': 'job lifecycle on the run row',
+  'PUT /runner/v1/jobs/:id/artifacts/:name': 'job lifecycle on the run row',
+  'POST /runner/v1/jobs/:id/complete': 'job lifecycle on the run row',
 };
 
 describe('audit coverage', () => {

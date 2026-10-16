@@ -32,6 +32,7 @@ jobs:
           npm run typecheck -w worker
           npm run typecheck -w yag
           npm run typecheck -w @yuma/agent-git-sdk
+          npm run typecheck -w yag-runner
 
       - name: Build dashboard
         run: npm run build -w worker
@@ -44,6 +45,11 @@ jobs:
 
       - name: CLI tests (with real-git fast-import smoke)
         run: npm test -w yag
+        env:
+          YAG_GIT_SMOKE: '1'
+
+      - name: Runner tests (with the end-to-end wrangler dev smoke)
+        run: npm test -w yag-runner
         env:
           YAG_GIT_SMOKE: '1'
 
