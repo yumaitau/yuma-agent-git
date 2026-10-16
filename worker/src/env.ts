@@ -50,6 +50,9 @@ export interface Env {
   WEBHOOKS_ALLOW_HTTP?: string;
   /** Package registry (issue #53): storage quota per owner in bytes (default 10 GiB). */
   REGISTRY_QUOTA_BYTES?: string;
+  /** Git LFS (issue #35): stored bytes allowed per repo (default 10 GiB) and per org (100 GiB). */
+  LFS_REPO_QUOTA_BYTES?: string;
+  LFS_ORG_QUOTA_BYTES?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */
