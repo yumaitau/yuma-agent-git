@@ -4845,6 +4845,7 @@ export interface operations {
               | 'release'
               | 'package'
               | 'environment_approval'
+              | 'agent_approval'
             )[];
             /**
              * @default yag
@@ -5096,6 +5097,7 @@ export interface operations {
             | 'release'
             | 'package'
             | 'environment_approval'
+            | 'agent_approval'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -5966,6 +5968,7 @@ export interface operations {
             | 'release'
             | 'package'
             | 'environment_approval'
+            | 'agent_approval'
           )[];
           /**
            * @default yag
@@ -8646,6 +8649,7 @@ export interface operations {
             | 'release'
             | 'package'
             | 'environment_approval'
+            | 'agent_approval'
           )[];
           /**
            * @default yag

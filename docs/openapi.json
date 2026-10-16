@@ -544,7 +544,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 14,
+                        "maxItems": 15,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -562,7 +562,8 @@
                             "merge_group",
                             "release",
                             "package",
-                            "environment_approval"
+                            "environment_approval",
+                            "agent_approval"
                           ]
                         }
                       },
@@ -767,7 +768,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 14,
+                    "maxItems": 15,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -785,7 +786,8 @@
                         "merge_group",
                         "release",
                         "package",
-                        "environment_approval"
+                        "environment_approval",
+                        "agent_approval"
                       ]
                     }
                   },
@@ -1801,7 +1803,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 14,
+                    "maxItems": 15,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1819,7 +1821,8 @@
                         "merge_group",
                         "release",
                         "package",
-                        "environment_approval"
+                        "environment_approval",
+                        "agent_approval"
                       ]
                     }
                   },
@@ -5742,7 +5745,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 14,
+                    "maxItems": 15,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -5760,7 +5763,8 @@
                         "merge_group",
                         "release",
                         "package",
-                        "environment_approval"
+                        "environment_approval",
+                        "agent_approval"
                       ]
                     }
                   },

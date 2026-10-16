@@ -32,12 +32,15 @@ encrypted with the CI secrets keys (#50, `SECRETS_KEK`) and never returned.
 | `pull_request_review`        | `submitted`                                                                                                               | a review is submitted                                                                                            |
 | `pull_request_review_thread` | `created`, `replied`, `resolved`, `unresolved`                                                                            | a line review thread (#39) is started, answered or resolved                                                      |
 | `issues`                     | `opened`, `edited`, `closed`, `reopened`, `deleted`                                                                       | issue changes                                                                                                    |
+| `issue_comment`              | `created`                                                                                                                 | someone comments on an issue                                                                                     |
 | `ci_run`                     | `requested`, `in_progress`, `completed`                                                                                   | a CI run is queued, a self-hosted runner takes it (#48), or it finishes                                          |
 | `work_item`                  | `claimed`, `released`                                                                                                     | a work queue item (#59) is claimed or released                                                                   |
 | `package`                    | `published`, `tagged`, `deleted`                                                                                          | an image manifest or npm version is pushed, a dist-tag moves, or a tag or manifest is deleted (docs/registry.md) |
 | `release`                    | `created`, `published`, `edited`, `deleted`                                                                               | a release (#54) is created, published (draft cleared), edited or deleted                                         |
 | `secret_scanning_alert`      | `created`                                                                                                                 | secret scanning (#66) raises an alert: a push past protection, a history scan, an import or a pull mirror        |
 | `merge_group`                | `checks_requested`, `destroyed`                                                                                           | the merge queue (#43) builds a group to test, then lands, fails, reverts or drops it                             |
+| `environment_approval`       | `requested`                                                                                                               | a deployment to a protected environment waits for its reviewers                                                  |
+| `agent_approval`             | `requested`                                                                                                               | an agent guardrail (#62) holds an action for a person to approve                                                 |
 
 A push payload lists at most 20 commits (`size` has the full count). Pushes
 through the refs API and merges list only the new head.
@@ -50,8 +53,9 @@ through the refs API and merges list only the new head.
   `X-GitHub-Event`, `X-GitHub-Delivery` and `X-Hub-Signature-256`, so existing
   GitHub webhook consumers can read them. GitHub's numeric ids are derived
   from forge ids and are stable per object. `ci_run`, `pull_request_review_thread`,
-  `work_item`, `secret_scanning_alert`, `merge_group`, `release` and `package`
-  have no GitHub shape.
+  `work_item`, `secret_scanning_alert`, `merge_group`, `release`, `package`,
+  `issue_comment`, `environment_approval` and `agent_approval` have no GitHub
+  shape.
 
 ### Verifying a delivery
 

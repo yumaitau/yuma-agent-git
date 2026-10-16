@@ -251,6 +251,18 @@ function issueSubject(
   };
 }
 
+/** Users who administer `repo`, as principals (a final `canSee` check still applies). */
+async function repoAdmins(env: Env, repo: RepoRecord): Promise<string[]> {
+  const rows = await q<{ id: string }>(
+    env,
+    `SELECT user_id AS id FROM repo_members WHERE repo_id = ?1 AND role = 'admin'
+     UNION SELECT created_by FROM repos WHERE id = ?1 AND created_by IS NOT NULL
+     UNION SELECT user_id FROM org_members WHERE org_id = ?2 AND role IN ('owner','admin')`,
+    [repo.id, repo.owner_kind === 'org' ? repo.owner_id : null],
+  );
+  return rows.map((r) => `user:${r.id}`);
+}
+
 /** Who hears about `event`, or null when it notifies nobody. */
 async function planFor(
   env: Env,
@@ -398,14 +410,23 @@ async function planFor(
         title: `Possible ${alert.detector} secret pushed`,
         url: `/r/${repo.slug}/secret-scanning`,
       });
-      const admins = await q<{ id: string }>(
-        env,
-        `SELECT user_id AS id FROM repo_members WHERE repo_id = ?1 AND role = 'admin'
-         UNION SELECT created_by FROM repos WHERE id = ?1 AND created_by IS NOT NULL
-         UNION SELECT user_id FROM org_members WHERE org_id = ?2 AND role IN ('owner','admin')`,
-        [repo.id, repo.owner_kind === 'org' ? repo.owner_id : null],
-      );
-      for (const a of admins) add(p, `user:${a.id}`, 'security_alert');
+      for (const a of await repoAdmins(env, repo)) add(p, a, 'security_alert');
+      return p;
+    }
+    case 'agent_approval': {
+      if (action !== 'requested') return null;
+      const approval = z
+        .looseObject({ id: z.string(), action: z.string() })
+        .parse(d['approval']);
+      const p = plan({
+        type: 'approval',
+        id: approval.id,
+        number: null,
+        title: `An agent's ${approval.action} is waiting for approval`,
+        url: '/settings',
+      });
+      // repo admins decide (api/guardrails.ts)
+      for (const a of await repoAdmins(env, repo)) add(p, a, 'approval_requested');
       return p;
     }
     case 'environment_approval': {
@@ -530,7 +551,7 @@ const WHY: Record<Reason, string> = {
   review_requested: 'your review was requested',
   mention: 'you were mentioned',
   assign: 'you were assigned',
-  approval_requested: 'you review deployments to this environment',
+  approval_requested: 'your approval is needed',
   security_alert: 'you administer this repository',
   ci_failed: 'a CI run failed on your work',
   queue_ejected: 'your pull request left the merge queue',
@@ -560,6 +581,7 @@ const VERBS: Record<string, string> = {
   'ci_run.completed': 'reported a failed CI run on',
   'secret_scanning_alert.created': 'reported',
   'environment_approval.requested': 'asked for approval of',
+  'agent_approval.requested': 'asked for approval of',
 };
 
 async function actorName(env: Env, key: string | null): Promise<string> {

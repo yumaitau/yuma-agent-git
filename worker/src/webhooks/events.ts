@@ -21,7 +21,7 @@ export const WEBHOOK_EVENTS = [
   'pull_request_review',
   'pull_request_review_thread',
   'issues',
-  // notifications (#44): issue comments and deployments waiting for reviewers
+  // notifications (#44): issue comments
   'issue_comment',
   'ci_run',
   'work_item',
@@ -30,7 +30,9 @@ export const WEBHOOK_EVENTS = [
   'release',
   // package registry (#53): published, tagged, deleted
   'package',
+  // notifications (#44): deployments and agent actions waiting for a person
   'environment_approval',
+  'agent_approval',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -92,6 +94,7 @@ const NOTIFY_EVENTS = new Set<WebhookEvent>([
   'work_item',
   'secret_scanning_alert',
   'environment_approval',
+  'agent_approval',
 ]);
 
 function notifies(event: WebhookEvent, action: string | null): boolean {

@@ -396,6 +396,43 @@ describe('fan-out and email', () => {
       { reason: 'work_claimed' },
     ]);
   });
+  it('an agent action held for approval notifies the repo admins once', async () => {
+    const { guardAgentAction } = await import('../src/policy/guardrails');
+    const agent = {
+      kind: 'agent' as const,
+      userId: reviewer.userId,
+      agentId: 'agent-1',
+      jti: 'jti-1',
+      taskId: null,
+      scopes: ['contents:write'],
+      repoIds: [repo.id],
+    };
+    for (let i = 0; i < 2; i++) {
+      const guard = await guardAgentAction(
+        bindings(),
+        agent,
+        repo,
+        { action: 'pipeline.edit', ref: 'refs/heads/main' },
+        { exact: { ref: 'main' }, summary: { ref: 'refs/heads/main' } },
+      );
+      expect(guard.outcome).toBe('require_approval');
+    }
+    expect(queued.map((e) => `${e.event}.${e.action}`)).toEqual([
+      'agent_approval.requested',
+    ]);
+    await drain();
+    expect((await inbox(owner)).notifications).toMatchObject([
+      {
+        reason: 'approval_requested',
+        subject: {
+          type: 'approval',
+          title: "An agent's pipeline.edit is waiting for approval",
+        },
+      },
+    ]);
+    // the agent's delegate is a writer, not an admin: nothing to decide
+    expect((await inbox(reviewer)).notifications).toHaveLength(0);
+  });
 });
 
 describe('inbox API', () => {

@@ -23,6 +23,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Notifications (#44): an inbox at `GET /api/v1/notifications` for people and
+  agents (an agent token reads its agent's own), with read and done marks, per
+  user settings, repo watch levels (watching, participating, ignored) and
+  thread subscribe or mute. A `notifications` queue fans out review requests,
+  mentions, assignments, comments, CI failures, merge queue ejections, work
+  queue claims, secret alerts and deployment or agent approvals. Email goes
+  through PaperBoy over HTTPS or a `send_email` binding, at once or as a daily
+  digest after the user's Australia/Sydney hour (optionally not on weekends),
+  with signed one-click unsubscribe links and no comment text. Agents follow
+  the pull requests they open. The dashboard has an Inbox with an unread count,
+  and MCP gains `notifications_list` and `notification_update`. New webhook
+  events: `issue_comment`, `environment_approval` and `agent_approval`.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

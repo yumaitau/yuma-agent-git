@@ -43,12 +43,15 @@ const EVENTS = [
   'pull_request_review',
   'pull_request_review_thread',
   'issues',
+  'issue_comment',
   'ci_run',
   'work_item',
   'secret_scanning_alert',
   'merge_group',
   'release',
   'package',
+  'environment_approval',
+  'agent_approval',
 ];
 const STATUS_KIND = {
   pending: 'info',
