@@ -52,13 +52,16 @@ function discover(): Endpoint[] {
 
 const isRepoScoped = (e: Endpoint): boolean =>
   e.path.startsWith('/api/v1/repos/:repo{.+}/') ||
-  e.path.startsWith('/api/v1/repos/:owner/:name');
+  e.path.startsWith('/api/v1/repos/:owner/:name') ||
+  // GitHub REST compatibility (#74)
+  e.path.startsWith('/api/github/v3/repos/:owner/:repo');
 
 /** Fill route params with plausible values for `slug`. */
 function concrete(pattern: string, slug: string): string {
   return pattern
     .replace(':repo{.+}', slug)
     .replace(':owner/:name', slug)
+    .replace(':owner/:repo', slug)
     .replace(/:hash\b/, '0'.repeat(64))
     .replace(/:name\{\.\+\}/, 'main')
     .replace(/:[A-Za-z_]+(\{[^}]*\})?/g, '1');
@@ -69,6 +72,7 @@ function patternRegex(pattern: string, slug: string): RegExp {
   const parts = pattern
     .replace(':repo{.+}', '\u0000')
     .replace(':owner/:name', '\u0000')
+    .replace(':owner/:repo', '\u0000')
     .split(/(:[A-Za-z_]+(?:\{[^}]*\})?)/);
   const source = parts
     .map((part) => {
@@ -289,6 +293,46 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/attestations/verify': 'releases.test.ts',
+  // GitHub REST compatibility (#74): each calls native routes as the caller
+  ...Object.fromEntries(
+    [
+      'GET /contents',
+      'GET /git/ref/:ref{.+}',
+      'POST /git/refs',
+      'GET /commits/:ref',
+      'GET /commits/:ref/check-runs',
+      'GET /commits/:ref/statuses',
+      'GET /commits/:ref/status',
+      'GET /issues/:number',
+      'PATCH /issues/:number',
+      'GET /issues/:number/comments',
+      'POST /issues/:number/comments',
+      'POST /issues/:number/labels',
+      'PUT /issues/:number/labels',
+      'GET /labels',
+      'POST /labels',
+      'POST /pulls',
+      'GET /pulls/:number',
+      'PATCH /pulls/:number',
+      'GET /pulls/:number/merge',
+      'PUT /pulls/:number/merge',
+      'GET /pulls/:number/reviews',
+      'POST /pulls/:number/reviews',
+      'GET /releases',
+      'POST /releases',
+      'GET /releases/latest',
+      'GET /releases/tags/:tag{.+}',
+      'GET /releases/:id',
+      'PATCH /releases/:id',
+      'DELETE /releases/:id',
+    ].map((route) => {
+      const [method, tail] = route.split(' ');
+      return [
+        `${method} /api/github/v3/repos/:owner/:repo${tail}`,
+        'compat-github.test.ts',
+      ];
+    }),
+  ),
 };
 
 /**

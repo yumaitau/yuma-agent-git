@@ -380,6 +380,14 @@ describe('GitHub REST compatibility (access and aliases)', () => {
     const body = (await res.json()) as { message: string; error: { code: string } };
     expect(body.message).toBeTruthy();
     expect(body.error.code).toBe('repo_not_found');
+    for (const path of [
+      '/api/v3/repos/team/project/pulls',
+      '/api/github/v3/search/issues?q=repo:team/project',
+    ]) {
+      expect((await call('GET', path, null)).status, path).toBe(401);
+      expect((await call('GET', path, strangerToken)).status, path).toBe(404);
+      expect((await call('GET', path, readerToken)).status, path).toBe(200);
+    }
   });
 
   it('keeps the native 403 for writes a reader may not make', async () => {
