@@ -7,7 +7,14 @@ import { parse as parseYaml } from 'yaml';
  * since a range is not what gets installed.
  */
 
-export type Ecosystem = 'npm' | 'PyPI' | 'Go' | 'crates.io' | 'Packagist' | 'Maven';
+export type Ecosystem =
+  | 'npm'
+  | 'PyPI'
+  | 'Go'
+  | 'crates.io'
+  | 'Packagist'
+  | 'Maven'
+  | 'SwiftURL';
 
 export interface Package {
   name: string;
@@ -28,6 +35,7 @@ export const LOCKFILES: Record<string, { ecosystem: Ecosystem; parse: Parser }> 
   'Cargo.lock': { ecosystem: 'crates.io', parse: cargoLock },
   'composer.lock': { ecosystem: 'Packagist', parse: composerLock },
   'gradle.lockfile': { ecosystem: 'Maven', parse: gradleLock },
+  'Package.resolved': { ecosystem: 'SwiftURL', parse: swiftResolved },
 };
 
 export function lockfileOf(path: string): { ecosystem: Ecosystem; parse: Parser } | null {
@@ -115,8 +123,9 @@ function yarnLock(text: string): Package[] {
         .split(',')
         .map((spec) => spec.trim().replace(/^"|"$/g, ''))
         .filter((spec) => !/@(workspace|link|portal|file|patch):/.test(spec))
-        .map((spec) => spec.slice(0, spec.indexOf('@', 1)))
-        .filter((name) => name !== '' && name !== '__metadata');
+        // `name@range`; a key without one (Berry's `__metadata`) is no package
+        .map((spec) => spec.slice(0, Math.max(0, spec.indexOf('@', 1))))
+        .filter((name) => name !== '');
       continue;
     }
     const version = /^ {2}version:? "?([^"\s]+)"?\s*$/.exec(line)?.[1];
@@ -229,6 +238,26 @@ function gradleLock(text: string): Package[] {
   for (const line of text.split('\n')) {
     const m = /^([^#:\s]+):([^:\s]+):([^=\s]+)=/.exec(line.trim());
     if (m) out.push({ name: `${m[1]}:${m[2]}`, version: m[3]! });
+  }
+  return unique(out);
+}
+
+/**
+ * Swift Package.resolved v1 (`object.pins[].repositoryURL`) and v2/v3
+ * (`pins[].location`). OSV's SwiftURL names a package by its repository URL
+ * without the scheme or `.git`. Pins to a branch or revision have no version.
+ */
+function swiftResolved(text: string): Package[] {
+  const file = record(JSON.parse(text));
+  const pins = file.pins ?? record(file.object).pins;
+  const out: Package[] = [];
+  for (const raw of Array.isArray(pins) ? pins : []) {
+    const pin = record(raw);
+    const url = str(pin.location) || str(pin.repositoryURL);
+    out.push({
+      name: url.replace(/^[a-z]+:\/\//, '').replace(/\.git$/, ''),
+      version: str(record(pin.state).version),
+    });
   }
   return unique(out);
 }
