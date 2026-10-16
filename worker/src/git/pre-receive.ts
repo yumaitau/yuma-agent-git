@@ -1,11 +1,11 @@
 import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import type { Principal } from '../auth/principal';
-import { hasScope } from '../auth/principal';
+import { agentIdOf, hasScope } from '../auth/principal';
 import type { PathDecider } from '../auth/rbac';
 import { MAX_FILE_BYTES } from '../bridge/import';
 import { settings } from '../ci/config';
-import { agentRefOwner } from '../core/refs';
+import { agentRefOwner, TAG_PREFIX } from '../core/refs';
 
 /**
  * Pre-receive checks (issue #32): every check sees the whole push before any
@@ -72,15 +72,11 @@ function changesOf(ctx: PreReceiveContext, update: PushUpdate): GitChange[] {
   return update.commits.flatMap((sha) => ctx.commits.get(sha)?.changes ?? []);
 }
 
-/** `refs/agents/<id>/…` belongs to the agent token with that id, as for PUT refs. */
+/** `refs/agents/<id>/…` belongs to the agent with that id, as for PUT refs. */
 const agentRefs: Check = async (ctx, updates) =>
   updates.flatMap((u) => {
     const owner = agentRefOwner(u.name);
-    const p = ctx.principal;
-    if (
-      owner === null ||
-      (p.kind === 'token' && hasScope(p, 'agent:run') && p.tokenId === owner)
-    ) {
+    if (owner === null || agentIdOf(ctx.principal) === owner) {
       return [];
     }
     return [
@@ -91,6 +87,35 @@ const agentRefs: Check = async (ctx, updates) =>
       },
     ];
   });
+
+/**
+ * Agent tokens (#57) never update the default branch (they open a pull
+ * request) and need `releases:write` for tags.
+ */
+const agentLimits: Check = async (ctx, updates) =>
+  ctx.principal.kind !== 'agent'
+    ? []
+    : updates.flatMap((u): Verdict[] => {
+        if (u.name === ctx.repo.default_branch) {
+          return [
+            {
+              ref: u.ref,
+              rule: 'agent_default_branch',
+              message: 'agents cannot update the default branch; open a pull request',
+            },
+          ];
+        }
+        if (u.name.startsWith(TAG_PREFIX) && !hasScope(ctx.principal, 'releases:write')) {
+          return [
+            {
+              ref: u.ref,
+              rule: 'agent_scope',
+              message: 'pushing tags needs the releases:write scope',
+            },
+          ];
+        }
+        return [];
+      });
 
 /**
  * The default branch is protected: never deleted, never rewritten, and with
@@ -222,6 +247,7 @@ const pathSafety: Check = async (ctx, updates) =>
 
 export const CHECKS: Check[] = [
   agentRefs,
+  agentLimits,
   protectedRefs,
   pathRules,
   maxFileSize,

@@ -10,6 +10,7 @@ import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import type { AppEnv, Principal } from './principal';
 import { recordAudit } from '../audit/record';
 import { requireRecentMfa } from './session';
+import { AGENT_TOKEN_PREFIX, resolveAgentToken } from './agents';
 
 /**
  * Machine/agent API tokens (issue #12): `yag_` + 40 hex chars, SHA-256 at
@@ -158,11 +159,12 @@ export async function deleteApiToken(
   return true;
 }
 
-/** Resolve a raw bearer token to a principal (null when unknown/expired). */
+/** Resolve a raw API or agent bearer token to a principal (null if unknown/expired). */
 export async function resolveTokenPrincipal(
   env: Env,
   raw: string,
 ): Promise<Principal | null> {
+  if (raw.startsWith(AGENT_TOKEN_PREFIX)) return resolveAgentToken(env, raw);
   if (!raw.startsWith(TOKEN_PREFIX)) return null;
   const hash = await sha256Hex(new TextEncoder().encode(raw));
   const row = await q1(

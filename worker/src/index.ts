@@ -24,10 +24,11 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire idle agent refs, sweep CI runs. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
+    await run(env, 'DELETE FROM agent_tokens WHERE expires_at < ?', [Date.now()]);
     await kickAuditStream(env);
     const expired = await q<{ id: string; log_key: string }>(
       env,

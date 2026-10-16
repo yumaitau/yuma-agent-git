@@ -69,4 +69,43 @@ describe('ChangesetView', () => {
     expect(screen.getByText(/export function health/)).toBeTruthy();
     expect(screen.getByText(/@@ -0,0 \+1,2 @@/)).toBeTruthy();
   });
+
+  it('names the agent, the person it acted for and the task', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          changeset: {
+            id: ID,
+            repo_id: 'repo1',
+            first_parent: null,
+            parents: [],
+            author: { agent: 'agt_1' },
+            message: 'agent change',
+            created_at: 1_700_000_000_000,
+            changed_files: [],
+            root_tree: 'd'.repeat(64),
+          },
+          provenance: {
+            agent_id: 'agt_1',
+            agent_name: 'Codex',
+            agent_kind: 'codex',
+            on_behalf_of: 'u1',
+            on_behalf_of_login: 'Justin',
+            task_id: '42',
+          },
+        }),
+      ),
+    );
+
+    render(
+      <MemoryRouter initialEntries={[`/r/acme/tools/cs/${ID}`]}>
+        <Routes>
+          <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Codex on behalf of Justin, task #42')).toBeTruthy();
+  });
 });

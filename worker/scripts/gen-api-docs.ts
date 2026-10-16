@@ -68,6 +68,12 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/tokens': 'List your API tokens (metadata only)',
   'POST /api/v1/tokens': 'Create an API token (raw value returned once)',
   'DELETE /api/v1/tokens/:id': 'Revoke one of your API tokens',
+  'POST /oauth/token':
+    'RFC 8693 token exchange: an `agent:run` API token delegates to an agent',
+  'GET /api/v1/agents': 'Agent identities you manage, with live token counts',
+  'POST /api/v1/agents': 'Create an agent identity (you or an org own it)',
+  'PATCH /api/v1/agents/:id': 'Disable (kill switch, revokes tokens) or enable an agent',
+  'DELETE /api/v1/agents/:id/tokens': 'Revoke every live token of an agent',
   'GET /api/v1/repos': 'List repos visible to the caller (keyset paged)',
   'POST /api/v1/repos': 'Create a repo (creator becomes admin)',
   'GET /api/v1/repos/:owner/:name': 'Repo metadata plus `can_admin`',
@@ -247,7 +253,12 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (/guardPathRead\d*\(/.test(src)) parts.push('path:read');
   if (/guardPathHistory\d*\(/.test(src)) parts.push('path:history');
   if (/"agent:run"/.test(src)) parts.push('`agent:run`');
-  if (/scope === "repo:read" \|\| scope === "repo:write"/.test(src)) {
+  if (/agentIdOf\d*\(/.test(src)) parts.push('agent identity for `refs/agents/<id>/`');
+  if (
+    /!hasScope\d*\(principal, "repo:read"\) && !hasScope\d*\(principal, "repo:write"\)/.test(
+      src,
+    )
+  ) {
     parts.push('token needs `repo:read` or `repo:write`');
   }
 

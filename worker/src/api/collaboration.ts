@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { can } from '../auth/rbac';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
-import { loadWholeRepo } from '../auth/guards';
+import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { q, q1, run } from '../db/client';
 import { getRef } from '../db/repos';
@@ -71,6 +71,8 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'pulls:write');
+    if (scoped) return scoped;
     const body = parse(createPull, await readJsonBody(c));
     const ref = await getRef(c.env, loaded.repo.id, loaded.repo.default_branch);
     if (!ref || ref.head === body.head_cs)
@@ -135,6 +137,12 @@ for (const action of ['update', 'review', 'merge'] as const) {
     try {
       const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
       if (!loaded.ok) return loaded.response;
+      const scoped = requireAgentScope(c, 'pulls:write');
+      if (scoped) return scoped;
+      // Merging moves the default branch, which agent tokens never do (#57).
+      if (action === 'merge' && c.get('principal')?.kind === 'agent') {
+        return apiError(c, 403, 'protected_branch', 'agents cannot merge pull requests');
+      }
       const pull = await getPull(c.env, loaded.repo.id, Number(c.req.param('id')));
       const body = await readJsonBody(c);
       const stub = c.env.REF_LOCK.get(
@@ -303,6 +311,8 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
       c.req.param('repo'),
     );
     if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'ci:run');
+    if (scoped) return scoped;
     const cs = await resolveRevision(
       c.env,
       loaded.repo.id,
@@ -353,6 +363,8 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
+    const scoped = requireAgentScope(c, 'ci:run');
+    if (scoped) return scoped;
     const job = await q1<CiRun>(
       c.env,
       'SELECT * FROM ci_runs WHERE id = ? AND repo_id = ?',

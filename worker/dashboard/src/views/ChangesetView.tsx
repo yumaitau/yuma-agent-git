@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   api,
   asApiError,
+  type AgentProvenance,
   type ApiError,
   type Changeset,
   type DiffResult,
@@ -27,10 +28,17 @@ const OP_CHIP: Record<FileChange['op'], string> = {
   mod: 'info',
 };
 
+/** "Codex on behalf of justin, task #42" for changesets an agent token wrote. */
+function agentLine(p: AgentProvenance): string {
+  const task = p.task_id ? `, task #${p.task_id}` : '';
+  return `${p.agent_name ?? p.agent_id} on behalf of ${p.on_behalf_of_login ?? p.on_behalf_of}${task}`;
+}
+
 export function ChangesetView(): ReactElement {
   const slug = useSlug();
   const { id = '' } = useParams();
   const [changeset, setChangeset] = useState<Changeset | null>(null);
+  const [provenance, setProvenance] = useState<AgentProvenance | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -44,6 +52,7 @@ export function ChangesetView(): ReactElement {
       .then((cs) => {
         if (cancelled) return;
         setChangeset(cs);
+        setProvenance(cs.provenance);
         if (cs.first_parent) {
           return api
             .getDiff(slug, {
@@ -84,6 +93,12 @@ export function ChangesetView(): ReactElement {
           <span className="mono wrap-any small">{changeset.id}</span>
           <span className="k">Author</span>
           <span>{authorLabel(changeset.author)}</span>
+          {provenance && (
+            <>
+              <span className="k">Agent</span>
+              <span>{agentLine(provenance)}</span>
+            </>
+          )}
           <span className="k">Created</span>
           <span>{formatTime(changeset.created_at)}</span>
           <span className="k">Parents</span>

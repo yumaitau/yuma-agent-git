@@ -3,7 +3,7 @@ import type { Env } from '../env';
 import { C, T } from '../db/schema';
 import { parsePathRuleRow, q } from '../db/client';
 import type { PathRuleRecord, RepoRecord } from '../db/client';
-import type { Principal } from './principal';
+import { agentIdOf, boundRepos, hasScope, type Principal } from './principal';
 
 /**
  * RBAC (issue #14, architecture §3) — repo roles **plus** directory-level
@@ -83,7 +83,7 @@ function ruleMatchesPrincipal(
     case 'user':
       return principal.userId === id;
     case 'agent':
-      return principal.kind === 'token' && principal.tokenId === id;
+      return agentIdOf(principal) === id;
     case 'role':
       return role === id;
     default:
@@ -236,13 +236,15 @@ export function restrictingDecision(
 function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
   const { repo, principal, rules } = ctx;
   // Token limits constrain every role and path grant, including repo creators.
-  if (principal?.kind === 'token') {
-    if (principal.repoId !== null && principal.repoId !== repo.id)
-      return { allowed: false };
-    const writes = principal.scopes.includes('repo:write');
+  // An agent token also gets the human's role below: the intersection (#57).
+  if (principal !== null && principal.kind !== 'user') {
+    const repos = boundRepos(principal);
+    if (repos !== null && !repos.includes(repo.id)) return { allowed: false };
+    if (principal.kind === 'agent' && perm === 'admin') return { allowed: false };
+    const writes = hasScope(principal, 'repo:write');
     if (perm === 'write' || perm === 'admin') {
       if (!writes) return { allowed: false };
-    } else if (!writes && !principal.scopes.includes('repo:read')) {
+    } else if (!writes && !hasScope(principal, 'repo:read')) {
       return { allowed: false };
     }
   }
