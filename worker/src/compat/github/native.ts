@@ -126,10 +126,16 @@ export async function loadRepo(
   c: Ctx,
   slug = `${param(c, 'owner')}/${param(c, 'repo')}`,
 ): Promise<Repo> {
+  // Hono has decoded the params: an encoded `/`, `?` or `..` must not pick
+  // another native route, whose JSON would then pass for this repository.
+  if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(slug) || /(^|\/)\.\.?(\/|$)/.test(slug))
+    throw new ApiError(404, 'repo_not_found', 'Repository not found');
   const path = `/repos/${slug}`;
   const data = z
     .object({ repo: repoSchema, can_admin: z.boolean() })
     .parse(await native(c, 'GET', path));
+  if (data.repo.slug !== slug)
+    throw new ApiError(404, 'repo_not_found', 'Repository not found');
   return { record: data.repo as RepoRecord, path, can_admin: data.can_admin };
 }
 

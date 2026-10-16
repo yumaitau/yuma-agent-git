@@ -488,6 +488,46 @@ describe('GitHub REST compatibility (access and aliases)', () => {
     }
   });
 
+  it('does not let an encoded owner reach another native route', async () => {
+    const stranger = await loginAs(testEnv, 7403, 'stranger');
+    const strangerToken = (
+      await createApiToken(testEnv, stranger.userId, { label: 'gh' })
+    ).raw;
+    const own = await createRepo(testEnv, {
+      slug: 'att/own',
+      createdBy: stranger.userId,
+    });
+    const forged = JSON.stringify({
+      repo: {
+        id: repo.id,
+        slug: 'team/project',
+        default_branch: 'main',
+        created_at: 0,
+        visibility: 'private',
+      },
+      can_admin: true,
+      runs: [],
+    });
+    const forgedCommit = (
+      await commitChanges(testEnv, own.id, {
+        first_parent: null,
+        message: 'e',
+        author,
+        changes: [{ path: 'e.json', op: 'add', content_b64: btoa(forged) }],
+      })
+    ).changeset.id;
+    await setRef(testEnv, own.id, 'main', forgedCommit);
+    const encoded = encodeURIComponent('att/own/file?cs=main&path=e.json&format=raw&x=');
+    for (const path of [
+      `/api/github/v3/repos/${encoded}/r/commits/main/status`,
+      `/api/github/v3/repos/att/${encodeURIComponent('..')}/team/project/commits/main/status`,
+      `/api/github/v3/search/issues?q=${encodeURIComponent(`repo:att/own/file?cs=main&path=e.json&format=raw`)}`,
+    ]) {
+      const res = await call('GET', path, strangerToken);
+      expect([404, 422], `${path}: ${await res.clone().text()}`).toContain(res.status);
+    }
+  });
+
   it('keeps the native 403 for writes a reader may not make', async () => {
     const res = await call(
       'POST',
