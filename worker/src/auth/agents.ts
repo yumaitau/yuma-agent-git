@@ -303,7 +303,7 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
         c,
         400,
         'unsupported_grant_type',
-        'only token exchange is supported',
+        'supported grants: token exchange, JWT bearer and authorization code',
       );
     }
 

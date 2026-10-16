@@ -19,7 +19,7 @@ export interface AuditSink {
 const BATCH = 100;
 const MAX_BATCHES = 10;
 
-async function hmacHex(secret: string, message: string): Promise<string> {
+export async function hmacHex(secret: string, message: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),

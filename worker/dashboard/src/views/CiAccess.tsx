@@ -108,7 +108,10 @@ export function CiAccessView(): ReactElement {
       <RepoNav active="CI" />
       <div className="row between">
         <h1>Secrets and environments</h1>
-        <Link to={`/r/${slug}/ci`}>Back to runs</Link>
+        <span className="row">
+          <Link to={`/r/${slug}/hooks`}>Webhooks</Link>
+          <Link to={`/r/${slug}/ci`}>Back to runs</Link>
+        </span>
       </div>
       {error && <ErrorNotice error={error} />}
       {notice && <p role="status">{notice}</p>}

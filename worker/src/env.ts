@@ -42,6 +42,10 @@ export interface Env {
   AUDIT_ADMIN_USER_IDS?: string;
   /** Comma-separated user ids allowed to pause every agent on the instance (#62). */
   AGENTS_ADMIN_USER_IDS?: string;
+  /** Queue `forge-events` (issue #75): domain events and webhook delivery retries. */
+  EVENTS_QUEUE?: Queue;
+  /** "true" lets webhooks use http:// URLs (local testing). Private addresses stay refused. */
+  WEBHOOKS_ALLOW_HTTP?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */

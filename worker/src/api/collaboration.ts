@@ -27,7 +27,8 @@ import { requestRun } from '../ci/environments';
 import { advancePipelines } from '../ci/planner';
 import { stopSelfHosted } from '../ci/runners';
 import { actorKindOf, contextFor, parseContext, runRef, triggerOf } from '../ci/context';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitEvent, emitRefUpdate } from '../webhooks/events';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
 
@@ -115,6 +116,13 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
       action: 'pull.create',
       repo: loaded.repo,
       target: { pull_id: pull.id, base_ref: pull.base_ref, head_cs: pull.head_cs },
+    });
+    await emitEvent(c.env, loaded.repo, {
+      event: 'pull_request',
+      action: 'opened',
+      actor: actorOf(c.get('principal')),
+      origin: new URL(c.req.url).origin,
+      data: { pull_request: pull },
     });
     const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
     await linkReferences(c, loaded.repo, source, pull.body);
@@ -217,6 +225,12 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
             ...(action === 'update-branch' ? { head_cs: after.head_cs } : {}),
           },
         });
+        await emitPull(
+          c,
+          loaded.repo,
+          action === 'update-branch' ? 'update' : action,
+          pull,
+        );
       }
       if (response.ok && action === 'merge') {
         // A merge moves the target branch like a push does, so it starts `on: push` pipelines.
@@ -600,6 +614,68 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
     return errorResponse(c, err);
   }
 });
+
+/** Webhook events for a pull request action that succeeded (#75). */
+async function emitPull(
+  c: Context<AppEnv>,
+  repo: RepoWithCreator,
+  action: 'update' | 'review' | 'merge',
+  before: Pull,
+): Promise<void> {
+  const after = await getPull(c.env, repo.id, before.id);
+  const actor = actorOf(c.get('principal'));
+  const origin = new URL(c.req.url).origin;
+  if (action === 'review') {
+    const review = await q1<Review>(
+      c.env,
+      'SELECT * FROM pull_reviews WHERE pull_id = ? AND author_id = ? ORDER BY id DESC LIMIT 1',
+      [after.id, c.get('principal')!.userId],
+    );
+    await emitEvent(c.env, repo, {
+      event: 'pull_request_review',
+      action: 'submitted',
+      actor,
+      origin,
+      data: { pull_request: after, review },
+    });
+    return;
+  }
+  const changed = (from: string, to: string): boolean =>
+    before.state === from && after.state === to;
+  const kind =
+    action === 'merge' || (after.state === 'closed' && before.state !== 'closed')
+      ? 'closed'
+      : before.state === 'closed'
+        ? 'reopened'
+        : changed('draft', 'open')
+          ? 'ready_for_review'
+          : changed('open', 'draft')
+            ? 'converted_to_draft'
+            : after.head_cs !== before.head_cs
+              ? 'synchronize'
+              : 'edited';
+  await emitEvent(c.env, repo, {
+    event: 'pull_request',
+    action: kind,
+    actor,
+    origin,
+    data: { pull_request: after },
+  });
+  if (action === 'merge')
+    await emitRefUpdate(
+      c.env,
+      repo,
+      {
+        name: after.base_ref,
+        from: after.base_cs,
+        to: after.merged_cs ?? after.head_cs,
+        commits: [after.merged_cs ?? after.head_cs],
+        forced: false,
+      },
+      actor,
+      origin,
+    );
+}
 
 export async function autoCheck(
   c: Context<AppEnv>,

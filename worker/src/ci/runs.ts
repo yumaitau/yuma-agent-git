@@ -4,7 +4,8 @@ import { getChangeset } from '../core/changesets';
 import { getRepo, getRef } from '../db/repos';
 import { ApiError } from '../core/errors';
 import { monthlyBudget, reservation, settings, type CiRun } from './config';
-import type { RunContext } from './context';
+import { parseContext, type RunContext } from './context';
+import { emitEvent } from '../webhooks/events';
 
 export async function enqueueRun(
   env: Env,
@@ -92,6 +93,40 @@ export async function enqueueRun(
   return (await q1<CiRun>(env, 'SELECT * FROM ci_runs WHERE id = ?', [id]))!;
 }
 
+/** The `ci_run` webhook event (#75) for a run's current row. */
+export async function emitCiRun(
+  env: Env,
+  id: string,
+  action: 'requested' | 'completed',
+): Promise<void> {
+  const job = await q1<CiRun>(env, 'SELECT * FROM ci_runs WHERE id = ?', [id]);
+  const repo = job && (await getRepo(env, job.repo_id));
+  if (!job || !repo) return;
+  const context = parseContext(job.context);
+  await emitEvent(env, repo, {
+    event: 'ci_run',
+    action,
+    actor: { kind: 'user', id: job.requested_by },
+    origin: context?.origin ?? null,
+    data: {
+      ci_run: {
+        id: job.id,
+        state: job.state,
+        head_cs: job.head_cs,
+        event: context?.event ?? null,
+        ref: context?.ref ?? null,
+        publish: job.publish === 1,
+        pipeline_run_id: job.pipeline_run_id ?? null,
+        job_key: job.job_key ?? null,
+        created_at: job.created_at,
+        started_at: job.started_at,
+        finished_at: job.finished_at,
+        error: job.error,
+      },
+    },
+  });
+}
+
 export interface Admission {
   repoId: string;
   head: string;
@@ -173,6 +208,7 @@ export async function admitRun(
       'Could not queue the run. Retry when the queue is available.',
     );
   }
+  await emitCiRun(env, id, 'requested');
   return id;
 }
 

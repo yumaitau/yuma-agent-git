@@ -441,6 +441,176 @@
         }
       }
     },
+    "/api/v1/apps": {
+      "get": {
+        "operationId": "listApps",
+        "summary": "Apps you manage",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createApp",
+        "summary": "Create an app (private key returned once), optionally with its webhook",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "permissions": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "contents:read",
+                        "contents:write",
+                        "pulls:write",
+                        "ci:run",
+                        "releases:write",
+                        "queue:claim",
+                        "queue:approve"
+                      ]
+                    }
+                  },
+                  "org": { "type": "string", "minLength": 1 },
+                  "webhook": {
+                    "type": "object",
+                    "properties": {
+                      "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                      "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
+                      "events": {
+                        "minItems": 1,
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "push",
+                            "ref",
+                            "pull_request",
+                            "pull_request_review",
+                            "issues",
+                            "ci_run"
+                          ]
+                        }
+                      },
+                      "format": {
+                        "default": "yag",
+                        "type": "string",
+                        "enum": ["yag", "github"]
+                      },
+                      "active": { "default": true, "type": "boolean" }
+                    },
+                    "required": ["url", "events"]
+                  }
+                },
+                "required": ["name", "permissions"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/apps/{id}": {
+      "get": {
+        "operationId": "getApp",
+        "summary": "An app you manage, its installations and webhook",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "app owner",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApp",
+        "summary": "Delete an app, its installations, tokens and webhook",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "app owner",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/apps/{id}/installations": {
+      "post": {
+        "operationId": "installApp",
+        "summary": "Install an app on repositories you administer",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repos": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "required": ["repos"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/audit/stream": {
       "get": {
         "operationId": "getAuditStream",
@@ -496,6 +666,182 @@
         "x-yag-rate-bucket": "api_read",
         "responses": {
           "302": { "description": "Redirect" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/hooks/{id}": {
+      "get": {
+        "operationId": "getHook",
+        "summary": "A webhook (never its secret)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "manages the hook's repo, org or app",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "patch": {
+        "operationId": "updateHook",
+        "summary": "Change a webhook URL, secret, events, format or state",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "manages the hook's repo, org or app",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                  "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "push",
+                        "ref",
+                        "pull_request",
+                        "pull_request_review",
+                        "issues",
+                        "ci_run"
+                      ]
+                    }
+                  },
+                  "format": { "type": "string", "enum": ["yag", "github"] },
+                  "active": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteHook",
+        "summary": "Delete a webhook and its delivery log",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "manages the hook's repo, org or app",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/hooks/{id}/deliveries": {
+      "get": {
+        "operationId": "listHookDeliveries",
+        "summary": "Recent deliveries: status, attempts, response code",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "manages the hook's repo, org or app",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/hooks/{id}/deliveries/{delivery}/redeliver": {
+      "post": {
+        "operationId": "redeliverHookDelivery",
+        "summary": "Send a delivery again",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "manages the hook's repo, org or app",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "delivery",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/installations": {
+      "get": {
+        "operationId": "listInstallations",
+        "summary": "App installations you made",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/installations/{id}": {
+      "delete": {
+        "operationId": "deleteInstallation",
+        "summary": "Remove an installation (its tokens stop at once)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -665,6 +1011,189 @@
                   "code": { "type": "string", "minLength": 1, "maxLength": 12 }
                 },
                 "required": ["code"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/oauth-apps": {
+      "get": {
+        "operationId": "listOAuthApps",
+        "summary": "OAuth apps you manage",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createOAuthApp",
+        "summary": "Register an OAuth app (client secret returned once)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "redirect_uris": {
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+                  },
+                  "org": { "type": "string", "minLength": 1 }
+                },
+                "required": ["name", "redirect_uris"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/oauth-apps/{id}": {
+      "delete": {
+        "operationId": "deleteOAuthApp",
+        "summary": "Delete an OAuth app and revoke its tokens",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/oauth/authorize": {
+      "get": {
+        "operationId": "getOAuthAuthorization",
+        "summary": "Check an authorization request for the consent page",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": false,
+            "schema": { "default": "code", "type": "string", "const": "code" }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": { "default": "", "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 512 }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43,128}$" }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "const": "S256" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "approveOAuthAuthorization",
+        "summary": "Approve or deny an authorization request (returns the redirect)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "client_id": { "type": "string", "minLength": 1 },
+                  "redirect_uri": { "type": "string", "minLength": 1 },
+                  "response_type": {
+                    "default": "code",
+                    "type": "string",
+                    "const": "code"
+                  },
+                  "scope": { "default": "", "type": "string" },
+                  "state": { "type": "string", "maxLength": 512 },
+                  "code_challenge": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43,128}$"
+                  },
+                  "code_challenge_method": { "type": "string", "const": "S256" },
+                  "approve": { "type": "boolean" }
+                },
+                "required": [
+                  "client_id",
+                  "redirect_uri",
+                  "code_challenge",
+                  "code_challenge_method",
+                  "approve"
+                ]
               }
             }
           }
@@ -969,6 +1498,88 @@
             }
           }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/hooks": {
+      "get": {
+        "operationId": "listOrgHooks",
+        "summary": "List org webhooks",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createOrgHook",
+        "summary": "Create an org webhook (all org repositories)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                  "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "push",
+                        "ref",
+                        "pull_request",
+                        "pull_request_review",
+                        "issues",
+                        "ci_run"
+                      ]
+                    }
+                  },
+                  "format": {
+                    "default": "yag",
+                    "type": "string",
+                    "enum": ["yag", "github"]
+                  },
+                  "active": { "default": true, "type": "boolean" }
+                },
+                "required": ["url", "events"]
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",
@@ -4472,6 +5083,100 @@
             "schema": { "type": "string", "const": "1" }
           }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/hooks": {
+      "get": {
+        "operationId": "listRepoHooks",
+        "summary": "List repository webhooks",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createRepoHook",
+        "summary": "Create a repository webhook",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                  "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
+                  "events": {
+                    "minItems": 1,
+                    "maxItems": 6,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "push",
+                        "ref",
+                        "pull_request",
+                        "pull_request_review",
+                        "issues",
+                        "ci_run"
+                      ]
+                    }
+                  },
+                  "format": {
+                    "default": "yag",
+                    "type": "string",
+                    "enum": ["yag", "github"]
+                  },
+                  "active": { "default": true, "type": "boolean" }
+                },
+                "required": ["url", "events"]
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",
@@ -8273,6 +8978,23 @@
         }
       }
     },
+    "/api/v1/user": {
+      "get": {
+        "operationId": "getUser",
+        "summary": "The person a session or user token belongs to (OAuth sign-in)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/auth/github": {
       "get": {
         "operationId": "startGithubLogin",
@@ -8765,7 +9487,7 @@
     "/oauth/token": {
       "post": {
         "operationId": "exchangeAgentToken",
-        "summary": "RFC 8693 token exchange: an `agent:run` API token delegates to an agent",
+        "summary": "Token endpoint: agent token exchange (RFC 8693), app installation tokens (JWT bearer) and OAuth app codes (PKCE)",
         "security": [],
         "x-yag-permission": "—",
         "x-yag-rate-bucket": "api_write",
@@ -8774,41 +9496,70 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "grant_type": { "type": "string" },
-                  "subject_token": { "type": "string", "minLength": 1 },
-                  "subject_token_type": {
-                    "type": "string",
-                    "const": "urn:ietf:params:oauth:token-type:access_token"
-                  },
-                  "agent_id": { "type": "string", "minLength": 1 },
-                  "resource": {
-                    "anyOf": [
-                      { "type": "string" },
-                      { "type": "array", "items": { "type": "string" } }
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": { "type": "string" },
+                      "subject_token": { "type": "string", "minLength": 1 },
+                      "subject_token_type": {
+                        "type": "string",
+                        "const": "urn:ietf:params:oauth:token-type:access_token"
+                      },
+                      "agent_id": { "type": "string", "minLength": 1 },
+                      "resource": {
+                        "anyOf": [
+                          { "type": "string" },
+                          { "type": "array", "items": { "type": "string" } }
+                        ]
+                      },
+                      "scope": { "type": "string" },
+                      "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+                      "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600 }
+                    },
+                    "required": [
+                      "grant_type",
+                      "subject_token",
+                      "subject_token_type",
+                      "agent_id",
+                      "resource"
                     ]
                   },
-                  "scope": { "type": "string" },
-                  "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
-                  "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600 }
-                },
-                "required": [
-                  "grant_type",
-                  "subject_token",
-                  "subject_token_type",
-                  "agent_id",
-                  "resource"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": {
+                        "type": "string",
+                        "const": "urn:ietf:params:oauth:grant-type:jwt-bearer"
+                      },
+                      "assertion": { "type": "string", "minLength": 1 },
+                      "installation_id": { "type": "string", "minLength": 1 },
+                      "scope": { "type": "string" }
+                    },
+                    "required": ["grant_type", "assertion", "installation_id"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": { "type": "string", "const": "authorization_code" },
+                      "code": { "type": "string", "minLength": 1 },
+                      "redirect_uri": { "type": "string", "minLength": 1 },
+                      "code_verifier": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+                      },
+                      "client_id": { "type": "string" },
+                      "client_secret": { "type": "string" }
+                    },
+                    "required": ["grant_type", "code", "redirect_uri", "code_verifier"]
+                  }
                 ]
               }
             }
           }
         },
         "responses": {
-          "2XX": {
-            "description": "Success",
-            "content": { "application/json": { "schema": {} } }
-          },
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }

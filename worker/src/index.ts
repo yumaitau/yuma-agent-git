@@ -14,6 +14,8 @@ import { flushMetrics } from './observability/metrics';
 import { expireAgentRefs } from './core/refs';
 import { dispatchApprovals } from './ci/environments';
 import { expireLeases } from './collab/work';
+import { webhooksQueue } from './queues/webhooks';
+import { sweepDeliveries } from './webhooks/deliver';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -28,11 +30,14 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs and pipelines. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
     await run(env, 'DELETE FROM agent_tokens WHERE expires_at < ?', [Date.now()]);
+    await run(env, 'DELETE FROM app_tokens WHERE expires_at < ?', [Date.now()]);
+    await run(env, 'DELETE FROM oauth_codes WHERE expires_at < ?', [Date.now()]);
+    await sweepDeliveries(env);
     await kickAuditStream(env);
     // Work queue claims whose agent stopped heartbeating go back to `ready`.
     await expireLeases(env).catch(() =>
@@ -95,6 +100,8 @@ export default {
         return agentJobsQueue(batch as MessageBatch<{ task_id: string }>, env);
       case 'audit-stream':
         return auditStreamQueue(batch, env);
+      case 'forge-events':
+        return webhooksQueue(batch, env);
       default:
         console.error(`queue: unknown queue ${batch.queue}, acking`);
         batch.ackAll();

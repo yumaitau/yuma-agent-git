@@ -115,7 +115,20 @@ export type AuditAction =
   | 'work.claim'
   | 'work.release'
   | 'work.expire'
-  | 'work.import';
+  | 'work.import'
+  | 'webhook.create'
+  | 'webhook.update'
+  | 'webhook.delete'
+  | 'webhook.redeliver'
+  | 'app.create'
+  | 'app.delete'
+  | 'app.install'
+  | 'app.uninstall'
+  | 'app.token.issue'
+  | 'oauth_app.create'
+  | 'oauth_app.delete'
+  | 'oauth.authorize'
+  | 'oauth.token.issue';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

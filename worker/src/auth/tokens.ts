@@ -11,6 +11,7 @@ import type { AppEnv, Principal } from './principal';
 import { recordAudit } from '../audit/record';
 import { requireRecentMfa } from './session';
 import { AGENT_TOKEN_PREFIX, resolveAgentToken } from './agents';
+import { APP_TOKEN_PREFIX, resolveAppToken } from './app-tokens';
 
 /**
  * Machine/agent API tokens (issue #12): `yag_` + 40 hex chars, SHA-256 at
@@ -67,6 +68,8 @@ export async function createApiToken(
     expiresAt?: number | null;
     /** How the minting session signed in (org SSO checks it). */
     authMethod?: string | null;
+    /** OAuth app holding the token (#75); such a token may have no scopes (sign-in only). */
+    oauthAppId?: string;
     now?: number;
   },
 ): Promise<{ id: string; raw: string; metadata: ApiTokenMetadata }> {
@@ -74,7 +77,7 @@ export async function createApiToken(
   const scopes = (opts.scopes ?? DEFAULT_SCOPES).filter((s) =>
     (TOKEN_SCOPES as readonly string[]).includes(s),
   );
-  if (scopes.length === 0) {
+  if (scopes.length === 0 && opts.oauthAppId === undefined) {
     throw new RequestValidationError('scopes must be a subset of token scopes', {
       allowed: TOKEN_SCOPES,
     });
@@ -92,12 +95,14 @@ export async function createApiToken(
     last_used_at: null,
     expires_at: opts.expiresAt ?? null,
     auth_method: opts.authMethod ?? null,
+    oauth_app_id: opts.oauthAppId ?? null,
   };
   await run(
     env,
     `INSERT INTO ${T.apiTokens}
-       (id, token_hash, repo_id, user_id, label, scopes, created_at, last_used_at, expires_at, auth_method)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, token_hash, repo_id, user_id, label, scopes, created_at, last_used_at, expires_at, auth_method,
+        oauth_app_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.token_hash,
@@ -109,6 +114,7 @@ export async function createApiToken(
       row.last_used_at,
       row.expires_at,
       row.auth_method,
+      row.oauth_app_id,
     ],
   );
   return {
@@ -168,12 +174,13 @@ export async function deleteApiToken(
   return true;
 }
 
-/** Resolve a raw API or agent bearer token to a principal (null if unknown/expired). */
+/** Resolve a raw API, agent or app installation token to a principal (null if unknown/expired). */
 export async function resolveTokenPrincipal(
   env: Env,
   raw: string,
 ): Promise<Principal | null> {
   if (raw.startsWith(AGENT_TOKEN_PREFIX)) return resolveAgentToken(env, raw);
+  if (raw.startsWith(APP_TOKEN_PREFIX)) return resolveAppToken(env, raw);
   if (!raw.startsWith(TOKEN_PREFIX)) return null;
   const hash = await sha256Hex(new TextEncoder().encode(raw));
   const row = await q1(

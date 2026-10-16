@@ -153,7 +153,7 @@ npm run deploy
 This runs, in order:
 
 1. `vite build` — dashboard SPA into `worker/dashboard/dist` (the assets binding)
-2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`, `ci-runs`, `audit-stream`
+2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`, `ci-runs`, `audit-stream`, `forge-events`
 3. `wrangler d1 migrations apply yag-db --remote --env prod`
 4. `wrangler deploy --env prod` — deploy the Worker with its production D1, R2,
    Durable Object, Queue, and Workers AI bindings. AI stays out of the base

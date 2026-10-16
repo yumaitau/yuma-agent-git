@@ -11,6 +11,8 @@ import { authMiddleware } from './auth/session';
 import { identityRoutes } from './auth/security';
 import { tokensRoutes } from './auth/tokens';
 import { agentIdentityRoutes } from './auth/agents';
+import { appsRoutes } from './auth/apps';
+import { oauthAppsRoutes } from './auth/oauth-apps';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
@@ -64,11 +66,14 @@ app.route('/', oidcRoutes);
 app.route('/', runnerRoutes);
 
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
-// passkeys, SCIM, webhooks, the GitHub App handshake, token management and
-// agent identities with their token exchange.
+// passkeys, SCIM, webhooks, the GitHub App handshake, token management,
+// agent identities with their token exchange, and apps and OAuth apps (#75).
 app.route('/', authRoutes);
 app.route('/', identityRoutes);
 app.route('/', tokensRoutes);
+// before agent identities: it takes the app and OAuth app grants at /oauth/token
+app.route('/', oauthAppsRoutes);
+app.route('/', appsRoutes);
 app.route('/', agentIdentityRoutes);
 app.route('/', webhooksRoutes);
 app.route('/', githubRoutes);

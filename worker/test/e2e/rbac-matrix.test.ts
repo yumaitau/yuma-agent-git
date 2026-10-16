@@ -234,6 +234,8 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/runners': 'ci-runners.test.ts',
   'PATCH /api/v1/repos/:repo{.+}/runners/:id': 'ci-runners.test.ts',
   'DELETE /api/v1/repos/:repo{.+}/runners/:id': 'ci-runners.test.ts',
+  'GET /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
+  'POST /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
 };
 
 /**

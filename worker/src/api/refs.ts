@@ -20,7 +20,8 @@ import {
   requireAgentScope,
 } from '../auth/guards';
 import { agentIdOf, type AppEnv } from '../auth/principal';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitRefUpdate } from '../webhooks/events';
 import { linkLanded } from '../collab/references';
 import { enforceAgentAction } from '../policy/guardrails';
 
@@ -185,6 +186,19 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
     });
     if (name === repo.default_branch && result.to)
       await linkLanded(c, repo, result.from, result.to);
+    await emitRefUpdate(
+      c.env,
+      repo,
+      {
+        name,
+        from: result.from,
+        to: result.to,
+        commits: result.to ? [result.to] : [],
+        forced: parsed.data.force ?? false,
+      },
+      actorOf(principal),
+      new URL(c.req.url).origin,
+    );
     return c.json(result, 200, { 'cache-control': NO_STORE });
   } catch (err) {
     return errorResponse(c, err);
@@ -325,6 +339,13 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
         signed: input.signature !== undefined,
       },
     });
+    await emitRefUpdate(
+      c.env,
+      repo,
+      { name: ref, from: null, to: target, commits: [], forced: false },
+      actorOf(principal),
+      new URL(c.req.url).origin,
+    );
     return c.json(
       {
         tag: {
