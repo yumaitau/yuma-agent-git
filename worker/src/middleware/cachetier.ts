@@ -2,6 +2,7 @@ import { Hono, type Context, type Next } from 'hono';
 import { z } from 'zod';
 import type { AppEnv } from '../auth/principal';
 import { apiError, errorResponse, readJsonBody } from '../api/errors';
+import { recordAudit } from '../audit/record';
 
 /**
  * Cache tier (issue #21) — Workers Cache API for content-addressed GETs.
@@ -185,6 +186,10 @@ cacheTokenRoutes.post('/api/v1/cache-token', async (c) => {
       target.toString(),
       c.get('user')!.id,
     );
+    await recordAudit(c, {
+      action: 'cache_token.create',
+      target: { path: target.pathname },
+    });
     return c.json(minted, 200, { 'cache-control': 'private, no-store' });
   } catch (err) {
     return errorResponse(c, err);

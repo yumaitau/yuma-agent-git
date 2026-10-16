@@ -113,6 +113,41 @@ ci.command('status').action(async () => {
     console.log(`${job.id} ${job.head_cs.slice(0, 8)} ${job.state}`);
 });
 
+const audit = program.command('audit').description('Audit log tools');
+audit
+  .command('verify')
+  .description('Recompute the audit hash chain; exits 1 if any event was altered')
+  .option('--file <path>', 'verify an NDJSON export instead of fetching one')
+  .option('--org <org>', 'org whose audit log to fetch')
+  .option('--api <url>', 'server URL (default: from .yag/config.json)')
+  .action(async (opts: { file?: string; org?: string; api?: string }) => {
+    const { verifyAuditChain } = await import('./audit.js');
+    let text: string;
+    if (opts.file) {
+      const { readFile } = await import('node:fs/promises');
+      text = await readFile(opts.file, 'utf8');
+    } else {
+      if (!opts.org) throw new Error('--org or --file is required');
+      const config = opts.api ? null : await loadConfig(process.cwd());
+      const base = (opts.api ?? config?.api ?? '').replace(/\/$/, '');
+      const token = process.env.YAG_TOKEN ?? config?.token;
+      const res = await fetch(
+        `${base}/api/v1/orgs/${encodeURIComponent(opts.org)}/audit?format=ndjson`,
+        { headers: token ? { authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) throw new Error(`audit export failed: HTTP ${res.status}`);
+      text = await res.text();
+    }
+    const result = await verifyAuditChain(text.split('\n'));
+    if (!result.ok) {
+      console.error(`audit chain INVALID at event ${result.id}: ${result.reason}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`audit chain ok: ${result.events} events`);
+    for (const [org, head] of Object.entries(result.heads)) console.log(`${org} ${head}`);
+  });
+
 program
   .command('checkout')
   .argument('<rev>', 'revision: changeset id, ref:main, or a ref name')

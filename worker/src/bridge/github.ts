@@ -6,6 +6,7 @@ import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import { RequestValidationError } from '../core/errors';
 import { ulid } from '../core/ids';
 import type { AppEnv } from '../auth/principal';
+import { recordAudit } from '../audit/record';
 import { z } from 'zod';
 
 /**
@@ -352,12 +353,20 @@ githubRoutes.post('/api/v1/repos/:repo{.+}/connect', async (c) => {
       );
     }
 
-    await run(
-      c.env,
-      `UPDATE ${T.repos}
-         SET ${C.repos.githubInstallationId} = ?, ${C.repos.githubRepoId} = ?
-         WHERE ${C.repos.id} = ?`,
-      [installationId, githubRepoId, repo.id],
+    await recordAudit(
+      c,
+      {
+        action: 'repo.connect',
+        repo,
+        target: { installation_id: installationId, github_repo_id: githubRepoId },
+      },
+      [
+        c.env.DB.prepare(
+          `UPDATE ${T.repos}
+             SET ${C.repos.githubInstallationId} = ?, ${C.repos.githubRepoId} = ?
+             WHERE ${C.repos.id} = ?`,
+        ).bind(installationId, githubRepoId, repo.id),
+      ],
     );
     const updated = await q1(c.env, `SELECT * FROM ${T.repos} WHERE ${C.repos.id} = ?`, [
       repo.id,

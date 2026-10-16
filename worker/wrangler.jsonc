@@ -48,6 +48,7 @@
         "binding": "IMPORT_QUEUE",
         "queue": "git-import",
       },
+      { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
     ],
     "consumers": [
       { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 0 },
@@ -97,6 +98,7 @@
           { "binding": "DERIVED_QUEUE", "queue": "derived-data" },
           { "binding": "AGENT_QUEUE", "queue": "agent-jobs" },
           { "binding": "IMPORT_QUEUE", "queue": "git-import" },
+          { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
         ],
         "consumers": [
           {
@@ -108,6 +110,13 @@
           { "queue": "derived-data", "max_batch_size": 10, "max_retries": 3 },
           { "queue": "agent-jobs", "max_batch_size": 5, "max_retries": 3 },
           { "queue": "git-import", "max_batch_size": 1, "max_retries": 3 },
+          // in-order delivery: one consumer; the cron kick resumes after drops
+          {
+            "queue": "audit-stream",
+            "max_batch_size": 10,
+            "max_concurrency": 1,
+            "max_retries": 10,
+          },
         ],
       },
       "ai": {

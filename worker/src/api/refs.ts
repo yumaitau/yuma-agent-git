@@ -16,6 +16,7 @@ import { listRefsPage } from '../db/repos';
 import { q, run } from '../db/client';
 import { loadReadableRepo as loadReadable, loadWholeRepo } from '../auth/guards';
 import { hasScope, type AppEnv } from '../auth/principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * Ref routes (architecture §1.4, issue #33) — moves are compare-and-swap
@@ -143,6 +144,16 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
     }
 
     const result = await moveRefViaDO(c.env, repo.id, name, parsed.data);
+    await recordAudit(c, {
+      action: 'ref.move',
+      repo,
+      target: {
+        ref: name,
+        from: result.from,
+        to: result.to,
+        force: parsed.data.force ?? false,
+      },
+    });
     return c.json(result, 200, { 'cache-control': NO_STORE });
   } catch (err) {
     return errorResponse(c, err);

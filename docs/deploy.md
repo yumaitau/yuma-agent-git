@@ -47,6 +47,21 @@ npx wrangler secret put GITHUB_APP_PRIVATE_KEY --env prod -c worker/wrangler.jso
 npx wrangler secret put GITHUB_WEBHOOK_SECRET --env prod -c worker/wrangler.jsonc
 ```
 
+Audit log search and SIEM streaming (issue #65) are optional. `AUDIT_ADMIN_USER_IDS`
+is a comma-separated list of user ids allowed to read `GET /api/v1/orgs/:org/audit`
+until org roles land. Streaming turns on when both stream settings exist; the URL
+must be HTTPS and each batch is signed with
+`x-yag-signature: sha256=HMAC(secret, "<x-yag-timestamp>.<body>")`:
+
+```sh
+npx wrangler secret put AUDIT_ADMIN_USER_IDS --env prod -c worker/wrangler.jsonc
+npx wrangler secret put AUDIT_STREAM_URL --env prod -c worker/wrangler.jsonc
+npx wrangler secret put AUDIT_STREAM_SECRET --env prod -c worker/wrangler.jsonc
+```
+
+`GET /api/v1/audit/stream` reports delivery status, and `yag audit verify --org <org>`
+(or `--file export.ndjson`) checks the hash chain.
+
 Local development uses `worker/.dev.vars` (copy `.dev.vars.example`).
 
 ## 3. GitHub login and optional migration bridge
@@ -77,7 +92,7 @@ npm run deploy
 This runs, in order:
 
 1. `vite build` — dashboard SPA into `worker/dashboard/dist` (the assets binding)
-2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`, `ci-runs`
+2. `./scripts/setup-queues.sh` — provision `derived-data`, `agent-jobs`, `git-import`, `ci-runs`, `audit-stream`
 3. `wrangler d1 migrations apply yag-db --remote --env prod`
 4. `wrangler deploy --env prod` — deploy the Worker with its production D1, R2,
    Durable Object, Queue, and Workers AI bindings. AI stays out of the base

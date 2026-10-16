@@ -21,6 +21,14 @@ export interface Env {
   CI_REGISTRY_IMAGES?: string;
   CI_REGISTRY_USERNAME?: string;
   CI_REGISTRY_PASSWORD?: string;
+  /** Audit log (issue #65): queue `audit-stream` ships events to the SIEM sink. */
+  AUDIT_QUEUE?: Queue;
+  /** HTTPS ingest endpoint for audit streaming; unset disables streaming. */
+  AUDIT_STREAM_URL?: string;
+  /** HMAC key for audit stream batches — secret, never logged. */
+  AUDIT_STREAM_SECRET?: string;
+  /** Comma-separated user ids allowed to search and export the audit log. */
+  AUDIT_ADMIN_USER_IDS?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */

@@ -17,6 +17,7 @@ import { lookupRev } from '../core/read';
 import { ulid } from '../core/ids';
 import { C, T } from '../db/schema';
 import { q1, run } from '../db/client';
+import { actorOf, appendAudit } from '../audit/record';
 import { charge, type TaskBudget } from './budget';
 import { POST_MERGE_FIX_MARKER, formatPostMergeTask } from './prompt';
 
@@ -444,6 +445,15 @@ export const tools: Tool[] = [
         const head = await readRefHead(env, ctx.repo_id, branch);
         return { landed: false, reason: 'stale', main_head: head, head_cs: ctx.head_cs };
       }
+      await appendAudit(env, {
+        action: 'ref.move',
+        repo,
+        actor:
+          ctx.task_id === 'mcp'
+            ? actorOf(ctx.principal)
+            : { kind: 'agent', id: ctx.task_id, onBehalfOf: ctx.principal?.userId },
+        target: { ref: branch, from: current, to: ctx.head_cs, via: 'agent.land' },
+      });
       // post-merge, pre-deploy checks — the no-merge-queue model (§2.3):
       // base = the pre-land head, head = what just landed, prompt = the files
       const preLand = current ?? ctx.head_cs;

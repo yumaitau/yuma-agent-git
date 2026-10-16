@@ -28,8 +28,16 @@ function digest(input: unknown): string | undefined {
   return `sha1ish:${(hash >>> 0).toString(16)}:${text.length}`;
 }
 
+const requestIds = new WeakMap<Request, string>();
+
+/** The `X-Request-Id` of a request seen by this middleware (audit events cite it). */
+export function requestIdOf(request: Request): string | null {
+  return requestIds.get(request) ?? null;
+}
+
 export async function observeMiddleware(c: Context<AppEnv>, next: Next): Promise<void> {
   const requestId = crypto.randomUUID();
+  requestIds.set(c.req.raw, requestId);
   const started = Date.now();
   c.header('x-request-id', requestId);
   const timer = timerFor(c.req.raw);
