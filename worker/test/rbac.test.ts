@@ -752,6 +752,46 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: {},
         expect: { anon: 401, stranger: 404, creator: 200 },
       },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/work',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/work/claim',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/work/import-labels',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/work/1',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
+      },
+      {
+        method: 'PUT',
+        path: '/api/v1/repos/acme/sweep/work/1',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/work/1/heartbeat',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/work/1/release',
+        body: { outcome: 'done' },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
+      },
     ];
 
     for (const entry of sweep) {

@@ -15,6 +15,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Native work queue (#59) in place of `yuma:ready` and `yuma:risk:*` labels.
+  Issues carry readiness, risk, size, agent kind, priority, a plan flag and
+  `waits-on` dependencies under `/api/v1/repos/:repo/work`. A claim is one
+  conditional D1 update, so concurrent claims never share an item; it skips
+  items with open dependencies or above the claimant's risk allowance (agents
+  get a `max_risk`, `low` by default). Leases renew with heartbeats and return
+  to `ready` with `attempts + 1` when they lapse. Agent tokens need
+  `queue:claim`; only people with triage, or agents with `queue:approve`, can
+  mark work ready or change its risk, and a body edit by anyone else sends
+  ready work back to `needs-prep`. Factory labels import as fields. Every
+  readiness change is audited. `yag work list|claim|heartbeat|release|set`
+  and a dashboard Board view come with it.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).

@@ -592,6 +592,10 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/orgs/:org/variables/:name': 'variable.set',
   'DELETE /api/v1/orgs/:org/variables/:name': 'variable.delete',
   'POST /api/v1/admin/secrets/rewrap': 'secret.kek.rewrap',
+  'PUT /api/v1/repos/:repo{.+}/work/:number': 'work.update',
+  'POST /api/v1/repos/:repo{.+}/work/claim': 'work.claim',
+  'POST /api/v1/repos/:repo{.+}/work/:number/release': 'work.release',
+  'POST /api/v1/repos/:repo{.+}/work/import-labels': 'work.import',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -608,6 +612,8 @@ const EXEMPT: Record<string, string> = {
   'POST /auth/passkey/options': 'issues a one-time challenge; sign-in is audited',
   'POST /api/v1/repos/:repo{.+}/agents/mcp':
     'tool calls audit their own state changes (land records ref.move)',
+  'POST /api/v1/repos/:repo{.+}/work/:number/heartbeat':
+    'extends a lease the caller already holds; the claim and its expiry are audited',
 };
 
 describe('audit coverage', () => {

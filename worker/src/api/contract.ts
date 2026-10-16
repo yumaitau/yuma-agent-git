@@ -50,6 +50,14 @@ import { manual as manualPipelineRun } from './pipelines';
 import { decisionBody, environmentBody, secretBody, variableBody } from './secrets';
 import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
+import {
+  claimWork,
+  heartbeatWork,
+  importLabels,
+  releaseWork,
+  updateWork,
+  workListQuery,
+} from './work';
 import { createRepoSchema, updateRepoSchema } from './repos';
 
 /**
@@ -535,6 +543,22 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     query: evaluationsQuery,
   },
   'GET /api/v1/repos/:repo/tags': { id: 'listTags', query: z.object(page) },
+  'GET /api/v1/repos/:repo/work': { id: 'listWork', query: workListQuery },
+  'POST /api/v1/repos/:repo/work/claim': { id: 'claimWork', body: claimWork },
+  'POST /api/v1/repos/:repo/work/import-labels': {
+    id: 'importWorkLabels',
+    body: importLabels,
+  },
+  'GET /api/v1/repos/:repo/work/:number': { id: 'getWork' },
+  'PUT /api/v1/repos/:repo/work/:number': { id: 'updateWork', body: updateWork },
+  'POST /api/v1/repos/:repo/work/:number/heartbeat': {
+    id: 'heartbeatWork',
+    body: heartbeatWork,
+  },
+  'POST /api/v1/repos/:repo/work/:number/release': {
+    id: 'releaseWork',
+    body: releaseWork,
+  },
   'POST /api/v1/repos/:repo/tags': { id: 'createTag', body: createTagSchema },
   'GET /api/v1/repos/:repo/tree': {
     id: 'getTree',

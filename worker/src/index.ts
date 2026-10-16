@@ -12,6 +12,7 @@ import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
 import { expireAgentRefs } from './core/refs';
 import { dispatchApprovals } from './ci/environments';
+import { expireLeases } from './collab/work';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -32,6 +33,10 @@ export default {
     await expireAgentRefs(env);
     await run(env, 'DELETE FROM agent_tokens WHERE expires_at < ?', [Date.now()]);
     await kickAuditStream(env);
+    // Work queue claims whose agent stopped heartbeating go back to `ready`.
+    await expireLeases(env).catch(() =>
+      console.warn('Work queue lease expiry will be retried by the next sweep'),
+    );
     // Environment approvals whose reviewers approved and wait timer elapsed.
     await dispatchApprovals(env).catch(() =>
       console.warn('Environment approval dispatch will be retried by the next sweep'),

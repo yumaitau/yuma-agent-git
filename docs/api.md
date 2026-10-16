@@ -259,7 +259,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-186 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+193 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                                   | Auth                    | Permission                                                  | Rate bucket  | Purpose                                                                            |
 | ------ | ------------------------------------------------------ | ----------------------- | ----------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
@@ -414,6 +414,13 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/repos/:repo/variables`                        | any                     | admin (whole repo)                                          | api_read     | Variables with values (`?environment=`)                                            |
 | PUT    | `/api/v1/repos/:repo/variables/:name`                  | session                 | admin (whole repo)                                          | api_write    | Set a variable `{value}` (`?environment=`)                                         |
 | DELETE | `/api/v1/repos/:repo/variables/:name`                  | session                 | admin (whole repo)                                          | api_write    | Delete a variable (`?environment=`)                                                |
+| GET    | `/api/v1/repos/:repo/work`                             | any                     | read                                                        | api_read     | Work queue items and dependencies (`?readiness=&risk=&claimed_by=`)                |
+| GET    | `/api/v1/repos/:repo/work/:number`                     | any                     | read                                                        | api_read     | One work item and its readiness history                                            |
+| PUT    | `/api/v1/repos/:repo/work/:number`                     | any                     | triage                                                      | api_write    | Set work fields; `ready` and risk need triage or `queue:approve`                   |
+| POST   | `/api/v1/repos/:repo/work/:number/heartbeat`           | any                     | write                                                       | api_write    | Renew the lease you hold                                                           |
+| POST   | `/api/v1/repos/:repo/work/:number/release`             | any                     | write                                                       | api_write    | End your claim: `ready` (counts an attempt), `in-review`, `blocked` or `done`      |
+| POST   | `/api/v1/repos/:repo/work/claim`                       | any                     | write                                                       | api_write    | Atomically claim the best ready item with a lease (agents need `queue:claim`)      |
+| POST   | `/api/v1/repos/:repo/work/import-labels`               | any                     | triage                                                      | api_write    | Turn Factory `<prefix>:*` labels into work fields (approvers)                      |
 | GET    | `/api/v1/scim/tokens`                                  | session                 | —                                                           | api_read     | List SCIM tokens (SCIM admins)                                                     |
 | POST   | `/api/v1/scim/tokens`                                  | session                 | —                                                           | api_write    | Create a SCIM token (raw value returned once)                                      |
 | DELETE | `/api/v1/scim/tokens/:id`                              | session                 | —                                                           | api_write    | Revoke a SCIM token                                                                |

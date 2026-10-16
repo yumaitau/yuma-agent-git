@@ -29,6 +29,7 @@ import {
   sourceVisibility,
 } from '../collab/references';
 import { listTemplates } from '../collab/templates';
+import { resetStaleApproval } from './work';
 import type {
   IssueComment,
   IssueDetail,
@@ -728,6 +729,8 @@ issuesRoutes.patch(`${base}/issues/:number`, async (c) => {
         { kind: 'issue', repo: repo.slug, ref: issue.number },
         input.body,
       );
+    if (input.body !== undefined && input.body !== issue.body)
+      await resetStaleApproval(c, repo, issue);
     const [hydrated] = await hydrateIssues(c.env, [
       (await getIssueRow(c.env, repo.id, issue.number)) as IssueRow,
     ]);
@@ -758,6 +761,9 @@ issuesRoutes.delete(`${base}/issues/:number`, async (c) => {
           'DELETE FROM issue_assignees WHERE issue_id = ?',
           'DELETE FROM issue_events WHERE issue_id = ?',
           'DELETE FROM issue_links WHERE parent_id = ?1 OR child_id = ?1',
+          'DELETE FROM work_events WHERE issue_id = ?',
+          'DELETE FROM work_dependencies WHERE issue_id = ?1 OR depends_on_issue_id = ?1',
+          'DELETE FROM work_items WHERE issue_id = ?',
           'DELETE FROM issues WHERE id = ?',
         ].map((sql) => db.prepare(sql).bind(issue.id)),
       ],

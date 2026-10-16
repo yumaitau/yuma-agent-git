@@ -233,6 +233,18 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/repos/:owner/:name': 'Change the default branch or ref naming mode',
   'GET /api/v1/repos/:repo/tags': 'List tags with annotations (keyset paged)',
   'POST /api/v1/repos/:repo/tags': 'Create a lightweight or annotated tag',
+  'GET /api/v1/repos/:repo/work':
+    'Work queue items and dependencies (`?readiness=&risk=&claimed_by=`)',
+  'POST /api/v1/repos/:repo/work/claim':
+    'Atomically claim the best ready item with a lease (agents need `queue:claim`)',
+  'POST /api/v1/repos/:repo/work/import-labels':
+    'Turn Factory `<prefix>:*` labels into work fields (approvers)',
+  'GET /api/v1/repos/:repo/work/:number': 'One work item and its readiness history',
+  'PUT /api/v1/repos/:repo/work/:number':
+    'Set work fields; `ready` and risk need triage or `queue:approve`',
+  'POST /api/v1/repos/:repo/work/:number/heartbeat': 'Renew the lease you hold',
+  'POST /api/v1/repos/:repo/work/:number/release':
+    'End your claim: `ready` (counts an attempt), `in-review`, `blocked` or `done`',
   'GET /auth/oidc/:provider': 'Start OIDC sign-in (302 to the identity provider)',
   'GET /auth/oidc/:provider/callback': 'OIDC callback: sign in or link, then 302',
   'POST /auth/passkey/options': 'Passkey sign-in challenge',
