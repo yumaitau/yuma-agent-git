@@ -52,6 +52,8 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   }),
   // every line-level review thread (#39) on the pull request is resolved
   z.object({ type: z.literal('required_review_thread_resolution') }),
+  // an owner of each changed file (CODEOWNERS, #40) approved the revision
+  z.object({ type: z.literal('require_code_owner_review') }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
 const globSchema = z.string().min(1).max(256);
@@ -304,6 +306,11 @@ export interface RefFacts {
     checksPassed: boolean;
     method: MergeMethod;
     unresolvedThreads: number;
+    /**
+     * Changed files no code owner approved (#40), and whether the diff was
+     * too large to list them all. Absent when no ruleset asks for owners.
+     */
+    codeOwners?: { unapproved: readonly string[]; truncated: boolean };
   };
 }
 
@@ -401,6 +408,17 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
       return n > 0
         ? `Resolve ${n} review thread${n === 1 ? '' : 's'} before merging.`
         : null;
+    }
+    case 'require_code_owner_review': {
+      if (!ref.merge) return null;
+      const owners = ref.merge.codeOwners;
+      if (!owners || owners.truncated)
+        return 'Code owner review could not be checked for this revision.';
+      const files = owners.unapproved;
+      if (files.length === 0) return null;
+      const shown = files.slice(0, 3).join(', ');
+      const more = files.length > 3 ? ` and ${files.length - 3} more` : '';
+      return `Code owner approval required for ${shown}${more}.`;
     }
     default:
       return null;

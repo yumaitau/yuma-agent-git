@@ -28,6 +28,7 @@ import {
 import { commitChanges } from '../core/commit';
 import { agentKey, changeFacts, enforceAgentAction } from '../policy/guardrails';
 import { recordAgentProvenance } from '../auth/agents';
+import { pullCodeowners } from './codeowners';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
   authorKey,
@@ -155,6 +156,12 @@ async function checkMerge(
   const rulesets = await rulesetsFor(env, repo);
   const evalActor = await actorFor(env, repo, actor, rulesets);
   const unresolved = await unresolvedThreads(env, pull.id);
+  // owners are only worked out when some ruleset asks for them (#40)
+  const owned = rulesets.some((r) =>
+    r.rules.some((rule) => rule.type === 'require_code_owner_review'),
+  )
+    ? await pullCodeowners(env, repo, pull)
+    : null;
   const facts = (m: MergeMethod): EvalInput => ({
     repo,
     actor: evalActor,
@@ -167,6 +174,14 @@ async function checkMerge(
         checksPassed,
         method: m,
         unresolvedThreads: unresolved,
+        ...(owned
+          ? {
+              codeOwners: {
+                unapproved: owned.files.filter((f) => !f.approved).map((f) => f.path),
+                truncated: owned.truncated,
+              },
+            }
+          : {}),
       },
     },
   });
@@ -533,7 +548,7 @@ export async function mutatePullLocked(
         : '';
     await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO pull_reviews (pull_id,author_id,head_cs,decision,body,created_at,revision) VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO pull_reviews (pull_id,author_id,head_cs,decision,body,created_at,revision,agent_id) VALUES (?,?,?,?,?,?,?,?)',
       ).bind(
         pull.id,
         args.actor,
@@ -542,6 +557,7 @@ export async function mutatePullLocked(
         body.body,
         now,
         pull.revision,
+        principal?.kind === 'agent' ? principal.agentId : null,
       ),
       ...(await threadStatements(env, pull, author, comments.data, true)),
       env.DB.prepare(

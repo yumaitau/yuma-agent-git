@@ -182,6 +182,48 @@ it('merges with the picked method', async () => {
   });
 });
 
+it('shows the code owners of each changed file and CODEOWNERS errors', async () => {
+  const detail = pullDetail({
+    mergeable: false,
+    reasons: ['Code owner approval required for src/pay.ts.'],
+  });
+  const plain = pullFetch(detail);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (path: string, init?: RequestInit) =>
+      path.endsWith('/codeowners')
+        ? Response.json({
+            file: '.github/CODEOWNERS',
+            revision: 'a'.repeat(64),
+            truncated: false,
+            errors: [
+              {
+                line: 3,
+                column: 9,
+                kind: 'unknown_owner',
+                source: '/x/ @nobody',
+                message: '@nobody is not a user of this forge.',
+              },
+            ],
+            files: [
+              { path: 'README.md', owners: [], approved: true },
+              { path: 'src/pay.ts', owners: ['team:t1', 'user:u1'], approved: false },
+            ],
+            names: { 'team:t1': 'acme/payments', 'user:u1': 'ada' },
+          })
+        : plain(path, init),
+    ),
+  );
+  mount(<PullView />, 'pulls/:id');
+  const section = await screen.findByRole('region', { name: 'Code owners' });
+  expect(section.textContent).toContain('from .github/CODEOWNERS');
+  expect(section.textContent).toContain(
+    'src/pay.ts acme/payments, ada waiting for an owner',
+  );
+  expect(section.textContent).not.toContain('README.md');
+  expect(section.textContent).toContain('Line 3: @nobody is not a user of this forge.');
+});
+
 it('shows conflicting paths and hunks and blocks the merge', async () => {
   vi.stubGlobal(
     'fetch',

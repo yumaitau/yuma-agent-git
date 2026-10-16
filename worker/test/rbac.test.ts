@@ -795,6 +795,16 @@ describe('route sweep — the authz contract future routes must extend', () => {
       },
       {
         method: 'GET',
+        path: '/api/v1/repos/acme/sweep/pulls/1/codeowners',
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'GET',
+        path: `/api/v1/repos/acme/sweep/codeowners?rev=${cs}`,
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'GET',
         path: '/api/v1/repos/acme/sweep/work',
         expect: { anon: 401, stranger: 404, creator: 200 },
       },

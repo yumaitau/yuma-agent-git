@@ -175,6 +175,8 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/ci/runs/:id/retry':
     'Run a CI run again with its original trigger',
   'GET /api/v1/repos/:repo/ci/runs/:id/log': 'CI run log (`text/plain`)',
+  'GET /api/v1/repos/:repo/codeowners':
+    'CODEOWNERS at a revision: rules, resolved owners, errors and the owners of a path',
   'GET /api/v1/repos/:repo/ci/pipelines':
     'Pipeline runs with their jobs and spec errors (`?head=`)',
   'POST /api/v1/repos/:repo/ci/pipelines/runs': 'Start a pipeline with a manual trigger',
@@ -313,6 +315,8 @@ const PURPOSES: Record<string, string> = {
     'Resolve or unresolve a review thread',
   'POST /api/v1/repos/:repo/pulls/:id/suggestions/apply':
     'Commit suggested changes onto the head',
+  'GET /api/v1/repos/:repo/pulls/:id/codeowners':
+    'Code owners of each changed file and whether one approved',
   'GET /api/v1/repos/:repo/pulls/:id/reviewers': 'Requested reviewers and their state',
   'PUT /api/v1/repos/:repo/pulls/:id/reviewers':
     'Request reviews from people, teams, agents',

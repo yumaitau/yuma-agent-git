@@ -1568,6 +1568,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/codeowners': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** CODEOWNERS at a revision: rules, resolved owners, errors and the owners of a path */
+    get: operations['getCodeowners'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/connect': {
     parameters: {
       query?: never;
@@ -2234,6 +2251,23 @@ export interface paths {
     };
     /** Pull request, reviews and merge gate */
     get: operations['getPull'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/codeowners': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Code owners of each changed file and whether one approved */
+    get: operations['getPullCodeowners'];
     put?: never;
     post?: never;
     delete?: never;
@@ -6924,6 +6958,34 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getCodeowners: {
+    parameters: {
+      query?: {
+        rev?: string;
+        path?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   connectGithub: {
     parameters: {
       query?: never;
@@ -8419,6 +8481,32 @@ export interface operations {
     };
   };
   getPull: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getPullCodeowners: {
     parameters: {
       query?: never;
       header?: never;

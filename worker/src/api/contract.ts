@@ -494,6 +494,13 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': { id: 'cancelCiRun' },
   'POST /api/v1/repos/:repo/ci/runs/:id/retry': { id: 'retryCiRun' },
   'GET /api/v1/repos/:repo/ci/runs/:id/log': { id: 'getCiRunLog' },
+  'GET /api/v1/repos/:repo/codeowners': {
+    id: 'getCodeowners',
+    query: z.object({
+      rev: rev.optional().describe('Default: the default branch'),
+      path: z.string().optional().describe('Also return the owners of this path'),
+    }),
+  },
   'POST /api/v1/repos/:repo/connect': { id: 'connectGithub', body: connectSchema },
   'GET /api/v1/repos/:repo/diff': {
     id: 'getDiff',
@@ -620,6 +627,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'updatePull',
     body: updatePullSchema,
   },
+  'GET /api/v1/repos/:repo/pulls/:id/codeowners': { id: 'getPullCodeowners' },
   'GET /api/v1/repos/:repo/pulls/:id/reviewers': { id: 'listReviewRequests' },
   'PUT /api/v1/repos/:repo/pulls/:id/reviewers': {
     id: 'setReviewRequests',

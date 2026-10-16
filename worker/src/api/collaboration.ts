@@ -39,6 +39,7 @@ import { emitEvent, emitRefUpdate } from '../webhooks/events';
 import { enforceAgentAction } from '../policy/guardrails';
 import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
+import { requestCodeOwners } from '../reviews/codeowners';
 
 export const collaborationRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -134,6 +135,7 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
     });
     const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
     await linkReferences(c, loaded.repo, source, pull.body);
+    await requestCodeOwners(c, loaded.repo, pull);
     const ci = await autoCheck(c, loaded.repo, pull);
     return c.json({ pull, ci }, 201);
   } catch (err) {
@@ -298,11 +300,13 @@ for (const action of ['update', 'review', 'merge', 'update-branch'] as const) {
         const data = (await response.json()) as { pull: Pull };
         if (data.pull.body !== pull.body)
           await linkReferences(c, loaded.repo, source, data.pull.body);
-        const ci =
+        const moved =
           data.pull.head_cs !== pull.head_cs ||
-          (pull.state === 'draft' && data.pull.state === 'open')
-            ? await autoCheck(c, loaded.repo, data.pull)
-            : { status: 'unchanged' };
+          (pull.state === 'draft' && data.pull.state === 'open');
+        if (moved) await requestCodeOwners(c, loaded.repo, data.pull);
+        const ci = moved
+          ? await autoCheck(c, loaded.repo, data.pull)
+          : { status: 'unchanged' };
         return c.json({ ...data, ci });
       }
       return new Response(response.body, response);
