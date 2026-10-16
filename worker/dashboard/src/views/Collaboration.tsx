@@ -792,15 +792,19 @@ interface CiArtifact {
   expires_at: number;
 }
 
-/** A run's artifacts (issue #51), loaded when asked for; kept 14 days. */
-function RunArtifacts({ slug, runId }: { slug: string; runId: string }): ReactElement {
+/** A run's artifacts (issue #51) from `list`, loaded when asked for; kept 14 days. */
+export function RunArtifacts({
+  slug,
+  list,
+}: {
+  slug: string;
+  list: string;
+}): ReactElement {
   const [items, setItems] = useState<CiArtifact[] | null>(null);
   const [failure, setFailure] = useState<ApiError | null>(null);
   const load = async (): Promise<void> => {
     try {
-      const res = await call<{ artifacts: CiArtifact[] }>(
-        `/repos/${slug}/ci/pipelines/runs/${runId}/artifacts`,
-      );
+      const res = await call<{ artifacts: CiArtifact[] }>(list);
       setItems(res.artifacts);
     } catch (err) {
       setFailure(asApiError(err));
@@ -908,13 +912,21 @@ export function PipelineRuns({
                       {onLog && j.run_id && (
                         <button onClick={() => onLog(j.run_id!)}>Log</button>
                       )}
+                      {j.run_id && (
+                        <Link to={`/r/${slug}/ci/runs/${j.run_id}`}>Open {j.key}</Link>
+                      )}
                     </li>
                   ))}
                 </ol>
               ))}
             </div>
           )}
-          {!r.errors && <RunArtifacts slug={slug} runId={r.id} />}
+          {!r.errors && (
+            <RunArtifacts
+              slug={slug}
+              list={`/repos/${slug}/ci/pipelines/runs/${r.id}/artifacts`}
+            />
+          )}
         </article>
       ))}
     </section>
@@ -1312,6 +1324,7 @@ export function CiView(): ReactElement {
                       <td>
                         <div className="row">
                           <button onClick={() => void showLog(job.id)}>Log</button>
+                          <Link to={`/r/${slug}/ci/runs/${job.id}`}>Live log</Link>
                           {['queued', 'running'].includes(job.state) ? (
                             <button
                               disabled={busy || !data.can_write}

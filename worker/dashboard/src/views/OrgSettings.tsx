@@ -316,7 +316,9 @@ function OrgDetail({ slug }: { slug: string }): ReactElement {
           <>
             {' '}
             · <Link to={`/orgs/${org.slug}/runners`}>Self-hosted runners</Link> ·{' '}
-            <Link to={`/orgs/${org.slug}/imports`}>Import from GitHub</Link>
+            <Link to={`/orgs/${org.slug}/imports`}>Import from GitHub</Link> ·{' '}
+            <Link to={`/orgs/${org.slug}/secrets`}>Secrets and variables</Link> ·{' '}
+            <Link to={`/orgs/${org.slug}/audit`}>Audit log</Link>
           </>
         )}
       </div>
