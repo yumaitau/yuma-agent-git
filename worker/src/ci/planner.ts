@@ -307,15 +307,26 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
 
 /**
  * Advance unfinished pipeline runs after any run ends and from cron. Fair
- * share (issue #52): repos with the fewest queued or running jobs go first,
- * then the oldest run, so one busy repo cannot hold the next free slot.
+ * share (issue #52): pools take turns (`capacity.ts` poolFor), so runs
+ * waiting on one full pool cannot crowd another pool out of the window;
+ * within a pool, repos with the fewest queued or running jobs go first, then
+ * the oldest run, so one busy repo cannot hold the next free slot.
  */
 export async function advancePipelines(env: Env): Promise<void> {
   const active = await q<{ id: string }>(
     env,
-    `SELECT p.id FROM ci_pipeline_runs p WHERE p.finished_at IS NULL
-    ORDER BY (SELECT COUNT(*) FROM ci_runs r WHERE r.repo_id = p.repo_id
-      AND r.state IN ('queued','running')), p.created_at LIMIT 20`,
+    `SELECT id FROM (
+       SELECT id, busy, created_at,
+         ROW_NUMBER() OVER (PARTITION BY pool ORDER BY busy, created_at) AS turn
+       FROM (
+         SELECT p.id, p.created_at, COALESCE(l.org_id, 'shared') AS pool,
+           (SELECT COUNT(*) FROM ci_runs r WHERE r.repo_id = p.repo_id
+             AND r.state IN ('queued','running')) AS busy
+         FROM ci_pipeline_runs p
+         LEFT JOIN repos o ON o.id = p.repo_id AND o.owner_kind = 'org'
+         LEFT JOIN org_ci_limits l ON l.org_id = o.owner_id
+         WHERE p.finished_at IS NULL))
+     ORDER BY turn, busy, created_at LIMIT 20`,
   );
   for (const { id } of active) await advancePipeline(env, id);
 }

@@ -382,4 +382,37 @@ jobs:
     );
     expect(app[0]!.n).toBe(2);
   });
+
+  it('lets each pool take turns, so runs blocked on one pool cannot stall another', async () => {
+    // yuma's pool has no free slot: 21 runs in yuma/web wait on it
+    await setLimits('yuma', { ...LIMITS, max_concurrent: 0 });
+    for (let i = 0; i < 21; i++)
+      await pipeline(
+        'yuma/web',
+        `on: [manual]\njobs:\n  j${i}: { steps: [{ run: x }] }\n`,
+      );
+    // the shared pool is idle; its second job only waits on the first
+    const other = await pipeline(
+      'other/app',
+      `on: [manual]
+jobs:
+  a: { steps: [{ run: x }] }
+  b: { needs: [a], steps: [{ run: x }] }
+`,
+    );
+    expect(other.jobs.map((j) => j.state)).toEqual(['queued', 'waiting']);
+    await run(
+      testEnv,
+      "UPDATE ci_runs SET state = 'passed', finished_at = ? WHERE id = ?",
+      [Date.now(), other.jobs[0]!.run_id],
+    );
+    await advancePipelines(testEnv);
+    expect(
+      await q1(
+        testEnv,
+        "SELECT state FROM ci_runs WHERE pipeline_run_id = ? AND job_key = 'b'",
+        [other.id],
+      ),
+    ).toEqual({ state: 'queued' });
+  });
 });
