@@ -7,6 +7,7 @@ import { q, q1 } from '../db/client';
 import { emitEvent } from '../webhooks/events';
 import { getIssueRow, hydrateIssues, nextNumber } from '../collab/issues';
 import { claimantOf, isApprover } from '../collab/work';
+import { enforceAgentAction } from '../policy/guardrails';
 import {
   ALERT_COLUMNS,
   alertRowSchema,
@@ -56,7 +57,8 @@ export const updateDependencyAlert = z.union([
   z.object({ state: z.literal('open') }),
 ]);
 export const loadAdvisoriesSchema = z.object({
-  advisories: z.array(osvEntrySchema).min(1).max(1000),
+  // each entry costs a few D1 calls: load a large snapshot over several requests
+  advisories: z.array(osvEntrySchema).min(1).max(200),
 });
 
 function refuseAgents(c: Context<AppEnv>): Response | null {
@@ -271,6 +273,17 @@ dependencyRoutes.post('/repos/:repo{.+}/dependency-alerts/:id/work', async (c) =
     const ready = await isApprover(c.env, repo, principal);
     const readiness = ready ? 'ready' : 'needs-prep';
     const risk = riskOf(alert.version, fixed);
+    if (ready) {
+      // agent guardrails (#62): filing ready work is marking it ready
+      const filed = { dependency_alert: alert.id, risk };
+      await enforceAgentAction(
+        c.env,
+        principal,
+        repo,
+        { action: 'issue.ready', risk },
+        { exact: filed, summary: filed },
+      );
+    }
     const number = await nextNumber(c.env, repo.id);
     const now = Date.now();
     const issueId = `(SELECT id FROM issues WHERE repo_id = ? AND number = ?)`;
@@ -334,7 +347,7 @@ dependencyRoutes.post('/admin/advisories', async (c) => {
         c,
         400,
         'invalid_request',
-        'Send 1 to 1000 OSV entries as advisories',
+        'Send 1 to 200 OSV entries as advisories',
       );
     const result = await loadAdvisories(c.env, parsed.data.advisories);
     await recordAudit(c, {

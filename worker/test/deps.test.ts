@@ -659,10 +659,74 @@ describe('dependency alerts (#67)', () => {
     ).toBe(404);
   });
 
-  it('an approver files ready work', async () => {
+  it('an approver files ready work; agent guardrails judge it as issue.ready', async () => {
     await loadAdvisories(dbEnv, [LODASH]);
     await match();
     const [alert] = await alerts();
+    // an org policy that denies agents marking work ready
+    const now = Date.now();
+    await run(
+      dbEnv,
+      "INSERT INTO orgs (id, slug, display_name, created_at) VALUES ('o1', 'acme', 'Acme', ?)",
+      [now],
+    );
+    await run(
+      dbEnv,
+      "UPDATE repos SET owner_kind = 'org', owner_id = 'o1' WHERE id = ?",
+      [repo.id],
+    );
+    await run(
+      dbEnv,
+      'INSERT INTO agent_policies (org_id, version, document, created_by, created_at) VALUES (?, 1, ?, ?, ?)',
+      [
+        'o1',
+        JSON.stringify({
+          version: 1,
+          rules: [{ id: 'no-ready', actions: ['issue.ready'], effect: 'deny' }],
+        }),
+        owner.userId,
+        now,
+      ],
+    );
+    const delegate = await createApiToken(dbEnv, owner.userId, {
+      label: 'delegate',
+      scopes: ['repo:read', 'repo:write', 'agent:run'],
+    });
+    const created = await json<{ id: string }>(
+      await call('POST', '/agents', {
+        name: 'approver',
+        kind: 'codex',
+        max_scopes: ['contents:read', 'contents:write', 'issues:write', 'queue:approve'],
+      }),
+      201,
+    );
+    const token = await json<{ access_token: string }>(
+      await app(
+        new Request('https://forge.test/oauth/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+            subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+            subject_token: delegate.raw,
+            agent_id: created.id,
+            resource: 'acme/shop',
+            scope: 'contents:write issues:write queue:approve',
+          }),
+        }),
+      ),
+    );
+    const denied = await call(
+      'POST',
+      `/repos/acme/shop/dependency-alerts/${alert!.id}/work`,
+      undefined,
+      { authorization: `Bearer ${token.access_token}` },
+    );
+    expect(((await denied.json()) as { error: { code: string } }).error.code).toBe(
+      'policy_denied',
+    );
+    expect(await q(dbEnv, 'SELECT id FROM issues')).toEqual([]);
+    // people are not judged
     const filed = await json<{ readiness: string }>(
       await call('POST', `/repos/acme/shop/dependency-alerts/${alert!.id}/work`),
       201,

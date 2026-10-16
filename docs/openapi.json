@@ -186,7 +186,7 @@
                 "properties": {
                   "advisories": {
                     "minItems": 1,
-                    "maxItems": 1000,
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
