@@ -130,7 +130,11 @@ export type AuditAction =
   | 'oauth_app.create'
   | 'oauth_app.delete'
   | 'oauth.authorize'
-  | 'oauth.token.issue';
+  | 'oauth.token.issue'
+  | 'package.publish'
+  | 'package.tag'
+  | 'package.delete'
+  | 'package.settings.update';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

@@ -16,6 +16,7 @@ import { dispatchApprovals } from './ci/environments';
 import { expireLeases } from './collab/work';
 import { webhooksQueue } from './queues/webhooks';
 import { sweepDeliveries } from './webhooks/deliver';
+import { registryCleanup } from './registry/packages';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -46,6 +47,10 @@ export default {
     // Environment approvals whose reviewers approved and wait timer elapsed.
     await dispatchApprovals(env).catch(() =>
       console.warn('Environment approval dispatch will be retried by the next sweep'),
+    );
+    // Package registry (#53): retention, unused blobs, stale uploads and tokens.
+    await registryCleanup(env).catch((err: unknown) =>
+      console.warn('Registry cleanup will be retried by the next sweep', err),
     );
     const expired = await q<{ id: string; log_key: string }>(
       env,

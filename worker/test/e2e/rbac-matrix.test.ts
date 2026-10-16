@@ -164,6 +164,31 @@ const PUBLIC = new Set([
   'POST /runner/v1/jobs/:id/steps/:step',
   'PUT /runner/v1/jobs/:id/artifacts/:name',
   'POST /runner/v1/jobs/:id/complete',
+  // package registry (#53): Authorization header only (registry or forge
+  // token), 401 + WWW-Authenticate when absent, 404 for unreadable repos
+  // (test/registry-oci.test.ts, test/registry-npm.test.ts)
+  'GET /v2/',
+  'GET /v2/token',
+  'POST /v2/token',
+  'GET /v2/:name{.+}/blobs/:digest',
+  'POST /v2/:name{.+}/blobs/uploads/',
+  'GET /v2/:name{.+}/blobs/uploads/:uuid',
+  'PATCH /v2/:name{.+}/blobs/uploads/:uuid',
+  'PUT /v2/:name{.+}/blobs/uploads/:uuid',
+  'DELETE /v2/:name{.+}/blobs/uploads/:uuid',
+  'GET /v2/:name{.+}/manifests/:reference',
+  'PUT /v2/:name{.+}/manifests/:reference',
+  'DELETE /v2/:name{.+}/manifests/:reference',
+  'GET /v2/:name{.+}/tags/list',
+  'GET /v2/:name{.+}/referrers/:digest',
+  'GET /npm/-/whoami',
+  'GET /npm/-/package/:pkg/dist-tags',
+  'PUT /npm/-/package/:pkg/dist-tags/:tag',
+  'DELETE /npm/-/package/:pkg/dist-tags/:tag',
+  'GET /npm/:scope/:name/-/:file',
+  'GET /npm/:scope/:name',
+  'GET /npm/:pkg',
+  'PUT /npm/:pkg',
 ]);
 
 /**

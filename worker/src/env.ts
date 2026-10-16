@@ -46,6 +46,8 @@ export interface Env {
   EVENTS_QUEUE?: Queue;
   /** "true" lets webhooks use http:// URLs (local testing). Private addresses stay refused. */
   WEBHOOKS_ALLOW_HTTP?: string;
+  /** Package registry (issue #53): storage quota per owner in bytes (default 10 GiB). */
+  REGISTRY_QUOTA_BYTES?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */

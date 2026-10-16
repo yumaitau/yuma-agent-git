@@ -119,6 +119,35 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/installations': 'App installations you made',
   'DELETE /api/v1/installations/:id': 'Remove an installation (its tokens stop at once)',
   'GET /api/v1/repos/:repo/hooks': 'List repository webhooks',
+  'GET /api/v1/repos/:repo/packages': 'Packages linked to the repo (registry, #53)',
+  'PATCH /api/v1/repos/:repo/packages/:id':
+    'Set a package retention rule (`keep_untagged`)',
+  'GET /v2/': 'OCI registry ping; 401 with the Bearer token challenge when signed out',
+  'GET /v2/token':
+    'Exchange a forge credential (HTTP Basic) for a short-lived registry token',
+  'POST /v2/token': 'OAuth2 password grant for a registry token (oras-go, helm)',
+  'GET /v2/:name/blobs/:digest': 'Fetch (or HEAD) a blob linked to the image',
+  'POST /v2/:name/blobs/uploads/':
+    'Start a blob upload; monolithic with `digest`, cross-repo with `mount`',
+  'GET /v2/:name/blobs/uploads/:uuid': 'Upload progress (Range)',
+  'PATCH /v2/:name/blobs/uploads/:uuid': 'Append a chunk, streamed to R2',
+  'PUT /v2/:name/blobs/uploads/:uuid':
+    'Finish an upload; the digest is checked as R2 stores it',
+  'DELETE /v2/:name/blobs/uploads/:uuid': 'Cancel an upload',
+  'GET /v2/:name/manifests/:reference': 'Fetch (or HEAD) a manifest by tag or digest',
+  'PUT /v2/:name/manifests/:reference': 'Push a manifest or index, tagged or by digest',
+  'DELETE /v2/:name/manifests/:reference': 'Delete a tag, or a manifest by digest',
+  'GET /v2/:name/tags/list': 'List tags (`n`, `last` pagination)',
+  'GET /v2/:name/referrers/:digest':
+    'Referrers API: manifests whose subject is the digest',
+  'GET /npm/-/whoami': 'npm whoami: the login of the token',
+  'GET /npm/-/package/:pkg/dist-tags': 'npm dist-tags of a package',
+  'PUT /npm/-/package/:pkg/dist-tags/:tag': 'Point a dist-tag at a version',
+  'DELETE /npm/-/package/:pkg/dist-tags/:tag': 'Remove a dist-tag (not `latest`)',
+  'GET /npm/:scope/:name/-/:file': 'npm tarball',
+  'GET /npm/:scope/:name': 'npm package document',
+  'GET /npm/:pkg': 'npm package document (`@scope%2fname`, as npm asks)',
+  'PUT /npm/:pkg': 'npm publish: one version and its tarball',
   'POST /api/v1/repos/:repo/hooks': 'Create a repository webhook',
   'GET /api/v1/orgs/:org/hooks': 'List org webhooks',
   'POST /api/v1/orgs/:org/hooks': 'Create an org webhook (all org repositories)',
@@ -422,6 +451,17 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     return { auth: 'token', perm: 'per tool: the API route it calls' };
   }
   if (path === '/oauth/authorize') return { auth: 'session', perm: '—' };
+  // registry (#53): a forge token, or on /v2/ the registry token /v2/token issues
+  if (path.startsWith('/v2/') || path.startsWith('/npm/')) {
+    const auth = 'token (Basic or Bearer)';
+    if (path === '/v2/token') return { auth, perm: '—' };
+    if (path === '/v2/' || path === '/npm/-/whoami') return { auth, perm: '—' };
+    if (/"delete"\)/.test(src))
+      return { auth, perm: 'admin on the linked repo (whole repo)' };
+    if (/"push"|loadUpload|changeTag/.test(src))
+      return { auth, perm: 'write on the linked repo (whole repo); CI job: own repo' };
+    return { auth, perm: 'read on the linked repo (whole repo)' };
+  }
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',

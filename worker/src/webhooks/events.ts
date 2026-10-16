@@ -22,6 +22,8 @@ export const WEBHOOK_EVENTS = [
   'issues',
   'ci_run',
   'work_item',
+  // package registry (#53): published, tagged, deleted
+  'package',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

@@ -7,7 +7,7 @@ import { getRepo } from '../db/repos';
 import { ApiError } from '../core/errors';
 import { sha256Hex } from '../core/hashing';
 import { apiError, errorResponse } from '../api/errors';
-import { b64urlEncode, randomB64url } from '../auth/encoding';
+import { b64urlDecode, b64urlEncode, randomB64url } from '../auth/encoding';
 import { commitIdsFor } from '../git/mapping';
 import { appendAudit } from '../audit/record';
 import { parsePolicy, type CiPolicy, type CiRun } from './config';
@@ -417,3 +417,51 @@ oidcRoutes.on(['GET', 'POST'], '/ci/oidc/token', async (c) => {
     return errorResponse(c, err);
   }
 });
+
+/**
+ * Verify an ID token this issuer signed with any published key, for
+ * `audience`; null when the signature, issuer, audience or lifetime fails.
+ * The package registry (#53) takes these as job credentials.
+ */
+export async function verifyIdToken(
+  env: Env,
+  token: string,
+  audience: string,
+  origin: string,
+): Promise<IdTokenClaims | null> {
+  const [head, body, signature] = token.split('.');
+  if (!head || !body || !signature || !env.CI_OIDC_SIGNING_KEYS) return null;
+  try {
+    const decode = (part: string): unknown =>
+      JSON.parse(new TextDecoder().decode(b64urlDecode(part)));
+    const header = z
+      .object({ alg: z.literal('RS256'), kid: z.string() })
+      .parse(decode(head));
+    const jwk = (await signingKeys(env)).published.find((k) => k.kid === header.kid);
+    if (!jwk) return null;
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      b64urlDecode(signature),
+      new TextEncoder().encode(`${head}.${body}`),
+    );
+    if (!valid) return null;
+    const claims = z
+      .object({ iss: z.string(), aud: z.string(), exp: z.number(), nbf: z.number() })
+      .loose()
+      .parse(decode(body)) as unknown as IdTokenClaims;
+    const now = Date.now() / 1000;
+    if (claims.iss !== issuerFor(env, origin) || claims.aud !== audience) return null;
+    if (claims.exp <= now || claims.nbf > now + 60) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}

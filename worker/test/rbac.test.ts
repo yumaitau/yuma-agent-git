@@ -833,6 +833,17 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: { outcome: 'done' },
         expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such issue
       },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/packages',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/v1/repos/acme/sweep/packages/1',
+        body: { keep_untagged: 1 },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such package
+      },
     ];
 
     for (const entry of sweep) {

@@ -2172,6 +2172,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/packages': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Packages linked to the repo (registry, #53) */
+    get: operations['listRepoPackages'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/packages/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Set a package retention rule (`keep_untagged`) */
+    patch: operations['updateRepoPackage'];
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/path-rules': {
     parameters: {
       query?: never;
@@ -3141,6 +3175,110 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/npm/-/package/{pkg}/dist-tags': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** npm dist-tags of a package */
+    get: operations['listNpmDistTags'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/npm/-/package/{pkg}/dist-tags/{tag}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Point a dist-tag at a version */
+    put: operations['setNpmDistTag'];
+    post?: never;
+    /** Remove a dist-tag (not `latest`) */
+    delete: operations['deleteNpmDistTag'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/npm/-/whoami': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** npm whoami: the login of the token */
+    get: operations['npmWhoami'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/npm/{pkg}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** npm package document (`@scope%2fname`, as npm asks) */
+    get: operations['getNpmPackageEncoded'];
+    /** npm publish: one version and its tarball */
+    put: operations['publishNpmPackage'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/npm/{scope}/{name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** npm package document */
+    get: operations['getNpmPackage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/npm/{scope}/{name}/-/{file}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** npm tarball */
+    get: operations['getNpmTarball'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/oauth/authorize': {
     parameters: {
       query?: never;
@@ -3384,6 +3522,148 @@ export interface paths {
     head?: never;
     /** SCIM: activate or deactivate a user */
     patch: operations['scimPatchUser'];
+    trace?: never;
+  };
+  '/v2/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** OCI registry ping; 401 with the Bearer token challenge when signed out */
+    get: operations['ociPing'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/{name}/blobs/{digest}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Fetch (or HEAD) a blob linked to the image */
+    get: operations['getOciBlob'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/{name}/blobs/uploads/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a blob upload; monolithic with `digest`, cross-repo with `mount` */
+    post: operations['startOciBlobUpload'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/{name}/blobs/uploads/{uuid}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Upload progress (Range) */
+    get: operations['getOciBlobUpload'];
+    /** Finish an upload; the digest is checked as R2 stores it */
+    put: operations['finishOciBlobUpload'];
+    post?: never;
+    /** Cancel an upload */
+    delete: operations['cancelOciBlobUpload'];
+    options?: never;
+    head?: never;
+    /** Append a chunk, streamed to R2 */
+    patch: operations['appendOciBlobUpload'];
+    trace?: never;
+  };
+  '/v2/{name}/manifests/{reference}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Fetch (or HEAD) a manifest by tag or digest */
+    get: operations['getOciManifest'];
+    /** Push a manifest or index, tagged or by digest */
+    put: operations['putOciManifest'];
+    post?: never;
+    /** Delete a tag, or a manifest by digest */
+    delete: operations['deleteOciManifest'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/{name}/referrers/{digest}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Referrers API: manifests whose subject is the digest */
+    get: operations['listOciReferrers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/{name}/tags/list': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List tags (`n`, `last` pagination) */
+    get: operations['listOciTags'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/v2/token': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Exchange a forge credential (HTTP Basic) for a short-lived registry token */
+    get: operations['getRegistryToken'];
+    put?: never;
+    /** OAuth2 password grant for a registry token (oras-go, helm) */
+    post: operations['createRegistryToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   '/webhooks/github': {
@@ -3757,6 +4037,7 @@ export interface operations {
             | 'queue:claim'
             | 'queue:approve'
             | 'issues:write'
+            | 'packages:write'
           )[];
           allowed_repos?: string[] | null;
           org?: string;
@@ -3949,6 +4230,7 @@ export interface operations {
             | 'queue:claim'
             | 'queue:approve'
             | 'issues:write'
+            | 'packages:write'
           )[];
           org?: string;
           webhook?: {
@@ -3963,6 +4245,7 @@ export interface operations {
               | 'issues'
               | 'ci_run'
               | 'work_item'
+              | 'package'
             )[];
             /**
              * @default yag
@@ -4208,6 +4491,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'package'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -4934,6 +5218,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'package'
           )[];
           /**
            * @default yag
@@ -7368,6 +7653,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'package'
           )[];
           /**
            * @default yag
@@ -8255,6 +8541,63 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listRepoPackages: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateRepoPackage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          keep_untagged: number | null;
+        };
+      };
+    };
     responses: {
       /** @description Success */
       '2XX': {
@@ -10387,6 +10730,206 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listNpmDistTags: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pkg: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  setNpmDistTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pkg: string;
+        tag: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteNpmDistTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pkg: string;
+        tag: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  npmWhoami: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getNpmPackageEncoded: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pkg: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  publishNpmPackage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pkg: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          name: string;
+          /** @default {} */
+          'dist-tags'?: {
+            [key: string]: string;
+          };
+          versions: {
+            [key: string]: {
+              name: string;
+              version: string;
+            } & {
+              [key: string]: unknown;
+            };
+          };
+          _attachments: {
+            [key: string]: {
+              content_type?: string;
+              data: string;
+              length?: number;
+            };
+          };
+        } & {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getNpmPackage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scope: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getNpmTarball: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scope: string;
+        name: string;
+        file: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   startOAuthAuthorization: {
     parameters: {
       query?: {
@@ -10987,6 +11530,327 @@ export interface operations {
         } & {
           [key: string]: unknown;
         };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  ociPing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getOciBlob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        digest: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  startOciBlobUpload: {
+    parameters: {
+      query?: {
+        digest?: string;
+        mount?: string;
+        from?: string;
+      };
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/octet-stream': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getOciBlobUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  finishOciBlobUpload: {
+    parameters: {
+      query: {
+        digest: string;
+      };
+      header?: never;
+      path: {
+        name: string;
+        uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/octet-stream': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  cancelOciBlobUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  appendOciBlobUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        uuid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/octet-stream': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  getOciManifest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        reference: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  putOciManifest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        reference: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/vnd.oci.image.manifest.v1+json': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  deleteOciManifest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+        reference: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listOciReferrers: {
+    parameters: {
+      query?: {
+        artifactType?: string;
+      };
+      header?: never;
+      path: {
+        name: string;
+        digest: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  listOciTags: {
+    parameters: {
+      query?: {
+        n?: number;
+        last?: string;
+      };
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getRegistryToken: {
+    parameters: {
+      query?: {
+        service?: string;
+        scope?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  createRegistryToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': unknown;
       };
     };
     responses: {

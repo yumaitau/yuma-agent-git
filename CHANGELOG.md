@@ -23,6 +23,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Package registry (#53): an OCI distribution v1.1 registry at `/v2/` (chunked
+  blob uploads streamed to R2, manifests, tags, the referrers API, the Bearer
+  token flow at `/v2/token`) for `docker`, `helm` and `cosign`, and an npm
+  registry for scoped packages at `/npm/` (publish, install, dist-tags).
+  Packages inherit the linked repo's roles; CI jobs push to their own repo's
+  packages with their request or ID token; agents need the new
+  `packages:write` scope and their publishes go through the guardrails as
+  `release.publish`. Per-owner quota (`REGISTRY_QUOTA_BYTES`), `keep_untagged`
+  retention with a cron cleanup, audit events and a `package` webhook event.
+  See docs/registry.md.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each
