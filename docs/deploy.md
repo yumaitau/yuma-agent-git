@@ -62,6 +62,18 @@ npx wrangler secret put AUDIT_STREAM_SECRET --env prod -c worker/wrangler.jsonc
 `GET /api/v1/audit/stream` reports delivery status, and `yag audit verify --org <org>`
 (or `--file export.ndjson`) checks the hash chain.
 
+CI secrets and OIDC workload identity (issue #50) are optional. Generate both
+values with `scripts/ci-keys.mjs`, which writes a 0600 file and never prints key
+material; see [ci-oidc-aws.md](ci-oidc-aws.md) for setup and rotation:
+
+```sh
+node scripts/ci-keys.mjs oidc-new --out ci-oidc-keys.json
+npx wrangler secret put CI_OIDC_SIGNING_KEYS --env prod -c worker/wrangler.jsonc < ci-oidc-keys.json
+node scripts/ci-keys.mjs kek --out secrets-kek.txt
+npx wrangler secret put SECRETS_KEK --env prod -c worker/wrangler.jsonc < secrets-kek.txt
+npx wrangler secret put SECRETS_ADMIN_USER_IDS --env prod -c worker/wrangler.jsonc   # may run the KEK re-wrap
+```
+
 Local development uses `worker/.dev.vars` (copy `.dev.vars.example`).
 
 ## 3. GitHub login and optional migration bridge

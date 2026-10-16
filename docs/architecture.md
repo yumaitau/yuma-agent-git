@@ -189,6 +189,21 @@ Client = `yag` CLI (thin): bounded local object cache in `~/.yag/objects`, worki
 - **Import**: enqueue job → Worker clones via GitHub tarball API (no git binary needed on Workers: fetch tarball, walk files, emit changesets) → progress in D1 → repo becomes queryable. Full-history import (commit-by-commit) runs as a Queue consumer with checkpointing.
 - **Export**: server renders changesets → git objects → `git fast-import` stream (or tarball at revision). Lets any git client bootstrap from a yag repo.
 
+### 3.1 CI credentials (issue #50)
+
+CI jobs get no credentials unless their pipeline opts in. Opted-in jobs can
+receive secrets and variables (org, repo and environment scopes, most specific
+wins) and OIDC ID tokens from the forge's own issuer at `/ci/oidc`, with
+GitHub-shaped claims so cloud trust policies port. Secrets use envelope
+encryption (`secret_data_keys` wrapped by the `SECRETS_KEK` Worker secret) and
+are write-only through the API. Environments add required reviewers, wait
+timers, branch globs and a people-only flag; a gated run waits as an
+`environment_approvals` row and gets its `ci_runs` row when approved.
+Credentials are injected at job start inside the run's VM, never for fork or
+untrusted pull requests, and masked in logs. Repository code in an opted-in job
+can read its credentials, so deploy credentials belong behind a protected
+environment. Details: [ci-oidc-aws.md](ci-oidc-aws.md).
+
 ## 4. Agent orchestration
 
 The platform's reason to exist: agents that **never check out code**.

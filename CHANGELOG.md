@@ -15,6 +15,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- CI secrets, variables, environments and OIDC workload identity (#50).
+  Org, repo and environment secrets are envelope-encrypted, write-only and
+  masked in logs (including base64, URL-encoded and line-split forms).
+  Environments add required reviewers, wait timers, branch globs and a
+  people-only flag, with approvals in the audit log. Jobs that opt in with
+  `permissions.id_token: write` get GitHub-compatible OIDC ID tokens from
+  `/ci/oidc` (public discovery and JWKS, RS256, rotating keys), and an `aws`
+  block sets up `AWS_WEB_IDENTITY_TOKEN_FILE` for the AWS CLI and SDKs. The
+  runner image adds pinned AWS CLI v2, Helm 3 and kubectl.
+  `scripts/ci-keys.mjs` generates and rotates the keys without printing them.
+  See `docs/ci-oidc-aws.md`.
 - End-to-end suites (golden path, concurrent landing, route authorization matrix,
   migrations), a deterministic commit-graph fuzzer, and a generated API reference
   (`docs/api.md`) checked against the router in CI.
