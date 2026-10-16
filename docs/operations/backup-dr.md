@@ -93,7 +93,10 @@ to start while the target database holds any repo or user.
    `wrangler d1 migrations apply <target-db> --remote`.
 4. Bind the backup bucket as `BACKUPS` (read access is enough), set the same
    `BACKUP_ENCRYPTION_KEY` and set `RESTORE_BACKUP_ID` to the backup's id.
-   Deploy.
+   Set the same Worker secrets the source had (`SECRETS_KEK`,
+   `TOTP_ENCRYPTION_KEY`, `CI_OIDC_SIGNING_KEYS`, `CACHE_SIGNING_KEY`, the
+   GitHub App and OAuth credentials): restored rows hold data encrypted or
+   signed under them. Deploy.
 5. The cron restores 20 parts a minute, then checks every object in the
    manifest against the new `OBJECTS` bucket. Watch
    `SELECT id, status, row_count, object_count, error, started_at, finished_at

@@ -276,7 +276,8 @@ const SPECS: ToolSpec[] = [
     name: 'pr_create',
     title: 'Open pull request',
     route: 'POST /api/v1/repos/:repo/pulls',
-    description: 'Open a pull request that proposes `head_cs` for the default branch.',
+    description:
+      'Open a pull request that proposes `head_cs` for the default branch; `head_repo` names the fork whose branch or tag points at it.',
     scope: 'pulls:write',
   },
   {
