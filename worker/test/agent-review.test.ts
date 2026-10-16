@@ -408,6 +408,82 @@ describe('agent review loops and risk gates (#60)', () => {
     ]);
   });
 
+  it('holds built-in reviews of an outside fork pull request until a writer asks (#36)', async () => {
+    const builtin = await agent(ada, 'house-reviewer', 'builtin', 'acme');
+    const external = await agent(ada, 'bot', 'factory', 'acme');
+    await register(builtin.id);
+    await register(external.id);
+    const outsider = await loginAs(testEnv, 1105, 'outsider');
+    await run(
+      testEnv,
+      "INSERT INTO repo_members (repo_id, user_id, role) VALUES (?, ?, 'read')",
+      [repo.id, outsider.userId],
+    );
+    const fork = (
+      await json<{ repo: { id: string } }>(
+        await call('POST', '/repos/acme/shop/forks', {}, outsider.headers),
+        201,
+      )
+    ).repo;
+    const head = (
+      await commitChanges(testEnv, fork.id, {
+        first_parent: base,
+        message: 'from a fork',
+        author,
+        changes: [{ path: 'README.md', op: 'mod', content_b64: btoa('hi\n') }],
+      })
+    ).changeset.id;
+    await setRef(testEnv, fork.id, 'feature', head);
+    const pull = (
+      await json<{ pull: Pull }>(
+        await call(
+          'POST',
+          '/repos/acme/shop/pulls',
+          { title: 'Outside', head_cs: head, head_repo: 'outsider/shop' },
+          outsider.headers,
+        ),
+        201,
+      )
+    ).pull;
+    // the external reviewer is asked; the built-in one waits and no task runs
+    expect(
+      await q(testEnv, "SELECT 1 FROM agent_tasks WHERE kind = 'pull_review'"),
+    ).toEqual([]);
+    expect(
+      await q(testEnv, 'SELECT principal FROM review_requests WHERE pull_id = ?', [
+        pull.id,
+      ]),
+    ).toEqual([{ principal: `agent:${external.id}` }]);
+    const audit = await q1<{ target: string }>(
+      testEnv,
+      "SELECT target FROM audit_events WHERE action = 'pull.reviewers.update' ORDER BY id DESC LIMIT 1",
+    );
+    expect(JSON.parse(audit!.target)).toMatchObject({
+      fork: true,
+      held: [`agent:${builtin.id}`],
+    });
+    // a writer requests the built-in reviewer: its review of this revision is queued
+    await json(
+      await call(
+        'PUT',
+        `/repos/acme/shop/pulls/${pull.id}/reviewers`,
+        { reviewers: [`agent:${builtin.id}`, `agent:${external.id}`] },
+        justin.headers,
+      ),
+    );
+    const task = await q1<{ prompt: string; created_by: string }>(
+      testEnv,
+      "SELECT prompt, created_by FROM agent_tasks WHERE kind = 'pull_review'",
+    );
+    expect(JSON.parse(task!.prompt)).toMatchObject({
+      pull_id: pull.id,
+      agent_id: builtin.id,
+      head_cs: head,
+    });
+    // run as the person who registered the reviewer
+    expect(task!.created_by).toBe(owner.userId);
+  });
+
   it('iterates with the author agent, then asks a person and stops the agent', async () => {
     const reviewer = await agent(ada, 'reviewer', 'factory', 'acme');
     await register(reviewer.id);

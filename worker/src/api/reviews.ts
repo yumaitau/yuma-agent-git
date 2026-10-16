@@ -26,7 +26,7 @@ import {
   requestCodeOwners,
 } from '../reviews/codeowners';
 import { resolveRevision } from '../core/read';
-import { requestAgentReviews } from '../reviews/agentLoop';
+import { requestAgentReviews, runRequestedReviewers } from '../reviews/agentLoop';
 import { principalNames, resolveAssignees } from './issues';
 import type { ReviewRequest, ReviewThread } from '../../shared/collaboration';
 
@@ -415,6 +415,9 @@ reviewsRoutes.put(`${base}/reviewers`, async (c) => {
           origin: new URL(c.req.url).origin,
           data: { pull_request: loaded.pull, requested_reviewers: added },
         });
+      // a writer's request runs registered built-in reviewers (held fork pull requests too)
+      if (added.length)
+        await runRequestedReviewers(c.env, loaded.repo, loaded.pull, added);
     }
     return c.json(await reviewRequests(c, loaded.pull));
   } catch (err) {

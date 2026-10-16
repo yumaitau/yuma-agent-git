@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { Env } from '../env';
 import type { Principal } from '../auth/principal';
-import type { RepoWithCreator } from '../auth/rbac';
+import { can, type RepoWithCreator } from '../auth/rbac';
+import { forkPull } from '../ci/context';
 import { q, q1 } from '../db/client';
 import { getRepo } from '../db/repos';
 import { pathSchema } from '../core/changesets';
@@ -27,6 +28,12 @@ import type { Pull } from '../../shared/collaboration';
  * the author agent's feed: it carries the findings and whether to iterate.
  * When a revision in round `MAX_REVIEW_ROUNDS` still fails, a person is asked
  * to review and agents may not push more revisions to the pull request.
+ *
+ * A pull request from a fork (#36) whose author cannot write here is
+ * untrusted input, as fork CI is (#50): built-in reviewers are held until a
+ * writer requests them (`PUT …/reviewers`), so outside contributors cannot
+ * spend the repository's model budget or act through the person who
+ * registered the reviewer. Other reviewers are asked, with `fork: true`.
  */
 
 export const MAX_REVIEW_ROUNDS = 3;
@@ -156,6 +163,49 @@ export async function agentReviewFacts(
   };
 }
 
+/** Built-in review tasks for the current revision, run as the person who registered each reviewer. */
+function taskStatements(
+  env: Env,
+  repo: RepoWithCreator,
+  pull: Pull,
+  tasks: readonly { id: string; reviewer: Reviewer }[],
+  now: number,
+): D1PreparedStatement[] {
+  return tasks.map(({ id, reviewer }) =>
+    env.DB.prepare(
+      `INSERT INTO agent_tasks (id, repo_id, kind, prompt, status, base_cs, agent_state,
+         created_by, created_at, updated_at)
+       VALUES (?, ?, 'pull_review', ?, 'queued', ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      repo.id,
+      JSON.stringify({
+        pull_id: pull.id,
+        revision: pull.revision,
+        head_cs: pull.head_cs,
+        agent_id: reviewer.agent_id,
+      }),
+      pull.head_cs,
+      id,
+      reviewer.created_by,
+      now,
+      now,
+    ),
+  );
+}
+
+/** A fork pull request whose author cannot write to the base repository. */
+async function outsideFork(
+  env: Env,
+  repo: RepoWithCreator,
+  pull: Pull,
+): Promise<boolean> {
+  return (
+    forkPull(pull) &&
+    !(await can(env, repo, { kind: 'user', userId: pull.author_id }, 'write'))
+  );
+}
+
 /**
  * Ask every reviewer that reviews each revision to review this one (on open,
  * a new head, or ready for review). Runs after the change it follows
@@ -170,16 +220,20 @@ export async function requestAgentReviews(
 ): Promise<void> {
   if (pull.state !== 'open') return;
   try {
-    const reviewers = (await activeReviewers(env, pull)).filter(
+    const all = (await activeReviewers(env, pull)).filter(
       (r) => r.trigger === 'revision',
     );
-    if (reviewers.length === 0) return;
+    if (all.length === 0) return;
+    const fork = await outsideFork(env, repo, pull);
+    const held = fork ? all.filter((r) => r.kind === 'builtin') : [];
+    const reviewers = all.filter((r) => !held.includes(r));
     const now = Date.now();
     const round = await currentRound(env, pull);
     const tasks = reviewers
       .filter((r) => r.kind === 'builtin')
       .map((r) => ({ id: ulid(), reviewer: r }));
     const principals = reviewers.map((r) => `agent:${r.agent_id}`);
+    const heldPrincipals = held.map((r) => `agent:${r.agent_id}`);
     await appendAudit(
       env,
       {
@@ -193,6 +247,7 @@ export async function requestAgentReviews(
           via: 'agent-review',
           revision: pull.revision,
           round,
+          ...(fork ? { fork: true, held: heldPrincipals } : {}),
         },
       },
       {},
@@ -204,28 +259,7 @@ export async function requestAgentReviews(
              ON CONFLICT (pull_id, principal) DO UPDATE SET state = 'pending', updated_at = excluded.updated_at`,
           ).bind(pull.id, p, now, now),
         ),
-        // built-in reviewers run as the person who registered them
-        ...tasks.map(({ id, reviewer }) =>
-          env.DB.prepare(
-            `INSERT INTO agent_tasks (id, repo_id, kind, prompt, status, base_cs, agent_state,
-               created_by, created_at, updated_at)
-             VALUES (?, ?, 'pull_review', ?, 'queued', ?, ?, ?, ?, ?)`,
-          ).bind(
-            id,
-            repo.id,
-            JSON.stringify({
-              pull_id: pull.id,
-              revision: pull.revision,
-              head_cs: pull.head_cs,
-              agent_id: reviewer.agent_id,
-            }),
-            pull.head_cs,
-            id,
-            reviewer.created_by,
-            now,
-            now,
-          ),
-        ),
+        ...taskStatements(env, repo, pull, tasks, now),
       ],
     );
     for (const { id } of tasks) await env.AGENT_QUEUE.send({ task_id: id });
@@ -234,10 +268,40 @@ export async function requestAgentReviews(
       action: 'requested',
       actor,
       origin,
-      data: { pull_request: pull, revision: pull.revision, round, reviewers: principals },
+      data: {
+        pull_request: pull,
+        revision: pull.revision,
+        round,
+        reviewers: principals,
+        ...(fork ? { fork: true, held: heldPrincipals } : {}),
+      },
     });
   } catch (err) {
     console.error('agent review: requests not made', err);
+  }
+}
+
+/**
+ * A writer requested these principals as reviewers (`PUT …/reviewers`, which
+ * audits it): registered built-in reviewers among them review the current
+ * revision now. This is how a held fork pull request gets its built-in review.
+ */
+export async function runRequestedReviewers(
+  env: Env,
+  repo: RepoWithCreator,
+  pull: Pull,
+  principals: readonly string[],
+): Promise<void> {
+  if (pull.state !== 'open') return;
+  try {
+    const tasks = (await activeReviewers(env, pull))
+      .filter((r) => r.kind === 'builtin' && principals.includes(`agent:${r.agent_id}`))
+      .map((r) => ({ id: ulid(), reviewer: r }));
+    if (tasks.length === 0) return;
+    await env.DB.batch(taskStatements(env, repo, pull, tasks, Date.now()));
+    for (const { id } of tasks) await env.AGENT_QUEUE.send({ task_id: id });
+  } catch (err) {
+    console.error('agent review: requested reviewers not run', err);
   }
 }
 

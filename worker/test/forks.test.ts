@@ -15,6 +15,10 @@ import { commitChanges } from '../src/core/commit';
 import { q, q1, run } from '../src/db/client';
 import { storageId } from '../src/core/network';
 import type { Pull } from '../shared/collaboration';
+import { parsePolicy, type CiRun } from '../src/ci/config';
+import { parseContext } from '../src/ci/context';
+import { jobTrust } from '../src/ci/environments';
+import { cacheScopes } from '../src/ci/cache';
 
 const testEnv = env as unknown as TestEnv;
 const author = { name: 'Ada', email: 'ada@example.com' };
@@ -245,6 +249,25 @@ describe('forks (#36)', () => {
     expect(JSON.parse(runRow?.context ?? '{}')).toMatchObject({
       event: 'pull_request',
       fork: true,
+    });
+    // a maintainer's secrets are withheld (#50) even when the job asks, and its
+    // cache scope is the pull request's own: it reads main's, never writes it (#51)
+    const { pull } = (await opened.json()) as { pull: Pull };
+    const job = (await q1<CiRun>(testEnv, 'SELECT * FROM ci_runs WHERE repo_id = ?', [
+      upstream.id,
+    ]))!;
+    const policy = parsePolicy(JSON.parse(job.config));
+    expect(
+      await jobTrust(
+        ci,
+        job,
+        { ...policy, secrets: ['DEPLOY_KEY'] },
+        parseContext(job.context),
+      ),
+    ).toEqual({ ok: false, reason: 'pull request from a fork' });
+    expect(cacheScopes(job, 'main')).toEqual({
+      write: `refs/pull/${pull.id}`,
+      read: [`refs/pull/${pull.id}`, 'refs/heads/main'],
     });
   });
 

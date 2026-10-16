@@ -26,6 +26,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Wave 4a seams. GitHub Actions translation (#49) maps `actions/cache`,
+  `upload-artifact`, `download-artifact` and `codeql-action/upload-sarif` onto
+  job caches and artifacts (#51) and code scanning (#67). Notifications (#44)
+  cover agent review requests, verdicts and escalations (#60), dependency and
+  default-branch code scanning alerts (#67), usage budget alerts (#61) and org
+  CI budget thresholds (#52, `usage_budget` `ci_budget`). Usage (#61) prices CI
+  per instance type (#52) and meters Git LFS, CI artifact and cache storage.
+  Provenance (#58) records agent review verdicts. The GitHub compatible API
+  (#74) lists code scanning alerts. Outside fork pull requests (#36) hold
+  built-in agent reviews until a writer requests them. Backups (#70) cover the
+  wave's new tables and R2 prefixes.
+
 - Signed provenance (#58). Every move of a protected branch or tag gets an
   in-toto statement (who, agent and the person it acted for, task, pull
   requests with approvals and checks, rulesets and any bypass, each new

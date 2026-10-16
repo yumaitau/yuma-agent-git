@@ -179,8 +179,12 @@ read.
 A pull request from a fork names it: `POST …/pulls` with `head_repo` and a
 `head_cs` some branch or tag of that fork points at. Read on the upstream is
 enough. CI for such a pull request runs as a fork: no secrets, variables,
-OIDC tokens, environments or trusted self-hosted runners. Updating a fork pull
-request's head still needs write on the upstream.
+OIDC tokens, environments or trusted self-hosted runners, and its job caches
+belong to the pull request (`refs/pull/<n>`): it reads the default branch's
+but never writes them. When the author cannot write to the upstream, built-in
+agent reviewers (#60) wait until a writer requests them with
+`PUT …/pulls/:id/reviewers`; other agent reviewers are asked with `fork: true`.
+Updating a fork pull request's head still needs write on the upstream.
 
 ## Testing
 
