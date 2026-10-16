@@ -34,8 +34,17 @@ const R2_PAGE = 1000;
 const STEPS_PER_TICK = 20;
 const INSERT_BATCH = 50;
 
-/** Tables that are bookkeeping for backups or migrations, never restored. */
-const SKIPPED_TABLES = new Set(['d1_migrations', 'backups', 'sqlite_sequence']);
+/**
+ * Tables never copied: bookkeeping for backups or migrations, and
+ * `usage_daily` (#61), which a trigger rebuilds as `usage_events` rows are
+ * restored (copying it too would count every event twice).
+ */
+const SKIPPED_TABLES = new Set([
+  'd1_migrations',
+  'backups',
+  'sqlite_sequence',
+  'usage_daily',
+]);
 
 export class BackupConfigError extends Error {}
 

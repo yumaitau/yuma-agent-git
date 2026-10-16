@@ -31,9 +31,11 @@ A backup is `backups/<id>/` in the `BACKUPS` bucket:
 
 - `d1/<table>/<part>.ndjson`: every row of every table, 500 rows per part,
   tables ordered parents before children (foreign keys). `d1_migrations` and
-  `backups` stay out.
+  `backups` stay out, and so does `usage_daily`: its trigger rebuilds it from
+  `usage_events` as they are restored.
 - `r2/<part>.ndjson`: the key, size, etag and upload time of every object in
-  `OBJECTS` (`repos/…/blobs`, `repos/…/trees`, `lfs/…`, `registry/…`, CI logs).
+  `OBJECTS` (`repos/…/blobs`, `repos/…/trees`, `lfs/…`, `registry/…`, CI logs,
+  `ci/artifacts/…`, `ci/cache/…`, agent session transcripts).
 - `manifest.json`: the backup id, start and finish times, the migration
   names the rows belong to, per-table row and part counts and R2 totals.
 

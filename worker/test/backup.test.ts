@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import { cleanDb, loginAs, makeApp, seedSchema, type TestEnv } from './helpers';
 import type { Env } from '../src/env';
-import { createRepo, setRef } from '../src/db/repos';
+import { createRepo, getRepo, setRef } from '../src/db/repos';
+import { recordUsage } from '../src/usage/record';
 import { commitChanges } from '../src/core/commit';
 import { q, q1, run } from '../src/db/client';
 import {
@@ -60,6 +61,12 @@ async function snapshot(): Promise<Record<string, unknown[]>> {
     'pull_requests',
     'pull_reviews',
     'audit_events',
+    // wave 4a tables (#44, #51, #61, #67) come back too; usage_daily is rebuilt
+    'notifications',
+    'ci_artifacts',
+    'code_scanning_alerts',
+    'usage_events',
+    'usage_daily',
   ]) {
     out[table] = await q(testEnv, `SELECT * FROM ${table} ORDER BY 1, 2`);
   }
@@ -121,9 +128,55 @@ beforeEach(async () => {
   ).toBe(201);
 });
 
+/** Rows and an R2 object in tables later issues added, so the round trip covers them. */
+async function seedWave4(): Promise<void> {
+  const repo = (await getRepo(testEnv, repoId))!;
+  await recordUsage(testEnv, [
+    {
+      repo,
+      kind: 'tokens',
+      source: 'reported',
+      model: 'claude-subscription',
+      input_tokens: 10,
+      at: 1_000,
+    },
+    {
+      repo,
+      kind: 'ci_seconds',
+      source: 'ci',
+      model: 'standard-2',
+      quantity: 60,
+      at: 2_000,
+    },
+  ]);
+  await testEnv.OBJECTS.put('ci/artifacts/run-1/dist', 'built');
+  await run(
+    testEnv,
+    `INSERT INTO ci_artifacts (id, repo_id, run_scope, ci_run_id, name, size, object_key, created_at, expires_at)
+     VALUES ('art-1', ?, 'run-1', 'job-1', 'dist', 5, 'ci/artifacts/run-1/dist', 0, 1)`,
+    [repoId],
+  );
+  await run(
+    testEnv,
+    `INSERT INTO notifications (id, principal, event_id, repo_id, subject_type, subject_id, number,
+       title, url, origin, reason, event, action, actor, created_at)
+     VALUES ('n1', ?, 'e1', ?, 'pull', '1', 1, 'Feature', '/r/team/app/pulls/1', NULL,
+       'review_requested', 'pull_request', 'review_requested', NULL, 0)`,
+    [`user:${owner.userId}`, repoId],
+  );
+  await run(
+    testEnv,
+    `INSERT INTO code_scanning_alerts (repo_id, ref, tool, category, fingerprint, rule_id,
+       severity, message, path, state, last_analysis_id, created_at, updated_at)
+     VALUES (?, 'main', 'semgrep', 'sast', 'f1', 'sqli', 'high', 'Tainted', 'a.ts', 'open', 1, 0, 0)`,
+    [repoId],
+  );
+}
+
 describe('backups (#70)', () => {
   it('backs up encrypted and restores into a fresh environment', async () => {
     const bindings = backupEnv();
+    await seedWave4();
     const before = await snapshot();
     const row = await runBackup(bindings);
     expect(row.row_count).toBeGreaterThan(0);
