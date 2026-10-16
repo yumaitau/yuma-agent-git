@@ -7,6 +7,7 @@ import { blameFile, BLAME_TRUNCATED_CS, type BlameRange } from '../core/derived/
 import { parseChangesetRow, q } from '../db/client';
 import { C, T } from '../db/schema';
 import { sha256Hex } from '../core/hashing';
+import { storageId } from '../core/network';
 import { guardPathHistory, loadReadableRepo as loadReadable } from '../auth/guards';
 
 /**
@@ -97,7 +98,7 @@ async function annotate(
   const rows = await q(
     env,
     `SELECT * FROM ${T.changesets} WHERE ${C.changesets.repoId} = ? AND ${C.changesets.id} IN (${placeholders})`,
-    [repoId, ...ids],
+    [storageId(repoId), ...ids],
   );
   const byId = new Map(
     rows.map((r) => {

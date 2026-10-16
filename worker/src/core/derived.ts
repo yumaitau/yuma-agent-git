@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { C, T } from '../db/schema';
 import { q1, run, tx } from '../db/client';
+import { storageId } from './network';
 import { getChangeset, type Changeset } from './changesets';
 
 /**
@@ -134,7 +135,7 @@ async function readRaw(
     env,
     `SELECT ${C.derivedData.payload} FROM ${T.derivedData}
       WHERE ${C.derivedData.repoId} = ? AND ${C.derivedData.kind} = ? AND ${C.derivedData.csId} = ?`,
-    [repoId, kind, csId],
+    [storageId(repoId), kind, csId],
   );
   if (!row) return null;
   return String((row as Record<string, unknown>)[C.derivedData.payload]);
@@ -166,7 +167,7 @@ export async function storeRaw(
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (${C.derivedData.repoId}, ${C.derivedData.kind}, ${C.derivedData.csId})
      DO NOTHING`,
-    [repoId, kind, csId, JSON.stringify(payload), Date.now()],
+    [storageId(repoId), kind, csId, JSON.stringify(payload), Date.now()],
   );
 }
 
@@ -270,7 +271,7 @@ export async function computeEager(
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT (${C.derivedData.repoId}, ${C.derivedData.kind}, ${C.derivedData.csId})
             DO NOTHING`,
-      params: [repoId, kind.name, cs.id, text, Date.now()],
+      params: [storageId(repoId), kind.name, cs.id, text, Date.now()],
     });
   }
   if (statements.length > 0) {

@@ -117,6 +117,8 @@ export function bucketFor(method: string, path: string): Bucket | null {
   if (/^\/[^/]+\/[^/]+\.git\/(info\/refs|git-upload-pack|git-receive-pack)$/.test(path)) {
     return 'git';
   }
+  // Git LFS (#35): one request per large object, like the registry
+  if (/^\/[^/]+\/[^/]+\.git\/info\/lfs\//.test(path)) return 'object_fetch';
   // package registry (#53): a push or pull is many content-addressed blob requests
   if (path.startsWith('/v2/') || path.startsWith('/npm/')) return 'object_fetch';
   if (path.startsWith('/auth/')) return 'auth';

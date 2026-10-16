@@ -115,6 +115,14 @@ import { patchRunnerBody, registrationTokenBody } from './runners';
 import { completeSchema, registerSchema, stepSchema } from '../ci/runners';
 import { reserveCacheBody, restoreCacheQuery } from '../ci/job-routes';
 import { limitsSchema } from '../ci/capacity';
+import {
+  lfsBatchSchema,
+  lfsVerifySchema,
+  lockCreateSchema,
+  lockVerifySchema,
+  unlockSchema,
+} from '../git/lfs';
+import { createForkSchema } from './forks';
 
 /**
  * The public API contract (issue #28): one entry per HTTP route, keyed like
@@ -310,6 +318,40 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     id: 'gitInfoRefs',
     query: z.object({ service: z.enum(['git-upload-pack', 'git-receive-pack']) }),
   },
+  // Git LFS (#35): JSON is `application/vnd.git-lfs+json`
+  'POST /:owner/:repo.git/info/lfs/objects/batch': {
+    id: 'lfsBatch',
+    body: lfsBatchSchema,
+  },
+  'PUT /:owner/:repo.git/info/lfs/objects/:oid': {
+    id: 'lfsUploadObject',
+    rawBody: 'application/octet-stream',
+  },
+  'GET /:owner/:repo.git/info/lfs/objects/:oid': { id: 'lfsDownloadObject' },
+  'POST /:owner/:repo.git/info/lfs/verify': {
+    id: 'lfsVerifyObject',
+    body: lfsVerifySchema,
+  },
+  'POST /:owner/:repo.git/info/lfs/locks': {
+    id: 'lfsCreateLock',
+    body: lockCreateSchema,
+  },
+  'GET /:owner/:repo.git/info/lfs/locks': {
+    id: 'lfsListLocks',
+    query: z.object({
+      path: z.string().optional(),
+      id: z.string().optional(),
+      ...page,
+    }),
+  },
+  'POST /:owner/:repo.git/info/lfs/locks/verify': {
+    id: 'lfsVerifyLocks',
+    body: lockVerifySchema,
+  },
+  'POST /:owner/:repo.git/info/lfs/locks/:id/unlock': {
+    id: 'lfsUnlock',
+    body: unlockSchema,
+  },
   'POST /:owner/:repo.git/git-upload-pack': {
     id: 'gitUploadPack',
     rawBody: 'application/x-git-upload-pack-request',
@@ -381,6 +423,8 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1': { id: 'getApiRoot' },
   'GET /api/v1/openapi.json': { id: 'getOpenApi' },
   'POST /api/v1/admin/secrets/rewrap': { id: 'rewrapSecretKeys' },
+  'GET /api/v1/admin/backups': { id: 'listBackups' },
+  'POST /api/v1/admin/backups': { id: 'startBackup' },
   'GET /api/v1/admin/agents/pause': { id: 'getInstanceAgentPause' },
   'POST /api/v1/admin/agents/pause': { id: 'pauseInstanceAgents', body: pauseSchema },
   'DELETE /api/v1/admin/agents/pause': { id: 'resumeInstanceAgents' },
@@ -678,6 +722,12 @@ export const API_CONTRACT: Record<string, RouteContract> = {
       from: rev.optional(),
     }),
   },
+  'GET /api/v1/repos/:repo/export/bundle': { id: 'exportBundle' },
+  'GET /api/v1/repos/:repo/export/metadata': { id: 'exportMetadata' },
+  'POST /api/v1/repos/:repo/forks': { id: 'createFork', body: createForkSchema },
+  'GET /api/v1/repos/:repo/forks': { id: 'listForks' },
+  'GET /api/v1/repos/:repo/lfs': { id: 'getLfsUsage' },
+  'DELETE /api/v1/repos/:repo/lfs/objects/:oid': { id: 'deleteLfsObject' },
   'POST /api/v1/repos/:repo/export/github': {
     id: 'exportToGithub',
     body: exportRequestSchema,

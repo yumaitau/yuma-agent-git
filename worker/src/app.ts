@@ -16,6 +16,7 @@ import { oauthAppsRoutes } from './auth/oauth-apps';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
+import { lfsRoutes } from './git/lfs';
 import { oidcRoutes } from './ci/oidc';
 import { runnerRoutes } from './ci/runners';
 import { jobStorageRoutes } from './ci/job-routes';
@@ -62,6 +63,8 @@ app.get('/healthz', (c) => c.json({ ok: true }));
 
 // Git clients (issues #31, #32): `/:owner/:repo.git/…`, before the SPA fallback.
 app.route('/', gitRoutes);
+// Git LFS (issue #35) under the same `/:owner/:repo.git/info/lfs/…` paths.
+app.route('/', lfsRoutes);
 
 // CI workload identity (issue #50): public discovery + JWKS for cloud IAM,
 // and the token endpoint, which authenticates with a per-run request token.

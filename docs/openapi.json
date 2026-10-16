@@ -133,6 +133,372 @@
         }
       }
     },
+    "/{owner}/{repo}.git/info/lfs/locks": {
+      "get": {
+        "operationId": "lfsListLocks",
+        "summary": "List file locks (`?path=&id=&cursor=&limit=`)",
+        "security": [{ "gitBasic": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "lfsCreateLock",
+        "summary": "Lock a file (`git lfs lock`)",
+        "security": [{ "gitBasic": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                  "ref": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string", "maxLength": 1024 } },
+                    "required": ["name"]
+                  }
+                },
+                "required": ["path"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{owner}/{repo}.git/info/lfs/locks/{id}/unlock": {
+      "post": {
+        "operationId": "lfsUnlock",
+        "summary": "Unlock a file; someone else's lock needs admin and `force`",
+        "security": [{ "gitBasic": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo); admin to force",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "force": { "type": "boolean" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{owner}/{repo}.git/info/lfs/locks/verify": {
+      "post": {
+        "operationId": "lfsVerifyLocks",
+        "summary": "Locks split into the caller's and others' (`git lfs push`)",
+        "security": [{ "gitBasic": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cursor": { "type": "string" },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "ref": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string", "maxLength": 1024 } },
+                    "required": ["name"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{owner}/{repo}.git/info/lfs/objects/{oid}": {
+      "get": {
+        "operationId": "lfsDownloadObject",
+        "summary": "Git LFS download from R2",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "lfsUploadObject",
+        "summary": "Git LFS upload into R2; a wrong SHA-256 or size stores and links nothing",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{owner}/{repo}.git/info/lfs/objects/batch": {
+      "post": {
+        "operationId": "lfsBatch",
+        "summary": "Git LFS batch API: signed 15 minute `basic` transfer actions, quotas on upload",
+        "security": [{ "gitBasic": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo); write for `upload`",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation": { "type": "string", "enum": ["download", "upload"] },
+                  "transfers": { "type": "array", "items": { "type": "string" } },
+                  "ref": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string", "maxLength": 1024 } },
+                    "required": ["name"]
+                  },
+                  "objects": {
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "oid": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["oid", "size"]
+                    }
+                  },
+                  "hash_algo": { "type": "string" }
+                },
+                "required": ["operation", "objects"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/{owner}/{repo}.git/info/lfs/verify": {
+      "post": {
+        "operationId": "lfsVerifyObject",
+        "summary": "Git LFS check that an upload was stored",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "oid": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "size": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+                },
+                "required": ["oid", "size"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/{owner}/{repo}.git/info/refs": {
       "get": {
         "operationId": "gitInfoRefs",
@@ -239,6 +605,38 @@
         "x-yag-rate-bucket": "api_write",
         "responses": {
           "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/admin/backups": {
+      "get": {
+        "operationId": "listBackups",
+        "summary": "Recent backups and restores (`BACKUP_ADMIN_USER_IDS`)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "startBackup",
+        "summary": "Start a backup now (`BACKUP_ADMIN_USER_IDS`)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -561,7 +959,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 12,
+                        "maxItems": 13,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -577,7 +975,8 @@
                             "secret_scanning_alert",
                             "merge_group",
                             "release",
-                            "package"
+                            "package",
+                            "fork"
                           ]
                         }
                       },
@@ -825,7 +1224,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 13,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -841,7 +1240,8 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "fork"
                       ]
                     }
                   },
@@ -1851,7 +2251,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 13,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1867,7 +2267,8 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "fork"
                       ]
                     }
                   },
@@ -5669,6 +6070,34 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/export/bundle": {
+      "get": {
+        "operationId": "exportBundle",
+        "summary": "Git bundle of every branch and tag (`git clone x.bundle`, same commit SHAs)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/export/fast-import": {
       "get": {
         "operationId": "exportFastImport",
@@ -5760,6 +6189,37 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/export/metadata": {
+      "get": {
+        "operationId": "exportMetadata",
+        "summary": "Issues, pull requests, reviews, releases, labels and refs as JSON",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
         "responses": {
           "2XX": {
             "description": "Success",
@@ -5911,6 +6371,85 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/forks": {
+      "get": {
+        "operationId": "listForks",
+        "summary": "Forks of the repo the caller can read",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "createFork",
+        "summary": "Fork into `slug` (default `<login>/<name>`): copies branches and tags, shares objects",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+$"
+                  },
+                  "org": { "type": "string", "minLength": 1, "maxLength": 39 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/history": {
       "get": {
         "operationId": "getHistory",
@@ -6027,7 +6566,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 12,
+                    "maxItems": 13,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -6043,7 +6582,8 @@
                         "secret_scanning_alert",
                         "merge_group",
                         "release",
-                        "package"
+                        "package",
+                        "fork"
                       ]
                     }
                   },
@@ -7056,6 +7596,74 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/lfs": {
+      "get": {
+        "operationId": "getLfsUsage",
+        "summary": "Git LFS objects, bytes and quotas for the repo (and org)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/lfs/objects/{oid}": {
+      "delete": {
+        "operationId": "deleteLfsObject",
+        "summary": "Unlink an LFS object; storage is freed when no repo in the fork network links it",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/members": {
       "get": {
         "operationId": "listRepoMembers",
@@ -8047,7 +8655,7 @@
         "operationId": "createPull",
         "summary": "Open a pull request",
         "security": [{ "session": [] }, { "bearer": [] }],
-        "x-yag-permission": "write (whole repo)",
+        "x-yag-permission": "write (whole repo); read with a fork `head_repo`",
         "x-yag-rate-bucket": "api_write",
         "parameters": [
           {
@@ -8073,7 +8681,8 @@
                   "title": { "type": "string", "minLength": 1, "maxLength": 200 },
                   "body": { "default": "", "type": "string", "maxLength": 20000 },
                   "head_cs": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-                  "draft": { "default": false, "type": "boolean" }
+                  "draft": { "default": false, "type": "boolean" },
+                  "head_repo": { "type": "string", "minLength": 3, "maxLength": 128 }
                 },
                 "required": ["title", "head_cs"]
               }

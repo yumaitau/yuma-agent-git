@@ -149,6 +149,16 @@ const PUBLIC = new Set([
   'GET /:owner/:repo{[^/]+\\.git}/info/refs',
   'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack',
+  // Git LFS (#35): the batch and lock APIs take the same Git credentials;
+  // transfers and verify take the batch's signed action (test/lfs.test.ts)
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/objects/batch',
+  'PUT /:owner/:repo{[^/]+\\.git}/info/lfs/objects/:oid',
+  'GET /:owner/:repo{[^/]+\\.git}/info/lfs/objects/:oid',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/verify',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks',
+  'GET /:owner/:repo{[^/]+\\.git}/info/lfs/locks',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks/verify',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks/:id/unlock',
   // CI workload identity (#50): cloud IAM fetches discovery and keys
   // anonymously; the token endpoint demands a per-run request token
   'GET /ci/oidc/.well-known/openid-configuration',
@@ -243,6 +253,12 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/export/tarball': 'export.test.ts',
   'GET /api/v1/repos/:repo{.+}/export/fast-import': 'export.test.ts',
   'POST /api/v1/repos/:repo{.+}/export/github': 'export.test.ts',
+  'GET /api/v1/repos/:repo{.+}/export/bundle': 'backup.test.ts',
+  'GET /api/v1/repos/:repo{.+}/export/metadata': 'backup.test.ts',
+  'POST /api/v1/repos/:repo{.+}/forks': 'forks.test.ts',
+  'GET /api/v1/repos/:repo{.+}/forks': 'forks.test.ts',
+  'GET /api/v1/repos/:repo{.+}/lfs': 'lfs.test.ts',
+  'DELETE /api/v1/repos/:repo{.+}/lfs/objects/:oid': 'lfs.test.ts',
   'POST /api/v1/repos/:repo{.+}/import': 'import.test.ts',
   'GET /api/v1/repos/:repo{.+}/import/:job_id': 'import.test.ts',
   'GET /api/v1/repos/:repo{.+}/issues': 'issues.test.ts',

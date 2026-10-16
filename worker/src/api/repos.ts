@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { C, T } from '../db/schema';
 import { parseRepoRow, q, run } from '../db/client';
@@ -46,34 +46,9 @@ reposRoutes.post('/api/v1/repos', async (c) => {
         })),
       });
     }
-    // A slug prefix naming an org makes the repo org-owned, so an org
-    // namespace cannot be filled by non-members just by omitting `org`.
-    // Org slugs are lowercase, so `Yuma/x` cannot dodge the `yuma` org.
-    const prefix = parsed.data.slug.split('/')[0] as string;
-    const org = await getOrgBySlug(c.env, prefix.toLowerCase());
-    if (
-      (parsed.data.org !== undefined && parsed.data.org !== prefix) ||
-      (org && org.slug !== prefix)
-    ) {
-      return apiError(c, 400, 'invalid_request', 'slug owner must match org');
-    }
-    if (parsed.data.org !== undefined && !org) {
-      return apiError(c, 404, 'org_not_found', `no org ${parsed.data.org}`);
-    }
-    if (org) {
-      const member = await orgMembership(c.env, org.id, user.id);
-      if (!member) return apiError(c, 404, 'org_not_found', `no org ${org.slug}`);
-      const mayCreate =
-        member.role === 'owner' ||
-        member.role === 'admin' ||
-        (member.role === 'member' && org.members_can_create_repos);
-      if (!mayCreate) {
-        return apiError(c, 403, 'forbidden', 'org role does not allow creating repos');
-      }
-    }
-    if (await getRepoBySlug(c.env, parsed.data.slug)) {
-      return apiError(c, 409, 'repo_exists', `repo ${parsed.data.slug} already exists`);
-    }
+    const owner = await newRepoOwner(c, user.id, parsed.data.slug, parsed.data.org);
+    if (!owner.ok) return owner.response;
+    const org = owner.org;
     validateBranchName(parsed.data.default_branch ?? 'main');
     const repo = await createRepo(c.env, {
       slug: parsed.data.slug,
@@ -96,6 +71,49 @@ reposRoutes.post('/api/v1/repos', async (c) => {
     return errorResponse(c, err);
   }
 });
+
+type Org = NonNullable<Awaited<ReturnType<typeof getOrgBySlug>>>;
+
+/**
+ * Where `userId` may create `slug` (new repos and forks): the owning org, or
+ * null for a user namespace. A slug prefix naming an org makes the repo
+ * org-owned, so an org namespace cannot be filled by non-members just by
+ * omitting `org`. Org slugs are lowercase, so `Yuma/x` cannot dodge the
+ * `yuma` org. A taken slug is 409.
+ */
+export async function newRepoOwner(
+  c: Context<AppEnv>,
+  userId: string,
+  slug: string,
+  orgParam: string | undefined,
+): Promise<{ ok: true; org: Org | null } | { ok: false; response: Response }> {
+  const refuse = (response: Response) => ({ ok: false as const, response });
+  const prefix = slug.split('/')[0] as string;
+  const org = await getOrgBySlug(c.env, prefix.toLowerCase());
+  if ((orgParam !== undefined && orgParam !== prefix) || (org && org.slug !== prefix)) {
+    return refuse(apiError(c, 400, 'invalid_request', 'slug owner must match org'));
+  }
+  if (orgParam !== undefined && !org) {
+    return refuse(apiError(c, 404, 'org_not_found', `no org ${orgParam}`));
+  }
+  if (org) {
+    const member = await orgMembership(c.env, org.id, userId);
+    if (!member) return refuse(apiError(c, 404, 'org_not_found', `no org ${org.slug}`));
+    const mayCreate =
+      member.role === 'owner' ||
+      member.role === 'admin' ||
+      (member.role === 'member' && org.members_can_create_repos);
+    if (!mayCreate) {
+      return refuse(
+        apiError(c, 403, 'forbidden', 'org role does not allow creating repos'),
+      );
+    }
+  }
+  if (await getRepoBySlug(c.env, slug)) {
+    return refuse(apiError(c, 409, 'repo_exists', `repo ${slug} already exists`));
+  }
+  return { ok: true, org: org ?? null };
+}
 
 reposRoutes.get('/api/v1/repos/:owner/:name', async (c) => {
   try {

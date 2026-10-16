@@ -4,11 +4,13 @@ import { r2 } from '../observability/phase';
 import { compressBytes, decompressBytes, parseCodec, preferredCodec } from './compress';
 import { InvalidTreeError, ObjectCorruptError, ObjectWalkLimitError } from './errors';
 import { canonicalJson, sha256Hex } from './hashing';
+import { storageId } from './network';
 
 /**
  * Content-addressed trees over R2 (architecture §1.2).
  *
- * Key layout: `repos/{repo_id}/trees/{hash[0:2]}/{hash}`
+ * Key layout: `repos/{repo_id}/trees/{hash[0:2]}/{hash}` (a fork: its network
+ * root's id, core/network.ts)
  * Content = canonical JSON `{entries}` (entries sorted by name), compressed.
  * Tree hash = SHA-256 of that canonical JSON.
  */
@@ -26,7 +28,7 @@ export interface Tree {
 }
 
 export function treeKey(repoId: string, hash: string): string {
-  return `repos/${repoId}/trees/${hash.slice(0, 2)}/${hash}`;
+  return `repos/${storageId(repoId)}/trees/${hash.slice(0, 2)}/${hash}`;
 }
 
 const treeEntrySchema = z.object({

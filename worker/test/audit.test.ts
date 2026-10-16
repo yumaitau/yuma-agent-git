@@ -671,6 +671,12 @@ const AUDITED: Record<string, AuditAction> = {
   // when the sync moved a ref or failed; a no-op sync changes nothing
   'POST /api/v1/repos/:repo{.+}/mirrors/:id/sync': 'mirror.sync',
   'POST /api/v1/repos/:repo{.+}/migration': 'repo.migration',
+  // forks, Git LFS and backups (#36, #35, #70)
+  'POST /api/v1/repos/:repo{.+}/forks': 'repo.fork',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks': 'lfs.lock',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks/:id/unlock': 'lfs.unlock',
+  'DELETE /api/v1/repos/:repo{.+}/lfs/objects/:oid': 'lfs.object.delete',
+  'POST /api/v1/admin/backups': 'backup.create',
 };
 const EXEMPT: Record<string, string> = {
   'POST /v2/token':
@@ -694,6 +700,12 @@ const EXEMPT: Record<string, string> = {
   'POST /api/v1/repos/:repo{[^/]+/[^/]+}/attestations/verify':
     'pure signature check; nothing is stored',
   'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack': 'read-only Git fetch',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/objects/batch':
+    'download is a read; upload links content-addressed objects, like changesets',
+  'PUT /:owner/:repo{[^/]+\\.git}/info/lfs/objects/:oid':
+    'content-addressed LFS object upload; same as changesets',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/verify': 'read-only upload check',
+  'POST /:owner/:repo{[^/]+\\.git}/info/lfs/locks/verify': 'read-only lock listing',
   'POST /api/v1/me/passkeys/options': 'issues a one-time challenge; enrolment is audited',
   'POST /api/v1/me/totp':
     'stores an unconfirmed seed that cannot sign in; confirm is audited',

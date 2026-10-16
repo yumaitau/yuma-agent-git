@@ -1,5 +1,6 @@
 import type { Env } from '../env';
 import { ulid } from '../core/ids';
+import { forkRepoId } from '../core/network';
 import { C, T } from './schema';
 import {
   parseRefRow,
@@ -22,6 +23,8 @@ export interface CreateRepoInput {
   /** Org-owned repos (issue #26) carry the org id; default is the slug prefix. */
   ownerKind?: 'user' | 'org';
   ownerId?: string;
+  /** Fork (issue #36): the upstream repo id; the fork joins its network. */
+  forkOf?: string;
 }
 
 /** Insert a repository row (id = ULID). */
@@ -31,7 +34,7 @@ export async function createRepo(
   now: number = Date.now(),
 ): Promise<RepoRecord> {
   const row = {
-    id: ulid(now),
+    id: input.forkOf ? forkRepoId(input.forkOf, now) : ulid(now),
     slug: input.slug,
     created_by: input.createdBy ?? null,
     github_installation_id: input.githubInstallationId ?? null,
@@ -46,6 +49,8 @@ export async function createRepo(
     // column defaults (migration 0023), so the record matches the stored row
     merge_methods: '["merge","squash","rebase"]',
     default_merge_method: 'merge' as const,
+    // set by the fork route (migration 0045); older schemas lack the column
+    fork_of: input.forkOf ?? null,
   };
   await run(
     env,

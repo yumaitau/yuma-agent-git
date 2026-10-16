@@ -31,6 +31,7 @@ import {
   actorKindOf,
   agentIdOf,
   contextFor,
+  forkPull,
   parseContext,
   runRef,
   triggerOf,
@@ -42,6 +43,7 @@ import { nextNumber } from '../collab/issues';
 import { linkLanded, linkReferences } from '../collab/references';
 import { requestCodeOwners } from '../reviews/codeowners';
 import { requestPushMirrors } from '../mirrors/queue';
+import { sameNetwork } from '../core/network';
 
 export const collaborationRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -66,6 +68,8 @@ export const createPull = z.object({
   body: z.string().max(20000).default(''),
   head_cs: z.string().regex(/^[a-f0-9]{64}$/),
   draft: z.boolean().default(false),
+  /** A fork (#36) whose branch or tag points at `head_cs`; read access is enough. */
+  head_repo: z.string().min(3).max(128).optional(),
 });
 collaborationRoutes.get(`${base}/pulls`, async (c) => {
   try {
@@ -89,11 +93,44 @@ collaborationRoutes.get(`${base}/pulls`, async (c) => {
 });
 collaborationRoutes.post(`${base}/pulls`, async (c) => {
   try {
-    const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
+    const raw = await readJsonBody(c);
+    // a pull request from a fork needs only read here, as on GitHub (#36)
+    const headRepo = (raw as { head_repo?: unknown } | null)?.head_repo;
+    const fromFork = typeof headRepo === 'string';
+    const loaded = await loadWholeRepo(
+      c,
+      fromFork ? 'read' : 'write',
+      c.req.param('repo'),
+    );
     if (!loaded.ok) return loaded.response;
     const scoped = requireAgentScope(c, 'pulls:write');
     if (scoped) return scoped;
-    const body = parse(createPull, await readJsonBody(c));
+    const body = parse(createPull, raw);
+    let headRepoId: string | null = null;
+    if (fromFork && body.head_repo) {
+      const head = await loadWholeRepo(c, 'read', body.head_repo);
+      if (!head.ok) return head.response;
+      // the repository itself is no fork: its own branches need write
+      if (head.repo.id === loaded.repo.id || !sameNetwork(head.repo.id, loaded.repo.id))
+        throw new ApiError(
+          422,
+          'not_a_fork',
+          'The head repository is not a fork in this repository network; omit head_repo for this repository.',
+        );
+      // only a ref tip the caller can read: never any object of the network
+      const tip = await q1(
+        c.env,
+        'SELECT 1 FROM refs WHERE repo_id = ? AND head = ? LIMIT 1',
+        [head.repo.id, body.head_cs],
+      );
+      if (!tip)
+        throw new ApiError(
+          404,
+          'changeset_not_found',
+          'No branch or tag of the head repository points at the proposed revision.',
+        );
+      headRepoId = head.repo.id;
+    }
     const ref = await getRef(c.env, loaded.repo.id, loaded.repo.default_branch);
     if (!ref || ref.head === body.head_cs)
       throw new ApiError(
@@ -105,8 +142,8 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
       throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
     const number = await nextNumber(c.env, loaded.repo.id);
     const result = await c.env.DB.prepare(
-      `INSERT INTO pull_requests (repo_id,number,title,body,author_id,base_ref,base_cs,head_cs,state,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO pull_requests (repo_id,number,title,body,author_id,base_ref,base_cs,head_cs,state,created_at,updated_at,head_repo_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
         loaded.repo.id,
@@ -120,13 +157,19 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
         body.draft ? 'draft' : 'open',
         Date.now(),
         Date.now(),
+        headRepoId,
       )
       .run();
     const pull = await getPull(c.env, loaded.repo.id, result.meta.last_row_id);
     await recordAudit(c, {
       action: 'pull.create',
       repo: loaded.repo,
-      target: { pull_id: pull.id, base_ref: pull.base_ref, head_cs: pull.head_cs },
+      target: {
+        pull_id: pull.id,
+        base_ref: pull.base_ref,
+        head_cs: pull.head_cs,
+        ...(headRepoId ? { head_repo: body.head_repo } : {}),
+      },
     });
     await emitEvent(c.env, loaded.repo, {
       event: 'pull_request',
@@ -746,8 +789,8 @@ export async function autoCheck(
           event: 'pull_request',
           ref: `refs/pull/${pull.id}/merge`,
           pull_id: pull.id,
-          // pull requests always come from this repository; forks do not exist yet
-          fork: false,
+          // fork pull requests get no secrets, variables or OIDC (#36, #50)
+          fork: forkPull(pull),
           actor_kind: trigger.actor_kind,
           origin: trigger.origin,
           approval_id: null,

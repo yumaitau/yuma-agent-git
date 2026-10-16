@@ -21,6 +21,7 @@ import { sweepDeliveries } from './webhooks/deliver';
 import { registryCleanup } from './registry/packages';
 import { mirrorQueue, scheduleMirrors } from './mirrors/sync';
 import type { MirrorMessage } from './mirrors/queue';
+import { backupTick, restoreTick } from './backup/backup';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -55,6 +56,13 @@ export default {
     // Environment approvals whose reviewers approved and wait timer elapsed.
     await dispatchApprovals(env).catch(() =>
       console.warn('Environment approval dispatch will be retried by the next sweep'),
+    );
+    // Backups (#70): take and expire scheduled backups, or run a restore.
+    await backupTick(env).catch((err: unknown) =>
+      console.warn('Backup will be retried by the next sweep', err),
+    );
+    await restoreTick(env).catch((err: unknown) =>
+      console.warn('Restore will be retried by the next sweep', err),
     );
     // Package registry (#53): retention, unused blobs, stale uploads and tokens.
     await registryCleanup(env).catch((err: unknown) =>

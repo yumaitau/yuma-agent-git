@@ -68,6 +68,13 @@ All notable changes to this project are documented here. The format follows
   their jobs get `GITHUB_*` variables. `yag actions check` (alias
   `yag ci analyse`) prints the report for a local checkout or a repository, and
   MCP gains `ci_actions_report`. See `docs/actions-compat.md` for the gaps.
+
+- Forks share objects with their upstream and accept pull requests into it,
+  with fork CI kept away from secrets and OIDC (#36). Git LFS batch, transfer,
+  verify and lock APIs store objects in R2 with per repo and org quotas (#35).
+  Encrypted scheduled backups of D1 and R2 manifests to a separate bucket,
+  a tested restore into a fresh environment, and repository export as a Git
+  bundle plus metadata JSON (#70, docs/operations/backup-dr.md).
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps

@@ -5,6 +5,7 @@ import { getBlob } from '../core/blobs';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { ObjectCorruptError } from '../core/errors';
 import { getTree, type TreeEntry } from '../core/trees';
+import { storageId } from '../core/network';
 import { commitSignatures } from './identity';
 import {
   EMPTY_TREE,
@@ -65,7 +66,7 @@ export async function commitIdsFor(
     env,
     `SELECT ${C.gitCommits.sha1}, ${C.gitCommits.sha256} FROM ${T.gitCommits}
       WHERE ${C.gitCommits.repoId} = ? AND ${C.gitCommits.csId} = ?`,
-    [repoId, csId],
+    [storageId(repoId), csId],
   );
   return row ? idsOf(row) : null;
 }
@@ -81,7 +82,7 @@ export function commitIdsForMany(
       `SELECT ${C.gitCommits.csId}, ${C.gitCommits.sha1}, ${C.gitCommits.sha256}
          FROM ${T.gitCommits}
         WHERE ${C.gitCommits.repoId} = ? AND ${C.gitCommits.csId} IN (${marks})`,
-    [repoId],
+    [storageId(repoId)],
     csIds,
     C.gitCommits.csId,
   );
@@ -97,7 +98,7 @@ export async function changesetForSha1(
     env,
     `SELECT ${C.gitCommits.csId} FROM ${T.gitCommits}
       WHERE ${C.gitCommits.repoId} = ? AND ${C.gitCommits.sha1} = ?`,
-    [repoId, sha1],
+    [storageId(repoId), sha1],
   );
   return row ? String(row[C.gitCommits.csId]) : null;
 }
@@ -114,7 +115,7 @@ export function treeIdsFor(
       `SELECT ${C.gitTrees.treeHash}, ${C.gitTrees.sha1}, ${C.gitTrees.sha256}
          FROM ${T.gitTrees}
         WHERE ${C.gitTrees.repoId} = ? AND ${C.gitTrees.treeHash} IN (${marks})`,
-    [repoId],
+    [storageId(repoId)],
     treeHashes,
     C.gitTrees.treeHash,
   );
@@ -159,7 +160,7 @@ export async function resolveSha1(
      SELECT 'blob', ${C.gitBlobs.blobHash} FROM ${T.gitBlobs}
       WHERE ${C.gitBlobs.sha1} = ?2
      LIMIT 1`,
-    [repoId, sha1],
+    [storageId(repoId), sha1],
   );
   if (!row) return null;
   return { type: row.type as GitObjectType, id: String(row.id) };

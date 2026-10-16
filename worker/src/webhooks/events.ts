@@ -27,6 +27,8 @@ export const WEBHOOK_EVENTS = [
   'release',
   // package registry (#53): published, tagged, deleted
   'package',
+  // forks (#36): yag-format hooks only for now
+  'fork',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
