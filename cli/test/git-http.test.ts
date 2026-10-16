@@ -126,6 +126,19 @@ describe.runIf(enabled)('git smart HTTP against wrangler dev (CI smoke)', () => 
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  it('routes the SSH gateway endpoint to the Worker, which hides it here', async () => {
+    // the assets layer would answer 405; the Worker answers 404 off the gateway host
+    const res = await fetch(`http://127.0.0.1:${port}/internal/ssh/authorize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-ssh-gateway-key': 'x' },
+      body: '{}',
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      'not_found',
+    );
+  });
+
   it('answers anonymous Git requests with 401 and WWW-Authenticate', async () => {
     const res = await fetch(
       `http://127.0.0.1:${port}/ada/smoke.git/info/refs?service=git-upload-pack`,

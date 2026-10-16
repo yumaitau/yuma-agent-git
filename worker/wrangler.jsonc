@@ -26,6 +26,8 @@
       "/.well-known/oauth-*",
       // signed unsubscribe links in notification email (#44)
       "/notifications/unsubscribe",
+      // the SSH gateway's token endpoint (#34), internal hostname only
+      "/internal/*",
     ],
   },
   "observability": {
