@@ -21,6 +21,8 @@ export type AuditAction =
   | 'repo.initialize'
   | 'repo.connect'
   | 'repo.import'
+  | 'org.import'
+  | 'org.import.resume'
   | 'repo.export'
   | 'member.set'
   | 'member.remove'

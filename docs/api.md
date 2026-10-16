@@ -259,7 +259,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-260 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+264 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                                       | Auth                    | Permission                                                                      | Rate bucket  | Purpose                                                                                                                                                                       |
 | ------ | ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -320,6 +320,10 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/orgs/:org/audit`                                  | any                     | —                                                                               | api_read     | Search or export the org audit chain                                                                                                                                          |
 | GET    | `/api/v1/orgs/:org/hooks`                                  | session                 | org owner                                                                       | api_read     | List org webhooks                                                                                                                                                             |
 | POST   | `/api/v1/orgs/:org/hooks`                                  | session                 | org owner                                                                       | api_write    | Create an org webhook (all org repositories)                                                                                                                                  |
+| GET    | `/api/v1/orgs/:org/imports`                                | any                     | org owner or admin; token needs `repo:write`, no agents                         | api_read     | Recent GitHub bulk imports                                                                                                                                                    |
+| POST   | `/api/v1/orgs/:org/imports`                                | any                     | org owner or admin; token needs `repo:write`, no agents                         | api_write    | Import a GitHub org (history, issues, pulls, releases, LFS)                                                                                                                   |
+| GET    | `/api/v1/orgs/:org/imports/:id`                            | any                     | org owner or admin; token needs `repo:write`, no agents                         | api_read     | Bulk import progress and per-repo report                                                                                                                                      |
+| POST   | `/api/v1/orgs/:org/imports/:id/resume`                     | any                     | org owner or admin; token needs `repo:write`, no agents                         | api_write    | Retry failed repos from their checkpoints                                                                                                                                     |
 | GET    | `/api/v1/orgs/:org/members`                                | session                 | org member                                                                      | api_read     | List org members                                                                                                                                                              |
 | PUT    | `/api/v1/orgs/:org/members`                                | session                 | org owner or admin                                                              | api_write    | Add or change an org member                                                                                                                                                   |
 | DELETE | `/api/v1/orgs/:org/members/:userId`                        | session                 | org owner or admin                                                              | api_write    | Remove an org member (and from its teams)                                                                                                                                     |
@@ -673,6 +677,23 @@ mode?: "snapshot"|"full_history", ref?}` and returns `202 {job_id, status: "queu
   `{job_id, status, mode, commits_total, commits_done, checkpoint, error}`.
   Exports carry every path, so all three need whole-repository access (read for tarball
   and fast-import, write for GitHub).
+- `POST /api/v1/orgs/:org/imports` (org owner or admin) takes `{source: "github",
+github_org, installation_id, repos?: string[]}` and returns `202 {import}`. It
+  imports every repo the GitHub App installation reaches (or only `repos`) into new
+  private `<org>/<name>` repos: Git history over smart HTTP with the same commit SHAs,
+  branches and tags, then labels, milestones, issues (numbers, assignees, sub-issues,
+  `yuma:*` labels as work items), pull requests, comments, reviews and line threads,
+  releases (stored for the releases feature, assets in R2 up to 25 MiB) and LFS objects
+  named by pointers. GitHub accounts map to users by linked GitHub identity or verified
+  email, else to a placeholder user the person claims by signing in with GitHub. The
+  installation token is narrowed to read permissions. Sessions need a recent MFA step-up;
+  tokens must be unbound with `repo:write`; agents get 403.
+- `GET /api/v1/orgs/:org/imports/:id` returns `{import: {status, resume_at, totals,
+repos: [{github, repo, status, phase, counts, warnings, error}]}}`. `status` is
+  `queued`, `running`, `rate_limited` (paused until `resume_at`), `done`, `partial`
+  (some repos failed) or `failed`. Each step checkpoints; a repo that fails keeps its
+  checkpoint and `POST …/imports/:id/resume` retries it from there. Re-running an
+  import into the same repos adds nothing already imported.
 
 - `GET …/export/tarball?cs=` streams `application/gzip`, named
   `<owner>-<name>-<cs8>.tar.gz`. The cap is 100k objects or 512 MiB

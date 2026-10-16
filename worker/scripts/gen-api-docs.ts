@@ -373,6 +373,12 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/orgs': 'Create an org (caller becomes owner)',
   'GET /api/v1/orgs': 'Orgs the caller belongs to',
   'GET /api/v1/orgs/:org': 'One org and the caller role',
+  'GET /api/v1/orgs/:org/imports': 'Recent GitHub bulk imports',
+  'POST /api/v1/orgs/:org/imports':
+    'Import a GitHub org (history, issues, pulls, releases, LFS)',
+  'GET /api/v1/orgs/:org/imports/:id': 'Bulk import progress and per-repo report',
+  'POST /api/v1/orgs/:org/imports/:id/resume':
+    'Retry failed repos from their checkpoints',
   'PATCH /api/v1/orgs/:org': 'Org settings (owners)',
   'GET /api/v1/orgs/:org/sso': 'Org SSO settings and whether the caller meets them',
   'PUT /api/v1/orgs/:org/sso': 'Set org SSO (owners, recent MFA)',
@@ -473,6 +479,9 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     );
   }
   if (/loadOwnedOrg\d*\(/.test(src)) parts.push('org owner');
+  if (/loadImportOrg\d*\(/.test(src)) {
+    parts.push('org owner or admin; token needs `repo:write`, no agents');
+  }
   if (/loadHook\d*\(/.test(src)) parts.push("manages the hook's repo, org or app");
   if (/loadManagedApp\d*\(/.test(src)) parts.push('app owner');
   if (/guardPathRead\d*\(/.test(src)) parts.push('path:read');

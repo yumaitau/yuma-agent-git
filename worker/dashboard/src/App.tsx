@@ -8,6 +8,7 @@ import { IssueView } from './views/IssueView';
 import { BoardView } from './views/Board';
 import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
+import { ImportView } from './views/Import';
 import { WebhooksView } from './views/Webhooks';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
@@ -60,6 +61,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org/runners" element={<RunnersView />} />
+                <Route path="/orgs/:org/imports" element={<ImportView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />
                 <Route path="/r/:owner/:name/issues" element={<IssuesView />} />
                 <Route path="/r/:owner/:name/issues/new" element={<NewIssueView />} />

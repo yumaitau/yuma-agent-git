@@ -26,6 +26,7 @@ import { codeSchema } from '../auth/totp';
 import { connectSchema } from '../bridge/github';
 import { exportRequestSchema } from '../bridge/exportPush';
 import { importRequestSchema } from '../bridge/import';
+import { bulkImportSchema } from '../bridge/bulk-import';
 import { mintSchema } from '../middleware/cachetier';
 import { rpcSchema } from '../agents/mcp';
 import {
@@ -360,6 +361,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'PATCH /api/v1/orgs/:org': { id: 'updateOrg', body: patchOrgSchema },
   'GET /api/v1/orgs/:org/audit': { id: 'searchOrgAudit', query: auditQuerySchema },
   'GET /api/v1/orgs/:org/hooks': { id: 'listOrgHooks' },
+  'GET /api/v1/orgs/:org/imports': { id: 'listOrgImports' },
+  'POST /api/v1/orgs/:org/imports': { id: 'startOrgImport', body: bulkImportSchema },
+  'GET /api/v1/orgs/:org/imports/:id': { id: 'getOrgImport' },
+  'POST /api/v1/orgs/:org/imports/:id/resume': { id: 'resumeOrgImport' },
   'POST /api/v1/orgs/:org/hooks': { id: 'createOrgHook', body: hookInputSchema },
   'GET /api/v1/orgs/:org/members': { id: 'listOrgMembers' },
   'PUT /api/v1/orgs/:org/members': { id: 'putOrgMember', body: putMemberSchema },
