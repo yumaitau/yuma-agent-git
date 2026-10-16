@@ -125,7 +125,7 @@ async function call(
 }
 
 async function authorize(
-  input: { fingerprint: string; repo: string; service: string },
+  input: { fingerprint: string; repo?: string; service?: string },
   opts: { host?: string; key?: string | null } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
@@ -467,6 +467,21 @@ describe('POST /internal/ssh/authorize', () => {
     expect(
       (await authorize({ fingerprint, repo: SLUG, service: 'git-shell' })).status,
     ).toBe(400);
+    expect((await authorize({ fingerprint, repo: SLUG })).status).toBe(400);
+  });
+
+  it('checks a key alone for the SSH handshake, minting nothing', async () => {
+    const { fingerprint } = await addKey(owner, await ed25519());
+    const known = await authorize({ fingerprint });
+    expect(known.status).toBe(200);
+    expect(await known.json()).toEqual({ ok: true });
+    const deploy = await addDeployKey(await ed25519());
+    expect((await authorize({ fingerprint: deploy.fingerprint })).status).toBe(200);
+    const unknown = await authorize({
+      fingerprint: await fingerprintOf(await ed25519()),
+    });
+    expect(unknown.status).toBe(403);
+    expect(await q(dbEnv, 'SELECT * FROM ssh_tokens')).toEqual([]);
   });
 
   it('a user key clones with a read token that cannot push or reach LFS', async () => {

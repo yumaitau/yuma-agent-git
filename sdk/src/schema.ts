@@ -5092,7 +5092,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** SSH gateway: a 60-second Git token for one key, repo and service (internal host only) */
+    /** SSH gateway: check a key, or get a 60-second Git token for one key, repo and service (internal host only) */
     post: operations['authorizeSsh'];
     delete?: never;
     options?: never;
@@ -17225,9 +17225,9 @@ export interface operations {
       content: {
         'application/json': {
           fingerprint: string;
-          repo: string;
+          repo?: string;
           /** @enum {string} */
-          service: 'git-upload-pack' | 'git-receive-pack';
+          service?: 'git-upload-pack' | 'git-receive-pack';
         };
       };
     };

@@ -16062,7 +16062,7 @@
     "/internal/ssh/authorize": {
       "post": {
         "operationId": "authorizeSsh",
-        "summary": "SSH gateway: a 60-second Git token for one key, repo and service (internal host only)",
+        "summary": "SSH gateway: check a key, or get a 60-second Git token for one key, repo and service (internal host only)",
         "security": [{ "sshGatewayKey": [] }],
         "x-yag-permission": "per key: as smart HTTP",
         "x-yag-rate-bucket": "api_write",
@@ -16083,7 +16083,7 @@
                     "enum": ["git-upload-pack", "git-receive-pack"]
                   }
                 },
-                "required": ["fingerprint", "repo", "service"]
+                "required": ["fingerprint"]
               }
             }
           }

@@ -242,7 +242,7 @@ const PURPOSES: Record<string, string> = {
   'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
   'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
   'POST /internal/ssh/authorize':
-    'SSH gateway: a 60-second Git token for one key, repo and service (internal host only)',
+    'SSH gateway: check a key, or get a 60-second Git token for one key, repo and service (internal host only)',
   'POST /runner/v1/register':
     'Register a self-hosted runner with a one-time token (credential returned once)',
   'POST /runner/v1/jobs/claim':

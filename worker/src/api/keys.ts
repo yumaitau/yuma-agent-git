@@ -24,8 +24,11 @@ import { apiError, errorResponse, readJsonBody } from './errors';
  * GET|POST /api/v1/repos/:repo/deploy-keys, DELETE /:id  a repo's deploy keys (admins)
  * POST     /internal/ssh/authorize                       the SSH gateway only
  *
- * The gateway checks the client's key signature, then asks for a token that
- * lasts 60 seconds and covers one repository and one Git service, and speaks
+ * During the SSH handshake the gateway asks whether a key is registered (just
+ * the fingerprint), so clients move on to their next key when it is not. Once
+ * the client has proved it holds the key and asked for a Git command, the
+ * gateway asks for a token that lasts 60 seconds and covers one repository
+ * and one Git service, and speaks
  * smart HTTP with it (git/http.ts takes it as the Basic password). Every use
  * of a token re-reads its key, so removing a key stops it at once. Keys are
  * managed from a signed-in session only, with a recent second factor to add.
@@ -387,11 +390,17 @@ keysRoutes.delete(`${DEPLOY}/:id`, async (c) => {
 // the gateway's endpoint and its tokens
 // ---------------------------------------------------------------------------
 
-export const sshAuthorizeSchema = z.object({
-  fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]{43}$/),
-  repo: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
-  service: z.enum(SERVICES),
-});
+/** Without repo and service it only checks the key, for the SSH handshake. */
+export const sshAuthorizeSchema = z
+  .object({
+    fingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/]{43}$/),
+    repo: z
+      .string()
+      .regex(/^[^/\s]+\/[^/\s]+$/)
+      .optional(),
+    service: z.enum(SERVICES).optional(),
+  })
+  .refine((b) => (b.repo === undefined) === (b.service === undefined));
 
 /** A registered key: a person's (active users only) or a repo's deploy key. */
 type SshKey =
@@ -500,7 +509,7 @@ sshGatewayRoutes.post('/internal/ssh/authorize', async (c) => {
     const input = parse(
       sshAuthorizeSchema,
       await readJsonBody(c),
-      'Send fingerprint (SHA256:…), repo (owner/name) and service',
+      'Send fingerprint (SHA256:…), and repo (owner/name) with service',
     );
     const row = await q1(
       c.env,
@@ -511,16 +520,18 @@ sshGatewayRoutes.post('/internal/ssh/authorize', async (c) => {
     );
     const key = row && keyOf(row);
     if (!key) return apiError(c, 403, 'unknown_key', 'this key is not registered');
-    const repo: RepoRecord | null = await getRepoBySlug(c.env, input.repo);
-    const notFound = () => apiError(c, 404, 'repo_not_found', `no repo ${input.repo}`);
+    const { repo: slug, service } = input;
+    if (slug === undefined || service === undefined) return c.json({ ok: true });
+    const repo: RepoRecord | null = await getRepoBySlug(c.env, slug);
+    const notFound = () => apiError(c, 404, 'repo_not_found', `no repo ${slug}`);
     if (!repo || (key.kind === 'deploy' && key.repoId !== repo.id)) return notFound();
-    const principal = sshPrincipal(key, repo.id, input.service);
+    const principal = sshPrincipal(key, repo.id, service);
     const origin = new URL(c.req.url).origin;
     const read = await decide(c.env, repo, principal, 'read');
     if (read.ssoRequired)
       return apiError(c, 403, 'sso_required', ssoMessage(read.ssoRequired, origin));
     if (!read.allowed) return notFound();
-    if (input.service === 'git-receive-pack') {
+    if (service === 'git-receive-pack') {
       if (key.kind === 'deploy' && key.readOnly)
         return apiError(c, 403, 'deploy_key_read_only', 'this deploy key is read-only');
       const write = await decide(c.env, repo, principal, 'write');
@@ -546,7 +557,7 @@ sshGatewayRoutes.post('/internal/ssh/authorize', async (c) => {
         key.kind,
         key.id,
         repo.id,
-        input.service,
+        service,
         expiresAt,
       ],
     );
@@ -559,7 +570,7 @@ sshGatewayRoutes.post('/internal/ssh/authorize', async (c) => {
       token,
       expires_at: expiresAt,
       repo: repo.slug,
-      service: input.service,
+      service,
     });
   } catch (err) {
     return errorResponse(c, err);
