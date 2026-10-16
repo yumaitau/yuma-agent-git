@@ -174,3 +174,9 @@ Reusable `uses` steps, per-job runner labels, manual inputs, merge group and
 path-ignore filters, and retrying a single pipeline job (start the pipeline
 again). Branch moves through the API (`PUT /refs`, agent land) do
 not start `push` pipelines.
+
+## GitHub Actions workflows
+
+Repositories that still have `.github/workflows` files can check how they
+translate to this spec, and opt in to running them until they move to
+`.yuma/pipelines`. See [actions-compat.md](actions-compat.md).
