@@ -38,6 +38,8 @@ const WIPE_ORDER = [
   'github_import_users',
   'bulk_import_repos',
   'bulk_imports',
+  'repo_migrations',
+  'mirrors',
   'approvals',
   'agent_pauses',
   'agent_policies',

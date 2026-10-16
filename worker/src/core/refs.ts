@@ -7,6 +7,7 @@ import { ApiError, ConflictError, RequestValidationError } from './errors';
 import { timePhase } from '../observability/phase';
 import { recordRefMove } from '../observability/metrics';
 import type { Principal } from '../auth/principal';
+import { requestPushMirrors } from '../mirrors/queue';
 
 export { getRef, listRefs };
 export type { RefRecord };
@@ -175,6 +176,8 @@ export async function moveRefViaDO(
       );
     }
     await recordRefMove(env, false);
+    // push mirrors (#36) follow every accepted move of a branch or tag
+    if (!name.startsWith(AGENT_PREFIX)) await requestPushMirrors(env, repoId);
     return parsed.data;
   }
 

@@ -17,6 +17,8 @@ import { expireLeases } from './collab/work';
 import { webhooksQueue } from './queues/webhooks';
 import { sweepDeliveries } from './webhooks/deliver';
 import { registryCleanup } from './registry/packages';
+import { mirrorQueue, scheduleMirrors } from './mirrors/sync';
+import type { MirrorMessage } from './mirrors/queue';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -32,7 +34,7 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
@@ -41,6 +43,9 @@ export default {
     await run(env, 'DELETE FROM oauth_codes WHERE expires_at < ?', [Date.now()]);
     await sweepDeliveries(env);
     await kickAuditStream(env);
+    await scheduleMirrors(env).catch(() =>
+      console.warn('Mirror scheduling will be retried by the next sweep'),
+    );
     // Work queue claims whose agent stopped heartbeating go back to `ready`.
     await expireLeases(env).catch(() =>
       console.warn('Work queue lease expiry will be retried by the next sweep'),
@@ -108,6 +113,8 @@ export default {
         return auditStreamQueue(batch, env);
       case 'forge-events':
         return webhooksQueue(batch, env);
+      case 'mirror-sync':
+        return mirrorQueue(batch as MessageBatch<MirrorMessage>, env);
       default:
         console.error(`queue: unknown queue ${batch.queue}, acking`);
         batch.ackAll();

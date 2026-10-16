@@ -887,6 +887,45 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: { keep_untagged: 1 },
         expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such package
       },
+      // mirrors and cutover (#36, #73): admins with a session
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/mirrors',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/mirrors',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 400 },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/v1/repos/acme/sweep/mirrors/missing',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such mirror
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/repos/acme/sweep/mirrors/missing',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such mirror
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/mirrors/missing/sync',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such mirror
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/migration',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/migration',
+        body: { to: 'dual' },
+        expect: { anon: 401, stranger: 404, creator: 409 }, // github -> dual skips a stage
+      },
     ];
 
     for (const entry of sweep) {

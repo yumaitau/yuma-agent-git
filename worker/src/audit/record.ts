@@ -151,7 +151,12 @@ export type AuditAction =
   | 'package.publish'
   | 'package.tag'
   | 'package.delete'
-  | 'package.settings.update';
+  | 'package.settings.update'
+  | 'mirror.create'
+  | 'mirror.update'
+  | 'mirror.delete'
+  | 'mirror.sync'
+  | 'repo.migration';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

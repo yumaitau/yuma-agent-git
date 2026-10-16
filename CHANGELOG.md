@@ -91,6 +91,18 @@ github` and the org Import page bring a GitHub org's repos in with the same
   limits pause the job, failed repos resume from their checkpoint, and a re-run
   adds nothing twice. Accounts match by linked GitHub identity or verified
   email, else become claimable placeholders.
+- Pull and push mirrors and the per-repo GitHub cutover (#36, #73). A pull
+  mirror fetches a remote's branches and tags over Git smart HTTP and lands
+  them through receive-pack with the same SHAs; a push mirror pushes the
+  forge's branches and tags back, never rewriting remote history unless force
+  is on. Refs both sides moved are reported as diverged and left alone.
+  Syncs run from the new `mirror-sync` queue on a schedule, on demand and
+  after every ref move. Tokens are stored with the #50 envelope encryption and
+  never returned or logged; the GitHub App can be used instead. A repo moves
+  `github` -> `mirror` -> `dual` -> `cutover` and back, each move checked and
+  audited; `cutover` archives the GitHub repository after a typed approval.
+  Routes: `/api/v1/repos/:repo/mirrors[...]` and `/api/v1/repos/:repo/migration`.
+  See `docs/migration/cutover.md`.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

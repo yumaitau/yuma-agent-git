@@ -44,6 +44,8 @@ export interface Env {
   AGENTS_ADMIN_USER_IDS?: string;
   /** Queue `forge-events` (issue #75): domain events and webhook delivery retries. */
   EVENTS_QUEUE?: Queue;
+  /** Queue `mirror-sync` (issues #36, #73): pull and push mirror syncs. */
+  MIRROR_QUEUE?: Queue;
   /** "true" lets webhooks use http:// URLs (local testing). Private addresses stay refused. */
   WEBHOOKS_ALLOW_HTTP?: string;
   /** Package registry (issue #53): storage quota per owner in bytes (default 10 GiB). */

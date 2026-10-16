@@ -656,6 +656,12 @@ const AUDITED: Record<string, AuditAction> = {
     'release.asset.delete',
   'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases/:id/attestations': 'release.attest',
   'PUT /api/v1/orgs/:org/release-settings': 'org.release_settings.set',
+  'POST /api/v1/repos/:repo{.+}/mirrors': 'mirror.create',
+  'PATCH /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.update',
+  'DELETE /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.delete',
+  // when the sync moved a ref or failed; a no-op sync changes nothing
+  'POST /api/v1/repos/:repo{.+}/mirrors/:id/sync': 'mirror.sync',
+  'POST /api/v1/repos/:repo{.+}/migration': 'repo.migration',
 };
 const EXEMPT: Record<string, string> = {
   'POST /v2/token':

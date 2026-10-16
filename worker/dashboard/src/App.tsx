@@ -14,6 +14,7 @@ import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
 import { SearchView } from './views/Search';
 import { ReleasesView } from './views/Releases';
+import { MirrorsView } from './views/Mirrors';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
@@ -84,6 +85,7 @@ function AppRoutes(): ReactElement {
                   element={<SecretScanningView />}
                 />
                 <Route path="/r/:owner/:name/releases" element={<ReleasesView />} />
+                <Route path="/r/:owner/:name/mirrors" element={<MirrorsView />} />
                 <Route path="/oauth/authorize" element={<OAuthAuthorizeView />} />
                 <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
                 <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
