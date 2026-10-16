@@ -24,6 +24,7 @@ export { RefLockDO, RefLock } from './core/refdo';
 export { YagAgent } from './agents/runtime';
 export { SuperfanDO } from './agents/superfan';
 export { RateLimitDO } from './middleware/ratelimit';
+export { MergeQueueDO } from './queue/mergeQueue';
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext): Response | Promise<Response> {

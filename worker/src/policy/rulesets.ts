@@ -54,6 +54,14 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('required_review_thread_resolution') }),
   // an owner of each changed file (CODEOWNERS, #40) approved the revision
   z.object({ type: z.literal('require_code_owner_review') }),
+  // updates land only through the merge queue (#43), which this rule configures
+  z.object({
+    type: z.literal('merge_queue'),
+    /** strict: test each group before landing; optimistic: land, then check and revert. */
+    mode: z.enum(['strict', 'optimistic']).default('strict'),
+    /** Most pull requests one merge group carries. */
+    max_batch: z.number().int().min(1).max(50).default(5),
+  }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
 const globSchema = z.string().min(1).max(256);
@@ -312,6 +320,8 @@ export interface RefFacts {
      */
     codeOwners?: { unapproved: readonly string[]; truncated: boolean };
   };
+  /** The merge queue (#43) makes this move. */
+  queue?: boolean;
 }
 
 export interface FileFacts {
@@ -420,6 +430,10 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
       const more = files.length > 3 ? ` and ${files.length - 3} more` : '';
       return `Code owner approval required for ${shown}${more}.`;
     }
+    case 'merge_queue':
+      return ref.kind === 'update' && !ref.queue
+        ? `${name} only changes through the merge queue; add the pull request to the queue.`
+        : null;
     default:
       return null;
   }
@@ -498,6 +512,25 @@ export function evaluate(rulesets: readonly Ruleset[], input: EvalInput): Outcom
   }
   out.allowed = out.blocking.length === 0;
   return out;
+}
+
+export type MergeQueueRule = Extract<Rule, { type: 'merge_queue' }>;
+
+/**
+ * The merge queue settings for `ref`: the first active `merge_queue` rule
+ * that covers it (repo rulesets before org ones), or null when it has none.
+ */
+export function mergeQueueRule(
+  rulesets: readonly Ruleset[],
+  repo: Pick<RepoRecord, 'slug' | 'default_branch'>,
+  ref: string,
+): MergeQueueRule | null {
+  for (const ruleset of rulesets) {
+    if (ruleset.enforcement !== 'active' || !applies(ruleset, repo, ref)) continue;
+    const rule = ruleset.rules.find((r): r is MergeQueueRule => r.type === 'merge_queue');
+    if (rule) return rule;
+  }
+  return null;
 }
 
 /** `ruleset "<name>": <message>` — the form `git push` and API errors show. */

@@ -67,7 +67,7 @@ export interface PipelineRun {
   id: string;
   pipeline: string;
   name: string;
-  event: 'push' | 'pull_request' | 'manual' | 'schedule';
+  event: 'push' | 'pull_request' | 'manual' | 'schedule' | 'merge_group';
   ref: string | null;
   head_cs: string;
   concurrency_group: string | null;

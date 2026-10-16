@@ -9,8 +9,11 @@ import type { AppEnv, Principal } from '../auth/principal';
  * claims and environment rules read it; a run without it gets no credentials.
  */
 export const runContextSchema = z.object({
-  event: z.enum(['push', 'pull_request', 'workflow_dispatch', 'schedule']),
-  /** `refs/heads/<b>`, `refs/tags/<t>`, `refs/pull/<n>/merge`, or null for a bare revision. */
+  event: z.enum(['push', 'pull_request', 'workflow_dispatch', 'schedule', 'merge_group']),
+  /**
+   * `refs/heads/<b>`, `refs/tags/<t>`, `refs/pull/<n>/merge`,
+   * `refs/merge-queue/<b>/<group>` or null for a bare revision.
+   */
   ref: z.string().max(512).nullable(),
   pull_id: z.number().int().nullable().default(null),
   /** A pull request whose head comes from another repository. */

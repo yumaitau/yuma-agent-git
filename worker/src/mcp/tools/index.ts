@@ -254,6 +254,34 @@ const SPECS: ToolSpec[] = [
     destructive: true,
   },
   {
+    name: 'pr_enqueue',
+    title: 'Add pull request to the merge queue',
+    route: 'POST /api/v1/repos/:repo/pulls/:id/queue',
+    description:
+      'Queue a pull request at `head_cs` and `revision` (from `pr_get`) to land through its target branch merge queue. The queue tests it with the pull requests ahead of it and lands or ejects it.',
+    scope: 'pulls:write',
+    params: { id: pullNumber },
+  },
+  {
+    name: 'pr_dequeue',
+    title: 'Remove pull request from the merge queue',
+    route: 'DELETE /api/v1/repos/:repo/pulls/:id/queue',
+    description: 'Take a queued pull request out of its merge queue.',
+    scope: 'pulls:write',
+    params: { id: pullNumber },
+    destructive: true,
+    idempotent: true,
+  },
+  {
+    name: 'merge_queue_get',
+    title: 'Merge queue',
+    route: 'GET /api/v1/repos/:repo/merge-queue',
+    description:
+      'The merge queue of a branch (`ref`, default branch when omitted): queued and testing pull requests in landing order, recent results and merge groups.',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
     name: 'pr_conflicts',
     title: 'Pull request conflicts',
     route: 'GET /api/v1/repos/:repo/pulls/:id/conflicts',

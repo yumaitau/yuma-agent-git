@@ -64,6 +64,8 @@ const triggers = z.preprocess(
         .partial()
         .nullable()
         .optional(),
+      // merge queue groups (#43), filtered by the branch they land on
+      merge_group: z.strictObject({ branches: patterns }).partial().nullable().optional(),
       manual: z.strictObject({}).nullable().optional(),
       schedule: z
         .array(

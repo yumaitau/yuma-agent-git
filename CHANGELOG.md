@@ -49,6 +49,18 @@ All notable changes to this project are documented here. The format follows
   changed file approves, reading owners from the target branch.
   `GET …/codeowners` and `GET …/pulls/:id/codeowners` show owners and file
   errors; the pull request page lists them.
+- Merge queue (#43). A branch ruleset rule `merge_queue` (`mode` `strict` or
+  `optimistic`, `max_batch`) turns the queue on and refuses every other update
+  of the branch: merges, ref moves and `git push`. `…/pulls/:id/queue` adds
+  (`POST`, with `priority`) and removes (`DELETE`) pull requests;
+  `…/merge-queue` and the dashboard queue page show the queue. One Durable
+  Object per repo and branch builds merge groups with the server-side merge, runs
+  pipelines with the new `merge_group` trigger on them and lands a green group
+  with one compare-and-swap move; a failing group is bisected and the failing
+  pull request ejected with a comment. Optimistic mode lands first and
+  reverts, then reopens, a group whose post-land checks fail. Webhooks get
+  `merge_group` events and `enqueued`/`dequeued` pull request actions; MCP
+  gets `pr_enqueue`, `pr_dequeue` and `merge_queue_get`.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each

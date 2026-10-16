@@ -23,6 +23,7 @@ export const WEBHOOK_EVENTS = [
   'ci_run',
   'work_item',
   'secret_scanning_alert',
+  'merge_group',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

@@ -86,6 +86,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
           ['Issues', '/issues'],
           ['Board', '/board'],
           ['Pull requests', '/pulls'],
+          ['Merge queue', '/queue'],
           ['CI', '/ci'],
           ['Security', '/secret-scanning'],
         ].map(([name, tail]) => (
@@ -405,18 +406,37 @@ export function PullView(): ReactElement {
                     </option>
                   ))}
                 </select>
-                <button
-                  disabled={
-                    busy ||
-                    !data.gate.mergeable ||
-                    conflicts?.mergeable === false ||
-                    !data.gate.methods.includes(chosen)
-                  }
-                  className="primary"
-                  onClick={() => void action('merge', { head_cs: tip, method: chosen })}
-                >
-                  {METHOD_LABELS[chosen]}
-                </button>
+                {data.gate.merge_queue ? (
+                  <>
+                    <button
+                      disabled={busy || conflicts?.mergeable === false}
+                      className="primary"
+                      onClick={() =>
+                        void action('queue', { head_cs: tip, method: chosen })
+                      }
+                    >
+                      Add to merge queue
+                    </button>
+                    <Link
+                      to={`/r/${slug}/queue?ref=${encodeURIComponent(data.pull.base_ref)}`}
+                    >
+                      View queue
+                    </Link>
+                  </>
+                ) : (
+                  <button
+                    disabled={
+                      busy ||
+                      !data.gate.mergeable ||
+                      conflicts?.mergeable === false ||
+                      !data.gate.methods.includes(chosen)
+                    }
+                    className="primary"
+                    onClick={() => void action('merge', { head_cs: tip, method: chosen })}
+                  >
+                    {METHOD_LABELS[chosen]}
+                  </button>
+                )}
                 {conflicts && conflicts.target_cs !== data.pull.base_cs && (
                   <>
                     <button

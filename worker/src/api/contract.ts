@@ -55,6 +55,8 @@ import {
 import { fetchObjectsSchema } from './objects';
 import { createChangesetSchema } from './changesets';
 import { alertListQuery, updateAlertSchema } from './secret-scanning';
+import { queueListQuery } from './mergeQueue';
+import { enqueueSchema } from '../queue/mergeQueue';
 import {
   approvalsQuery,
   decisionSchema,
@@ -653,6 +655,9 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/pulls': { id: 'createPull', body: createPull },
   'GET /api/v1/repos/:repo/pulls/:id': { id: 'getPull' },
   'GET /api/v1/repos/:repo/pulls/:id/conflicts': { id: 'getPullConflicts' },
+  'POST /api/v1/repos/:repo/pulls/:id/queue': { id: 'enqueuePull', body: enqueueSchema },
+  'DELETE /api/v1/repos/:repo/pulls/:id/queue': { id: 'dequeuePull' },
+  'GET /api/v1/repos/:repo/merge-queue': { id: 'getMergeQueue', query: queueListQuery },
   'POST /api/v1/repos/:repo/pulls/:id/merge': { id: 'mergePull', body: mergePullSchema },
   'POST /api/v1/repos/:repo/pulls/:id/update-branch': {
     id: 'updatePullBranch',

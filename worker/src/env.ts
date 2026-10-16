@@ -50,6 +50,8 @@ export interface Env {
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */
   REF_LOCK: DurableObjectNamespace;
+  /** Merge queues (issue #43) — one Durable Object per repo and base ref. */
+  MERGE_QUEUE: DurableObjectNamespace;
   /** Agent runtime namespace (issue #17) — one Durable Object per task. */
   AGENT: DurableObjectNamespace;
   /** Superfan monitors (issue #19) — one Durable Object per component. */

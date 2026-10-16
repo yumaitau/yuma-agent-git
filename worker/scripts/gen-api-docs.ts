@@ -306,6 +306,12 @@ const PURPOSES: Record<string, string> = {
     'Would it merge into the current target? Conflicting paths and hunks',
   'POST /api/v1/repos/:repo/pulls/:id/merge':
     'Merge a pull request (merge commit, squash or rebase)',
+  'POST /api/v1/repos/:repo/pulls/:id/queue':
+    'Add a pull request to its target branch merge queue',
+  'DELETE /api/v1/repos/:repo/pulls/:id/queue':
+    'Take a pull request out of the merge queue',
+  'GET /api/v1/repos/:repo/merge-queue':
+    'Merge queue of a branch: entries in order and groups',
   'POST /api/v1/repos/:repo/pulls/:id/update-branch':
     'Bring the target into the pull request (merge or rebase)',
   'POST /api/v1/repos/:repo/pulls/:id/review':
