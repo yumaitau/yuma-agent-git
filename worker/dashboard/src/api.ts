@@ -190,6 +190,7 @@ export const repoSchema = z.object({
   created_by: z.string().nullable().optional(),
   github_installation_id: z.number().nullable().optional(),
   github_repo_id: z.number().nullable().optional(),
+  refs_mode: z.enum(['scion', 'git']).optional(),
 });
 export type Repo = z.infer<typeof repoSchema>;
 
@@ -449,6 +450,18 @@ export const api = {
       {},
       z.object({ repo: repoSchema, can_admin: z.boolean() }),
     );
+  },
+
+  async updateRepo(
+    slug: string,
+    input: { default_branch?: string; refs_mode?: 'scion' | 'git' },
+  ): Promise<Repo> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}`,
+      { method: 'PUT', body: input },
+      z.object({ repo: repoSchema }),
+    );
+    return body.repo;
   },
 
   async initializeRepo(slug: string): Promise<void> {

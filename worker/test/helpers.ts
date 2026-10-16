@@ -36,6 +36,7 @@ const WIPE_ORDER = [
   'import_jobs',
   'agent_tasks',
   'derived_data',
+  'tags',
   'git_commits',
   'git_trees',
   'git_blobs',

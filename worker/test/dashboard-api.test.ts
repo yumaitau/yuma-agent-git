@@ -105,7 +105,7 @@ describe('dashboard API (repos index, denied_by, assets precedence)', () => {
       new Request('https://x/api/v1/repos', {
         method: 'POST',
         headers: { ...ada.headers, 'content-type': 'application/json' },
-        body: JSON.stringify({ slug: 'ada/bad', default_branch: 'unsupported' }),
+        body: JSON.stringify({ slug: 'ada/bad', default_branch: 'bad..branch' }),
       }),
     );
     expect(invalid.status).toBe(400);

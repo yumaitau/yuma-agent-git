@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   api,
   asApiError,
@@ -13,7 +13,15 @@ import {
 import { tokenize, languageOf, type Token } from '../highlight';
 import { usePolling } from '../hooks';
 import { useSlug } from '../slug';
-import { Empty, ErrorNotice, Loading, authorLabel, formatBytes, shortId } from '../ui';
+import {
+  Empty,
+  ErrorNotice,
+  Loading,
+  RefPicker,
+  authorLabel,
+  formatBytes,
+  shortId,
+} from '../ui';
 
 // ---------------------------------------------------------------------------
 // File rendering helpers
@@ -235,6 +243,8 @@ export function TreeView(): ReactElement {
   const params = useParams();
   const cs = params.cs ?? '';
   const path = params['*'] ?? '';
+  const navigate = useNavigate();
+  const { data: refs } = usePolling(() => api.listRefs(slug), 60_000);
 
   const [tree, setTree] = useState<TreeState | null>(null);
   const [file, setFile] = useState<FileContent | null>(null);
@@ -277,6 +287,12 @@ export function TreeView(): ReactElement {
   }, [load]);
 
   const segments = path === '' ? [] : path.split('/');
+  // ref names contain slashes, so the revision is one encoded route segment
+  const base = `/r/${slug}/tree/${encodeURIComponent(cs)}`;
+  const switchRef = (name: string): void => {
+    const target = encodeURIComponent(`ref:${name}`);
+    navigate(`/r/${slug}/tree/${target}${path === '' ? '' : `/${path}`}`);
+  };
 
   return (
     <div>
@@ -284,17 +300,25 @@ export function TreeView(): ReactElement {
         <Link to={`/r/${slug}`}>{slug}</Link>
       </div>
       <div className="crumb" style={{ margin: '4px 0 14px' }}>
-        <Link to={`/r/${slug}/tree/${cs}`}>root</Link>
+        <Link to={base}>root</Link>
         {segments.map((seg, i) => {
           const sub = segments.slice(0, i + 1).join('/');
           return (
             <span key={sub} className="row" style={{ gap: 6 }}>
               <span className="sep">/</span>
-              <Link to={`/r/${slug}/tree/${cs}/${sub}`}>{seg}</Link>
+              <Link to={`${base}/${sub}`}>{seg}</Link>
             </span>
           );
         })}
-        <span className="faint small mono">@ {shortId(cs)}</span>
+        {refs && refs.length > 0 ? (
+          <RefPicker
+            refs={refs}
+            value={cs.startsWith('ref:') ? cs.slice('ref:'.length) : cs}
+            onChange={switchRef}
+          />
+        ) : (
+          <span className="faint small mono">@ {shortId(cs)}</span>
+        )}
       </div>
 
       {error && <ErrorNotice error={error} />}
@@ -342,7 +366,7 @@ export function TreeView(): ReactElement {
                           </span>
                         </td>
                         <td className="mono">
-                          <Link to={`/r/${slug}/tree/${cs}/${entryPath}`}>
+                          <Link to={`${base}/${entryPath}`}>
                             {entry.name}
                             {entry.kind === 'tree' ? '/' : ''}
                           </Link>

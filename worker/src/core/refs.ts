@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import type { RefRecord } from '../db/client';
 import { getRef, listRefs } from '../db/repos';
+import { run } from '../db/client';
 import { ApiError, ConflictError, RequestValidationError } from './errors';
 import { timePhase } from '../observability/phase';
 import { recordRefMove } from '../observability/metrics';
@@ -10,20 +11,79 @@ export { getRef, listRefs };
 export type { RefRecord };
 
 /**
- * Refs are discouraged global state (architecture §1.4): exactly `main` per
- * repo plus optional release refs. Everything else is a changeset id.
+ * Ref naming (issue #33). Branches use short names (`main`, `feature/x`);
+ * tags and agent work refs use full names under `refs/tags/` and
+ * `refs/agents/<agent>/`. Any other `refs/...` name is rejected so a branch
+ * can never alias another namespace.
+ *
+ * `scion` repos (the pilot, architecture §1.4) keep the old rule: `main`,
+ * `release/*` and short-lived agent refs. `git` repos accept any name Git's
+ * `check-ref-format` accepts.
  */
-export const REF_NAME_RE = /^(main|release\/[a-z0-9._-]+)$/;
+export type RefsMode = 'scion' | 'git';
 
-export function validateRefName(name: string): string {
-  if (name.length > 64 || !REF_NAME_RE.test(name)) {
+export const SCION_REF_RE = /^(main|release\/[a-z0-9._-]+)$/;
+export const TAG_PREFIX = 'refs/tags/';
+export const AGENT_PREFIX = 'refs/agents/';
+const AGENT_REF_RE = /^refs\/agents\/([A-Za-z0-9_-]+)\/./;
+/** Agent work refs untouched for this long are deleted by the cron sweep. */
+export const AGENT_REF_TTL_MS = 7 * 86400_000;
+
+/** Git `check-ref-format` rules, plus `git branch`'s no `HEAD` and no leading `-`. */
+export function checkRefFormat(name: string): boolean {
+  if (name === '' || name === '@' || name === 'HEAD' || name.startsWith('-'))
+    return false;
+  if (name.length > 255 || name.endsWith('.')) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x20\x7f~^:?*[\\]/.test(name)) return false;
+  if (name.includes('..') || name.includes('@{')) return false;
+  // empty components cover leading, trailing and doubled slashes
+  return name
+    .split('/')
+    .every((part) => part !== '' && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
+/** The agent id that owns a `refs/agents/<id>/...` ref, else null. */
+export function agentRefOwner(name: string): string | null {
+  return AGENT_REF_RE.exec(name)?.[1] ?? null;
+}
+
+export function validateRefName(name: string, mode: RefsMode = 'git'): string {
+  let ok = checkRefFormat(name);
+  if (ok && name.startsWith('refs/')) {
+    ok = agentRefOwner(name) !== null || (mode === 'git' && name.startsWith(TAG_PREFIX));
+  } else if (ok && mode === 'scion') {
+    ok = SCION_REF_RE.test(name);
+  }
+  if (!ok) {
     throw new RequestValidationError(
-      `invalid ref name ${JSON.stringify(name)}: only "main" and "release/*" exist (refs are discouraged)`,
+      mode === 'scion'
+        ? `invalid ref name ${JSON.stringify(name)}: this repository only allows "main", "release/*" and agent refs`
+        : `invalid ref name ${JSON.stringify(name)}: not a valid Git ref name`,
       { name },
       'invalid_ref_name',
     );
   }
   return name;
+}
+
+/** Branch names (default branch, PR bases) are short names outside `refs/`. */
+export function validateBranchName(name: string, mode: RefsMode = 'git'): string {
+  if (name.startsWith('refs/')) {
+    throw new RequestValidationError(
+      `invalid branch name ${JSON.stringify(name)}`,
+      { name },
+      'invalid_ref_name',
+    );
+  }
+  return validateRefName(name, mode);
+}
+
+/** Cron sweep: drop agent work refs idle longer than `AGENT_REF_TTL_MS`. */
+export async function expireAgentRefs(env: Env, now: number = Date.now()): Promise<void> {
+  await run(env, `DELETE FROM refs WHERE name LIKE 'refs/agents/%' AND updated_at < ?`, [
+    now - AGENT_REF_TTL_MS,
+  ]);
 }
 
 /** Direct D1 read of a ref head (stale reads acceptable for `ref:` resolution). */

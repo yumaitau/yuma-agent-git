@@ -64,7 +64,10 @@ CREATE INDEX idx_changesets_repo_created ON changesets(repo_id, created_at);
 
 ### 1.4 Refs (Durable Objects)
 
-Refs are discouraged global state (Scion principle 5). We support exactly: `main` per repo, plus optional release refs. Everything else is a changeset id, not a ref.
+Refs are discouraged global state (Scion principle 5). Most work is still addressed by changeset id, not a ref. Each repo has a `refs_mode` (issue #33):
+
+- `scion` (existing pilot repos): `main`, `release/*` and agent work refs only.
+- `git` (default for new repos): any name Git's `check-ref-format` accepts. Branches use short names (`feature/x`); tags live under `refs/tags/` (annotated tags add a `tags` row); agent work refs live under `refs/agents/<agent>/<task>`, are writable only by that agent's token, are hidden from listings unless the prefix asks for them, and expire after 7 idle days (cron).
 
 - One Durable Object instance per `(repo_id, ref_name)`.
 - `moveRef(from, to)` is a **compare-and-swap** inside the DO: read current head from D1, verify it equals `from`, write `to`, all in a storage transaction.
@@ -120,8 +123,11 @@ GET    /api/v1/repos/:repo/changesets/:id        # fetch one
 GET    /api/v1/repos/:repo/changesets?head=…&n=… # walk first-parent history
 
 # Refs
-GET    /api/v1/repos/:repo/refs
+GET    /api/v1/repos/:repo/refs?prefix=…&cursor=…&limit=…
 PUT    /api/v1/repos/:repo/refs/:name            # CAS move {from, to}
+GET    /api/v1/repos/:repo/tags?cursor=…&limit=…
+POST   /api/v1/repos/:repo/tags                  # {name, target, message?, signature?}
+PUT    /api/v1/repos/:repo                       # admin: {default_branch?, refs_mode?}
 
 # Queries (no checkout needed)
 GET    /api/v1/repos/:repo/file?cs=…&path=…      # file content at revision
