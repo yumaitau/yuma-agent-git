@@ -155,6 +155,7 @@ const PUBLIC = new Set([
   'GET /ci/oidc/jwks',
   'GET /ci/oidc/token',
   'POST /ci/oidc/token',
+  'POST /ci/code-scanning/sarif', // CI request token; the job's own repo (#67)
   // self-hosted runners (#48): a one-time registration token in the body,
   // then the runner's own credential (test/ci-runners.test.ts)
   'POST /runner/v1/register',
