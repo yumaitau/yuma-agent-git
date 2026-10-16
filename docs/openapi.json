@@ -52,6 +52,23 @@
         }
       }
     },
+    "/.well-known/yag-provenance-keys": {
+      "get": {
+        "operationId": "getProvenanceKeys",
+        "summary": "Provenance signing keys, current and previous (public)",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/{owner}/{repo}.git/git-receive-pack": {
       "post": {
         "operationId": "gitReceivePack",
@@ -1018,6 +1035,71 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/me/signing-keys": {
+      "get": {
+        "operationId": "listSigningKeys",
+        "summary": "Your commit signing keys",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "addSigningKey",
+        "summary": "Register an SSH or OpenPGP commit signing key",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["ssh", "gpg"] },
+                  "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "public_key": { "type": "string", "minLength": 1, "maxLength": 20000 }
+                },
+                "required": ["kind", "title", "public_key"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/me/signing-keys/{id}": {
+      "delete": {
+        "operationId": "deleteSigningKey",
+        "summary": "Remove a commit signing key",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }
@@ -7485,6 +7567,55 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/provenance": {
+      "get": {
+        "operationId": "listProvenance",
+        "summary": "Signed provenance records for a changeset or ref, checked against the keys",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "cs",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 256 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "default": 20, "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/pulls": {
       "get": {
         "operationId": "listPulls",
@@ -9748,6 +9879,188 @@
               "type": "string"
             }
           }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "Record an agent session and redacted transcript",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "model": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "harness": { "type": "string", "minLength": 1, "maxLength": 200 },
+                  "tools": {
+                    "default": [],
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+                  },
+                  "started_at": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "ended_at": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "transcript": { "type": "string", "maxLength": 5242880 },
+                  "changesets": {
+                    "default": [],
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                  }
+                },
+                "required": ["started_at"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/sessions/{id}": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "An agent session and its changesets",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/sessions/{id}/link": {
+      "post": {
+        "operationId": "linkSessionChangesets",
+        "summary": "Link more changesets to your session",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "changesets": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+                  }
+                },
+                "required": ["changesets"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/sessions/{id}/transcript": {
+      "get": {
+        "operationId": "getSessionTranscript",
+        "summary": "Redacted session transcript",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
         "responses": {
           "2XX": { "description": "Success" },
