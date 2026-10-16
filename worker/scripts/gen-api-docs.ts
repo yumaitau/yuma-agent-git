@@ -490,6 +490,71 @@ const PURPOSES: Record<string, string> = {
     'Git protocol v2 `ls-refs` and `fetch` (clone, fetch)',
   'POST /:owner/:repo.git/git-receive-pack':
     'Git push: pack, pre-receive checks, ref CAS',
+  'GET /api/github/v3': 'GitHub REST compatible root (docs/compat/github.md)',
+  'GET /api/github/v3/user': 'GitHub compatible: the signed-in user',
+  'GET /api/github/v3/user/repos': 'GitHub compatible: repositories the caller can read',
+  'GET /api/github/v3/repos/:owner/:repo': 'GitHub compatible: get a repository',
+  'GET /api/github/v3/repos/:owner/:repo/contents':
+    'GitHub compatible: list the root directory',
+  'GET /api/github/v3/repos/:owner/:repo/contents/:path':
+    'GitHub compatible: a file (base64) or a directory listing',
+  'GET /api/github/v3/repos/:owner/:repo/git/ref/:ref':
+    'GitHub compatible: get a branch or tag ref',
+  'POST /api/github/v3/repos/:owner/:repo/git/refs':
+    'GitHub compatible: create a branch or tag',
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref': 'GitHub compatible: get a commit',
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/check-runs':
+    'GitHub compatible: CI jobs for a commit as check runs',
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/statuses':
+    'GitHub compatible: CI jobs for a commit as statuses',
+  'GET /api/github/v3/repos/:owner/:repo/commits/:ref/status':
+    'GitHub compatible: combined status for a commit',
+  'GET /api/github/v3/repos/:owner/:repo/issues': 'GitHub compatible: list issues',
+  'POST /api/github/v3/repos/:owner/:repo/issues': 'GitHub compatible: open an issue',
+  'GET /api/github/v3/repos/:owner/:repo/issues/:number':
+    'GitHub compatible: get an issue',
+  'PATCH /api/github/v3/repos/:owner/:repo/issues/:number':
+    'GitHub compatible: edit, close or reopen an issue',
+  'GET /api/github/v3/repos/:owner/:repo/issues/:number/comments':
+    'GitHub compatible: list issue comments',
+  'POST /api/github/v3/repos/:owner/:repo/issues/:number/comments':
+    'GitHub compatible: comment on an issue',
+  'POST /api/github/v3/repos/:owner/:repo/issues/:number/labels':
+    'GitHub compatible: add labels to an issue',
+  'PUT /api/github/v3/repos/:owner/:repo/issues/:number/labels':
+    'GitHub compatible: replace the labels on an issue',
+  'GET /api/github/v3/repos/:owner/:repo/labels': 'GitHub compatible: list labels',
+  'POST /api/github/v3/repos/:owner/:repo/labels': 'GitHub compatible: create a label',
+  'GET /api/github/v3/repos/:owner/:repo/pulls': 'GitHub compatible: list pull requests',
+  'POST /api/github/v3/repos/:owner/:repo/pulls':
+    'GitHub compatible: open a pull request from a branch',
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number':
+    'GitHub compatible: get a pull request',
+  'PATCH /api/github/v3/repos/:owner/:repo/pulls/:number':
+    'GitHub compatible: edit or close a pull request',
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number/merge':
+    'GitHub compatible: 204 when merged, else 404',
+  'PUT /api/github/v3/repos/:owner/:repo/pulls/:number/merge':
+    'GitHub compatible: merge a pull request',
+  'GET /api/github/v3/repos/:owner/:repo/pulls/:number/reviews':
+    'GitHub compatible: list reviews',
+  'POST /api/github/v3/repos/:owner/:repo/pulls/:number/reviews':
+    'GitHub compatible: submit a review',
+  'GET /api/github/v3/repos/:owner/:repo/releases': 'GitHub compatible: list releases',
+  'POST /api/github/v3/repos/:owner/:repo/releases':
+    'GitHub compatible: create a release (and its tag)',
+  'GET /api/github/v3/repos/:owner/:repo/releases/latest':
+    'GitHub compatible: the latest release',
+  'GET /api/github/v3/repos/:owner/:repo/releases/tags/:tag':
+    'GitHub compatible: a release by tag',
+  'GET /api/github/v3/repos/:owner/:repo/releases/:id':
+    'GitHub compatible: get a release',
+  'PATCH /api/github/v3/repos/:owner/:repo/releases/:id':
+    'GitHub compatible: edit or publish a release',
+  'DELETE /api/github/v3/repos/:owner/:repo/releases/:id':
+    'GitHub compatible: delete a release',
+  'GET /api/github/v3/search/issues':
+    'GitHub compatible: search issues or pull requests in one repo',
 };
 
 const METHOD_ORDER = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -513,6 +578,10 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     return { auth: 'token', perm: 'per tool: the API route it calls' };
   }
   if (path === '/oauth/authorize') return { auth: 'session', perm: '—' };
+  // GitHub REST compatibility (#74): calls native /api/v1 routes as the caller
+  if (path.startsWith('/api/github/v3')) {
+    return { auth: 'any', perm: 'as the native route it calls' };
+  }
   // registry (#53): a forge token, or on /v2/ the registry token /v2/token issues
   if (path.startsWith('/v2/') || path.startsWith('/npm/')) {
     const auth = 'token (Basic or Bearer)';
