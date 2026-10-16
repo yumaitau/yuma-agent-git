@@ -671,6 +671,11 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{[^/]+/[^/]+}/sessions/:id/link': 'session.link',
   'POST /api/v1/me/signing-keys': 'signing_key.add',
   'DELETE /api/v1/me/signing-keys/:id': 'signing_key.remove',
+  // Git over SSH (#34)
+  'POST /api/v1/me/ssh-keys': 'ssh_key.add',
+  'DELETE /api/v1/me/ssh-keys/:id': 'ssh_key.remove',
+  'POST /api/v1/repos/:repo{.+}/deploy-keys': 'deploy_key.add',
+  'DELETE /api/v1/repos/:repo{.+}/deploy-keys/:id': 'deploy_key.remove',
   'POST /api/v1/repos/:repo{.+}/mirrors': 'mirror.create',
   'PATCH /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.update',
   'DELETE /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.delete',
@@ -691,6 +696,8 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /api/v1/usage/budgets/:id': 'usage.budget.delete',
 };
 const EXEMPT: Record<string, string> = {
+  'POST /internal/ssh/authorize':
+    "60-second Git token for a registered key, like a smart HTTP request; its grant is the key holder's current access and pushes are audited as ref moves",
   'POST /v2/token':
     "short-lived registry token for the presented credential; its grant is the caller's current access",
   'POST /v2/:name{.+}/blobs/uploads/':

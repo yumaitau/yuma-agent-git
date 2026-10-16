@@ -2887,7 +2887,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 20,
+                        "maxItems": 21,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -2911,7 +2911,8 @@
                             "agent_review",
                             "usage_budget",
                             "environment_approval",
-                            "agent_approval"
+                            "agent_approval",
+                            "deploy_key"
                           ]
                         }
                       },
@@ -3159,7 +3160,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 20,
+                    "maxItems": 21,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -3183,7 +3184,8 @@
                         "agent_review",
                         "usage_budget",
                         "environment_approval",
-                        "agent_approval"
+                        "agent_approval",
+                        "deploy_key"
                       ]
                     }
                   },
@@ -3477,6 +3479,70 @@
       "delete": {
         "operationId": "deleteSigningKey",
         "summary": "Remove a commit signing key",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/me/ssh-keys": {
+      "get": {
+        "operationId": "listSshKeys",
+        "summary": "Your SSH keys for Git over SSH",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "addSshKey",
+        "summary": "Register an SSH key for Git over SSH (recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "public_key": { "type": "string", "minLength": 1, "maxLength": 20000 }
+                },
+                "required": ["title", "public_key"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/me/ssh-keys/{id}": {
+      "delete": {
+        "operationId": "deleteSshKey",
+        "summary": "Remove an SSH key; its tokens stop at once",
         "security": [{ "session": [] }],
         "x-yag-permission": "—",
         "x-yag-rate-bucket": "api_write",
@@ -4376,7 +4442,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 20,
+                    "maxItems": 21,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -4400,7 +4466,8 @@
                         "agent_review",
                         "usage_budget",
                         "environment_approval",
-                        "agent_approval"
+                        "agent_approval",
+                        "deploy_key"
                       ]
                     }
                   },
@@ -8447,6 +8514,111 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/deploy-keys": {
+      "get": {
+        "operationId": "listDeployKeys",
+        "summary": "Repo deploy keys",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "addDeployKey",
+        "summary": "Add a deploy key, read-only unless `read_only: false` (recent MFA)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "public_key": { "type": "string", "minLength": 1, "maxLength": 20000 },
+                  "read_only": { "default": true, "type": "boolean" }
+                },
+                "required": ["title", "public_key"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/deploy-keys/{id}": {
+      "delete": {
+        "operationId": "deleteDeployKey",
+        "summary": "Remove a deploy key",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/diff": {
       "get": {
         "operationId": "getDiff",
@@ -9245,7 +9417,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 20,
+                    "maxItems": 21,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -9269,7 +9441,8 @@
                         "agent_review",
                         "usage_budget",
                         "environment_approval",
-                        "agent_approval"
+                        "agent_approval",
+                        "deploy_key"
                       ]
                     }
                   },
@@ -15886,6 +16059,45 @@
         }
       }
     },
+    "/internal/ssh/authorize": {
+      "post": {
+        "operationId": "authorizeSsh",
+        "summary": "SSH gateway: a 60-second Git token for one key, repo and service (internal host only)",
+        "security": [{ "sshGatewayKey": [] }],
+        "x-yag-permission": "per key: as smart HTTP",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fingerprint": {
+                    "type": "string",
+                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$"
+                  },
+                  "repo": { "type": "string", "pattern": "^[^/\\s]+\\/[^/\\s]+$" },
+                  "service": {
+                    "type": "string",
+                    "enum": ["git-upload-pack", "git-receive-pack"]
+                  }
+                },
+                "required": ["fingerprint", "repo", "service"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/mcp": {
       "get": {
         "operationId": "resumeMcpStream",
@@ -17544,6 +17756,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Per-run job token (`yagclone_…`) from `YAG_RUNTIME_TOKEN` in the job, valid while it runs"
+      },
+      "sshGatewayKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-ssh-gateway-key",
+        "description": "The SSH gateway key (`SSH_GATEWAY_KEY`), accepted only on the internal `SSH_GATEWAY_HOST`"
       },
       "runnerBearer": {
         "type": "http",

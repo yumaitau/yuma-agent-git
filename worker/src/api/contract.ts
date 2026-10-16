@@ -152,6 +152,7 @@ import {
 } from './work';
 import { createRepoSchema, updateRepoSchema } from './repos';
 import { addSigningKeySchema, provenanceQuery } from './provenance';
+import { addDeployKeySchema, addSshKeySchema, sshAuthorizeSchema } from './keys';
 import { createSessionSchema, linkSessionSchema } from '../provenance/sessions';
 import { patchPackageSchema } from './packages';
 import { publishSchema as npmPublishSchema } from '../registry/npm';
@@ -320,6 +321,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /.well-known/yag-provenance-keys': { id: 'getProvenanceKeys' },
   'GET /ci/oidc/token': { id: 'getCiIdToken', query: idTokenQuery },
   'POST /ci/oidc/token': { id: 'createCiIdToken', query: idTokenQuery },
+  'POST /internal/ssh/authorize': { id: 'authorizeSsh', body: sshAuthorizeSchema },
   'POST /runner/v1/register': { id: 'registerRunner', body: registerSchema },
   'POST /runner/v1/jobs/claim': {
     id: 'claimRunnerJob',
@@ -540,6 +542,9 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/me/signing-keys': { id: 'listSigningKeys' },
   'POST /api/v1/me/signing-keys': { id: 'addSigningKey', body: addSigningKeySchema },
   'DELETE /api/v1/me/signing-keys/:id': { id: 'deleteSigningKey' },
+  'GET /api/v1/me/ssh-keys': { id: 'listSshKeys' },
+  'POST /api/v1/me/ssh-keys': { id: 'addSshKey', body: addSshKeySchema },
+  'DELETE /api/v1/me/ssh-keys/:id': { id: 'deleteSshKey' },
   'POST /api/v1/me/totp': { id: 'startTotpEnrolment' },
   'POST /api/v1/me/totp/confirm': { id: 'confirmTotp', body: codeSchema },
   'DELETE /api/v1/me/totp': { id: 'deleteTotp' },
@@ -787,6 +792,12 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     }),
   },
   'POST /api/v1/repos/:repo/connect': { id: 'connectGithub', body: connectSchema },
+  'GET /api/v1/repos/:repo/deploy-keys': { id: 'listDeployKeys' },
+  'POST /api/v1/repos/:repo/deploy-keys': {
+    id: 'addDeployKey',
+    body: addDeployKeySchema,
+  },
+  'DELETE /api/v1/repos/:repo/deploy-keys/:id': { id: 'deleteDeployKey' },
   'GET /api/v1/repos/:repo/diff': {
     id: 'getDiff',
     query: z.object({

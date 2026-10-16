@@ -141,7 +141,7 @@ export function signatureFormat(gpgsig: string): SignatureFormat | null {
 // SSH
 // ---------------------------------------------------------------------------
 
-class SshReader {
+export class SshReader {
   pos = 0;
   constructor(private readonly buf: Uint8Array) {}
   bytes(n: number): Uint8Array {

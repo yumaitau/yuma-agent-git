@@ -42,6 +42,8 @@ export const WEBHOOK_EVENTS = [
   // notifications (#44): deployments and agent actions waiting for a person
   'environment_approval',
   'agent_approval',
+  // Git over SSH (#34): a repo's deploy keys, created and deleted
+  'deploy_key',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
