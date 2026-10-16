@@ -21,8 +21,12 @@ import {
   rulesetsFor,
   type Actor,
   type Outcome,
+  type RefFacts,
   type Ruleset,
 } from '../policy/rulesets';
+import { issueAfterMove } from '../provenance/issue';
+import { canSign } from '../provenance/keys';
+import { signatureFacts } from '../git/signatures';
 
 const moveSchema = z.object({
   repo_id: z.string().min(1),
@@ -68,6 +72,15 @@ interface Policy {
   repo: RepoRecord | null;
   rulesets: Ruleset[];
   actor: Actor;
+  /** `required_signatures` facts (#58), when a rule on this ref asks. */
+  signatures?: RefFacts['signatures'];
+}
+
+interface Moved {
+  response: Response;
+  outcome: Outcome;
+  from: string | null;
+  to: string | null;
 }
 
 function ok(from: string | null, to: string | null): Response {
@@ -209,6 +222,23 @@ export class RefLockDO {
         ? await actorFor(this.env, repo, args.actor ?? null, rulesets)
         : { principal: null, role: null, teams: [] };
       policy = { repo, rulesets, actor };
+      // commits a new branch brings in are those the default branch lacks
+      if (
+        repo &&
+        args.to !== null &&
+        rulesets.some(
+          (r) =>
+            applies(r, repo, args.name) &&
+            r.rules.some((rule) => rule.type === 'required_signatures'),
+        )
+      ) {
+        const base =
+          args.from ??
+          (args.name === repo.default_branch
+            ? null
+            : ((await getRef(this.env, repo.id, repo.default_branch))?.head ?? null));
+        policy.signatures = await signatureFacts(this.env, repo.id, base, args.to);
+      }
     } catch (err) {
       console.error('ref-lock ruleset load failed', err);
       return fail(500, 'internal_error', 'ruleset load failed');
@@ -249,11 +279,13 @@ export class RefLockDO {
     // The CAS itself: blockConcurrencyWhile makes the read-check-write atomic
     // (a DO otherwise interleaves events at await points).
     let outcome: Outcome | null = null;
+    const done: { moved?: Moved } = {};
     const response = await this.state.blockConcurrencyWhile(async () => {
       try {
         const moved = await this.moveRef(args, fastForward, ffBase, policy);
         if (moved instanceof Response) return moved;
         outcome = moved.outcome;
+        done.moved = moved;
         return moved.response;
       } catch (err) {
         // Never let an exception escape the gate: it would terminate and
@@ -278,6 +310,16 @@ export class RefLockDO {
         console.error('ref-lock ruleset outcome not recorded', err);
       }
     }
+    if (done.moved && policy.repo !== null)
+      await issueAfterMove(this.env, {
+        repo: policy.repo,
+        ref: args.name,
+        from: done.moved.from,
+        to: done.moved.to,
+        via: args.via ?? 'system',
+        actor: args.actor ?? null,
+        outcome: done.moved.outcome,
+      });
     return response;
   }
 
@@ -353,6 +395,18 @@ export class RefLockDO {
     ]);
     if (!results[0]!.meta.changes)
       return fail(409, 'ref_stale', `ref ${args.name} moved`, { expected: args.from });
+    const repo = await getRepo(this.env, args.repo_id);
+    if (repo)
+      await issueAfterMove(this.env, {
+        repo,
+        ref: args.name,
+        from: args.from,
+        to: args.to,
+        via: args.reopen ? 'merge_queue.revert' : 'merge_queue',
+        actor: null,
+        outcome: null,
+        pulls: args.pulls.map((p) => p.id),
+      });
     return ok(args.from, args.to);
   }
 
@@ -361,7 +415,7 @@ export class RefLockDO {
     fastForward: boolean,
     ffBase: string | null,
     policy: Policy,
-  ): Promise<Response | { response: Response; outcome: Outcome }> {
+  ): Promise<Response | Moved> {
     // Defense in depth: never let an unvalidated name reach idFromName callers
     // (or create a "zombie" ref) even if a future call site skips the check.
     validateRefName(args.name);
@@ -408,6 +462,8 @@ export class RefLockDO {
         name,
         kind: to === null ? 'delete' : current === null ? 'create' : 'update',
         fastForward: fastForward && current?.head === ffBase,
+        signatures: policy.signatures,
+        cannotSign: !canSign(this.env),
       },
     });
     if (!outcome.allowed) {
@@ -417,7 +473,7 @@ export class RefLockDO {
 
     if (current === null) {
       await setRef(this.env, repoId, name, to as string);
-      return { response: ok(null, to), outcome };
+      return { response: ok(null, to), outcome, from: null, to };
     }
     if (to === null) {
       // a deleted tag takes its annotation with it
@@ -430,10 +486,10 @@ export class RefLockDO {
           ]);
         }
       });
-      return { response: ok(current.head, null), outcome };
+      return { response: ok(current.head, null), outcome, from: current.head, to: null };
     }
     await setRef(this.env, repoId, name, to);
-    return { response: ok(current.head, to), outcome };
+    return { response: ok(current.head, to), outcome, from: current.head, to };
   }
 }
 

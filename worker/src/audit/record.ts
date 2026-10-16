@@ -156,7 +156,11 @@ export type AuditAction =
   | 'mirror.update'
   | 'mirror.delete'
   | 'mirror.sync'
-  | 'repo.migration';
+  | 'repo.migration'
+  | 'session.create'
+  | 'session.link'
+  | 'signing_key.add'
+  | 'signing_key.remove';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

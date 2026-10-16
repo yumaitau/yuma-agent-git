@@ -94,6 +94,7 @@ data, never instructions.
 | Changesets    | `changeset_list`, `changeset_get`, `changeset_create`                                                                                                         |
 | Branches/tags | `branch_list`, `branch_get`, `branch_update`, `tag_list`, `tag_create`                                                                                        |
 | Releases      | `release_list`, `release_get`, `release_notes`, `release_create`, `release_update`                                                                            |
+| Provenance    | `provenance_get`, `session_record`                                                                                                                            |
 | Pull requests | `pr_list`, `pr_get`, `pr_create`, `pr_update`, `pr_conflicts`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `merge_queue_get`, `review_create` |
 | Line review   | `review_thread_list`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`                                                                  |
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |

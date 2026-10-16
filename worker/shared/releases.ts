@@ -8,6 +8,8 @@ export interface ReleaseAsset {
   /** Hex SHA-256 computed on upload; every download is checked against it. */
   sha256: string;
   uploaded_by: string;
+  /** The CI run whose job uploaded it (its ID token proved it), else null. */
+  run_id: string | null;
   created_at: number;
 }
 

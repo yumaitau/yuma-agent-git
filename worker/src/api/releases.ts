@@ -52,6 +52,11 @@ import type {
  * Assets are build outputs of the whole tree, so every route needs whole
  * repository access. Writes also need `releases:write` for agent tokens and
  * are judged as `release.publish` by the agent guardrails (#62).
+ *
+ * A CI job uploads with its ID token (audience `yag:attest`) in the
+ * `X-Yag-Id-Token` header, which records the run on the asset. A run attests
+ * only assets its own jobs uploaded (#58), so a person cannot slip bytes
+ * into a release and have a build vouch for them.
  */
 export const releasesRoutes = new Hono<AppEnv>();
 
@@ -164,6 +169,7 @@ const assetRowSchema = z.object({
   size: z.number(),
   sha256: z.string(),
   uploaded_by: z.string(),
+  run_id: z.string().nullable(),
   created_at: z.number(),
 });
 type AssetRow = z.infer<typeof assetRowSchema>;
@@ -211,8 +217,48 @@ function assetView(row: AssetRow): ReleaseAsset {
     size: row.size,
     sha256: row.sha256,
     uploaded_by: row.uploaded_by,
+    run_id: row.run_id,
     created_at: row.created_at,
   };
+}
+
+interface CiJob {
+  id: string;
+  head_cs: string;
+  runner_id: string | null;
+  started_at: number | null;
+}
+
+/** The run of this repo a CI ID token (audience `yag:attest`) was minted for. */
+async function ciJob(
+  c: Context<AppEnv>,
+  repo: RepoWithCreator,
+  idToken: string,
+): Promise<{ claims: Record<string, unknown>; job: CiJob }> {
+  const claims = await verifyForgeJwt(c.env, idToken, {
+    issuer: issuerFor(c.env, new URL(c.req.url).origin),
+    audience: ATTEST_AUDIENCE,
+  });
+  if (!claims)
+    throw new ApiError(
+      400,
+      'invalid_id_token',
+      `The ID token is not a live CI token from this forge with audience ${ATTEST_AUDIENCE}`,
+    );
+  if (claims.repository_id !== repo.id)
+    throw new ApiError(
+      400,
+      'id_token_repo_mismatch',
+      'The ID token is for another repository',
+    );
+  const job = await q1<CiJob>(
+    c.env,
+    'SELECT id, head_cs, runner_id, started_at FROM ci_runs WHERE id = ? AND repo_id = ?',
+    [String(claims.run_id), repo.id],
+  );
+  if (!job)
+    throw new ApiError(400, 'unknown_run', 'The ID token names no run of this repo');
+  return { claims, job };
 }
 
 const storedEnvelope = z.object({
@@ -663,6 +709,9 @@ releasesRoutes.post(`${REPO}/releases/:id/assets`, async (c) => {
       throw new ApiError(409, 'asset_exists', `Asset ${query.name} already exists`);
     if (existing.length >= MAX_ASSETS)
       throw new ApiError(409, 'too_many_assets', `A release keeps ${MAX_ASSETS} assets`);
+    // a CI job proves which run uploaded the asset; only that run may attest it
+    const idToken = c.req.header('x-yag-id-token');
+    const runId = idToken ? (await ciJob(c, repo, idToken)).job.id : null;
     await judge(c, repo, release.tag, release.draft === 0, {
       action: 'asset.upload',
       release_id: release.id,
@@ -716,13 +765,14 @@ releasesRoutes.post(`${REPO}/releases/:id/assets`, async (c) => {
       size: length,
       sha256,
       uploaded_by: actorKey(principal),
+      run_id: runId,
       created_at: Date.now(),
     };
     try {
       await run(
         c.env,
         `INSERT INTO release_assets (id, release_id, repo_id, name, content_type, size, sha256,
-           uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           uploaded_by, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           release.id,
@@ -732,6 +782,7 @@ releasesRoutes.post(`${REPO}/releases/:id/assets`, async (c) => {
           row.size,
           row.sha256,
           row.uploaded_by,
+          row.run_id,
           row.created_at,
         ],
       );
@@ -751,6 +802,7 @@ releasesRoutes.post(`${REPO}/releases/:id/assets`, async (c) => {
         name: row.name,
         size: row.size,
         sha256,
+        run_id: runId,
       },
     });
     return c.json({ asset: assetView(row) }, 201);
@@ -896,34 +948,7 @@ releasesRoutes.post(`${REPO}/releases/:id/attestations`, async (c) => {
     const release = await loadRelease(c, repo, { id: c.req.param('id') });
     const input = parse(attestSchema, await readJsonBody(c));
     const origin = new URL(c.req.url).origin;
-    const claims = await verifyForgeJwt(c.env, input.id_token, {
-      issuer: issuerFor(c.env, origin),
-      audience: ATTEST_AUDIENCE,
-    });
-    if (!claims)
-      throw new ApiError(
-        400,
-        'invalid_id_token',
-        `The ID token is not a live CI token from this forge with audience ${ATTEST_AUDIENCE}`,
-      );
-    if (claims.repository_id !== repo.id)
-      throw new ApiError(
-        400,
-        'id_token_repo_mismatch',
-        'The ID token is for another repository',
-      );
-    const job = await q1<{
-      id: string;
-      head_cs: string;
-      runner_id: string | null;
-      started_at: number | null;
-    }>(
-      c.env,
-      'SELECT id, head_cs, runner_id, started_at FROM ci_runs WHERE id = ? AND repo_id = ?',
-      [String(claims.run_id), repo.id],
-    );
-    if (!job)
-      throw new ApiError(400, 'unknown_run', 'The ID token names no run of this repo');
+    const { claims, job } = await ciJob(c, repo, input.id_token);
     if (job.head_cs !== release.target_cs)
       throw new ApiError(
         409,
@@ -936,14 +961,27 @@ releasesRoutes.post(`${REPO}/releases/:id/attestations`, async (c) => {
         release.id,
       ])
     ).map((r) => assetRowSchema.parse(r));
+    // #58: a run attests only bytes its own jobs uploaded, never a person's upload
     const chosen = input.assets
       ? assets.filter((a) => input.assets!.includes(a.name))
-      : assets;
+      : assets.filter((a) => a.run_id === job.id);
     const missing = (input.assets ?? []).filter((n) => !assets.some((a) => a.name === n));
     if (missing.length > 0)
       throw new ApiError(400, 'unknown_asset', `No asset ${missing.join(', ')}`);
+    const foreign = chosen.filter((a) => a.run_id !== job.id).map((a) => a.name);
+    if (foreign.length > 0)
+      throw new ApiError(
+        409,
+        'asset_not_from_run',
+        `Run ${job.id} did not upload ${foreign.join(', ')}`,
+        { assets: foreign },
+      );
     if (chosen.length === 0)
-      throw new ApiError(400, 'no_assets', 'Upload assets before attesting them');
+      throw new ApiError(
+        400,
+        'no_assets',
+        `Run ${job.id} uploaded no assets to this release; upload them from the job first`,
+      );
     const subjects = chosen.map((a) => ({ name: a.name, digest: { sha256: a.sha256 } }));
     await judge(c, repo, release.tag, release.draft === 0, {
       action: 'attest',

@@ -28,6 +28,17 @@ export interface Env {
   CI_OIDC_SIGNING_KEYS?: string;
   /** Issuer URL override for a custom domain (default `{origin}/ci/oidc`). */
   CI_OIDC_ISSUER?: string;
+  /**
+   * Commit signatures (issue #58): PEM roots (Sigstore Fulcio root and
+   * intermediate) that x509 (gitsign) signatures must chain to. Unset: x509
+   * signatures stay unverified.
+   */
+  SIGSTORE_TRUST_ROOTS?: string;
+  /**
+   * Signed provenance (issue #58), secret: Ed25519 JWK key ring
+   * `{"keys":[...]}`, the first (with `d`) signs and all are published.
+   */
+  PROVENANCE_SIGNING_KEYS?: string;
   /** Key-encryption key for CI secrets, secret: base64 key or key ring JSON. */
   SECRETS_KEK?: string;
   /** Comma-separated user ids allowed to run the KEK re-wrap. */

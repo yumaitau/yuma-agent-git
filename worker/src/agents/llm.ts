@@ -45,7 +45,7 @@ export interface ChatInput {
 
 export type ChatProvider = (env: Env, input: ChatInput) => Promise<ChatResult>;
 
-const DEFAULT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+export const DEFAULT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 const responseSchema = z.object({
   response: z.unknown().optional(),

@@ -207,6 +207,28 @@ work
     },
   );
 
+/**
+ * Inside a CI job with `permissions.id_token: write`, an ID token for
+ * `yag:attest`; null outside CI, and an error when `required` there.
+ */
+async function ciIdToken(required: boolean): Promise<string | null> {
+  const { ATTEST_AUDIENCE } = await import('./release.js');
+  const url = process.env.YAG_ID_TOKEN_REQUEST_URL;
+  const request = process.env.YAG_ID_TOKEN_REQUEST_TOKEN;
+  if (!url || !request) {
+    if (!required) return null;
+    throw new Error(
+      'Run this in a CI job whose pipeline has permissions.id_token: write',
+    );
+  }
+  const res = await fetch(
+    `${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(ATTEST_AUDIENCE)}`,
+    { method: 'POST', headers: { authorization: `Bearer ${request}` } },
+  );
+  if (!res.ok) throw new Error(`ID token request failed: HTTP ${res.status}`);
+  return ((await res.json()) as { value: string }).value;
+}
+
 const release = program
   .command('release')
   .description('Releases: tags with notes, checksummed assets and build provenance');
@@ -259,6 +281,8 @@ release
       const { basename } = await import('node:path');
       const { formatRelease, sha256Hex } = await import('./release.js');
       const { api } = await client();
+      // in CI the assets record the run that built them, so it can attest them
+      const idToken = files.length > 0 ? await ciIdToken(false) : null;
       const created = await api.createRelease({
         tag,
         name: opts.name,
@@ -275,6 +299,7 @@ release
           basename(file),
           bytes,
           await sha256Hex(bytes),
+          idToken ?? undefined,
         );
         console.log(`uploaded ${asset.name} sha256:${asset.sha256}`);
       }
@@ -291,6 +316,7 @@ release
     const { sha256Hex } = await import('./release.js');
     const { api } = await client();
     const r = await api.getRelease(tag);
+    const idToken = await ciIdToken(false);
     for (const file of files) {
       const bytes = await readFile(file);
       const asset = await api.uploadAsset(
@@ -298,6 +324,7 @@ release
         basename(file),
         bytes,
         await sha256Hex(bytes),
+        idToken ?? undefined,
       );
       console.log(`uploaded ${asset.name} sha256:${asset.sha256}`);
     }
@@ -352,21 +379,9 @@ release
     'Inside a CI job with permissions.id_token: write, sign build provenance for the assets',
   )
   .argument('<tag>')
-  .option('--asset <names...>', 'only these assets (default: all)')
+  .option('--asset <names...>', 'only these assets (default: all this run uploaded)')
   .action(async (tag: string, opts: { asset?: string[] }) => {
-    const { ATTEST_AUDIENCE } = await import('./release.js');
-    const url = process.env.YAG_ID_TOKEN_REQUEST_URL;
-    const request = process.env.YAG_ID_TOKEN_REQUEST_TOKEN;
-    if (!url || !request)
-      throw new Error(
-        'Run this in a CI job whose pipeline has permissions.id_token: write',
-      );
-    const res = await fetch(
-      `${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(ATTEST_AUDIENCE)}`,
-      { method: 'POST', headers: { authorization: `Bearer ${request}` } },
-    );
-    if (!res.ok) throw new Error(`ID token request failed: HTTP ${res.status}`);
-    const { value } = (await res.json()) as { value: string };
+    const value = (await ciIdToken(true)) as string;
     const { api } = await client();
     const r = await api.getRelease(tag);
     const attestation = await api.attestRelease(r.id, {
@@ -403,6 +418,54 @@ release
       `provenance ok: ${r.assets.length} assets, ${statements.length} attestations`,
     );
   });
+
+async function verifyChangeset(cs: string): Promise<void> {
+  const {
+    formatPredicate,
+    provenanceKeysSchema,
+    provenanceRecordSchema,
+    verifyProvenance,
+  } = await import('./provenance.js');
+  const { api } = await client();
+  const keys = provenanceKeysSchema.parse(await api.provenanceKeys());
+  const records = await api.provenance(cs);
+  let verified = 0;
+  for (const raw of records) {
+    const record = provenanceRecordSchema.safeParse(raw);
+    if (!record.success) {
+      console.error('a record is malformed');
+      continue;
+    }
+    const check = await verifyProvenance(record.data, keys, cs);
+    if (!check.ok) {
+      console.error(`record ${record.data.id}: ${check.reason}`);
+      continue;
+    }
+    verified++;
+    console.log(`record ${record.data.id} verified (key ${check.keyId})`);
+    for (const line of formatPredicate(check.predicate)) console.log(`  ${line}`);
+  }
+  if (verified === 0) {
+    console.error(`${cs}: no verified provenance`);
+    process.exitCode = 1;
+  }
+}
+
+const provenance = program
+  .command('provenance')
+  .description('Signed source provenance for protected branch updates');
+provenance
+  .command('verify')
+  .description(
+    'Verify the signed provenance of a changeset offline against the published keys; exits 1 if none verifies',
+  )
+  .argument('<cs>', 'changeset id')
+  .action(verifyChangeset);
+program
+  .command('verify')
+  .description('Same as `yag provenance verify`')
+  .argument('<cs>', 'changeset id')
+  .action(verifyChangeset);
 
 const audit = program.command('audit').description('Audit log tools');
 audit

@@ -9,6 +9,7 @@ import {
   type Changeset,
   type DiffResult,
   type FileChange,
+  type SourceProvenance,
 } from '../api';
 import { DiffView } from '../DiffView';
 import { useSlug } from '../slug';
@@ -34,11 +35,88 @@ function agentLine(p: AgentProvenance): string {
   return `${p.agent_name ?? p.agent_id} on behalf of ${p.on_behalf_of_login ?? p.on_behalf_of}${task}`;
 }
 
+/** Signature, signed provenance and agent sessions (#58), when there are any. */
+function SourceFacts({
+  slug,
+  facts,
+}: {
+  slug: string;
+  facts: SourceProvenance;
+}): ReactElement {
+  const { signature, records, sessions } = facts;
+  const verified = records.filter((r) => r.verified);
+  return (
+    <>
+      {signature && (
+        <>
+          <span className="k">Signature</span>
+          <span>
+            {signature.status === 'verified' ? (
+              <span className="chip ok">Verified</span>
+            ) : signature.status === 'unverified' ? (
+              <span className="chip warn">Unverified</span>
+            ) : (
+              <span className="chip">Unsigned</span>
+            )}{' '}
+            <span className="small muted">
+              {[
+                signature.format,
+                signature.user_login ?? signature.signer,
+                signature.status === 'unverified' ? signature.reason : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+          </span>
+        </>
+      )}
+      {records.length > 0 && (
+        <>
+          <span className="k">Provenance</span>
+          <span>
+            {verified.length > 0 ? (
+              <span className="chip ok">Signed provenance</span>
+            ) : (
+              <span className="chip danger">Provenance does not verify</span>
+            )}{' '}
+            <span className="small muted">
+              {records
+                .map(
+                  (r) => `${r.ref} via ${r.via}${r.bypass ? ' (ruleset bypassed)' : ''}`,
+                )
+                .join(', ')}
+            </span>
+          </span>
+        </>
+      )}
+      {sessions.length > 0 && (
+        <>
+          <span className="k">Sessions</span>
+          <span>
+            {sessions.map((s) => (
+              <div key={s.id} className="small">
+                {[s.model, s.harness].filter(Boolean).join(', ') || 'agent session'}
+                {s.task_id ? `, task ${s.task_id}` : ''}{' '}
+                {s.transcript_available && (
+                  <a href={`/api/v1/repos/${slug}/sessions/${s.id}/transcript`}>
+                    transcript
+                  </a>
+                )}
+              </div>
+            ))}
+          </span>
+        </>
+      )}
+    </>
+  );
+}
+
 export function ChangesetView(): ReactElement {
   const slug = useSlug();
   const { id = '' } = useParams();
   const [changeset, setChangeset] = useState<Changeset | null>(null);
   const [provenance, setProvenance] = useState<AgentProvenance | null>(null);
+  const [facts, setFacts] = useState<SourceProvenance | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -47,6 +125,14 @@ export function ChangesetView(): ReactElement {
     setError(null);
     setChangeset(null);
     setDiff(null);
+    setFacts(null);
+    // best-effort: signatures and provenance never block the changeset itself
+    api
+      .getProvenance(slug, id)
+      .then((p) => {
+        if (!cancelled && Array.isArray(p.records)) setFacts(p);
+      })
+      .catch(() => undefined);
     api
       .getChangeset(slug, id)
       .then((cs) => {
@@ -99,6 +185,7 @@ export function ChangesetView(): ReactElement {
               <span>{agentLine(provenance)}</span>
             </>
           )}
+          {facts && <SourceFacts slug={slug} facts={facts} />}
           <span className="k">Created</span>
           <span>{formatTime(changeset.created_at)}</span>
           <span className="k">Parents</span>

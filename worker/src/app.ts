@@ -22,6 +22,7 @@ import { mcpOAuthRoutes } from './mcp/oauth';
 import { mcpServerRoutes } from './mcp/server';
 import { npmRoutes } from './registry/npm';
 import { ociRoutes } from './registry/oci';
+import { provenanceKeysRoutes } from './api/provenance';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -74,6 +75,9 @@ app.route('/', runnerRoutes);
 app.route('/', ociRoutes);
 app.route('/', npmRoutes);
 
+// Signed provenance (issue #58): the public keys records verify against.
+app.route('/', provenanceKeysRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, token management,
 // agent identities with their token exchange, and apps and OAuth apps (#75).
@@ -113,6 +117,7 @@ app.notFound((c) => {
     path === '/mcp' ||
     path.startsWith('/oauth/') ||
     path.startsWith('/.well-known/oauth-') ||
+    path === '/.well-known/yag-provenance-keys' ||
     /^\/[^/]+\/[^/]+\.git\//.test(path);
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);

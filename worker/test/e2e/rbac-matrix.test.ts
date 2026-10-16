@@ -155,6 +155,8 @@ const PUBLIC = new Set([
   'GET /ci/oidc/jwks',
   'GET /ci/oidc/token',
   'POST /ci/oidc/token',
+  // signed provenance (#58): public keys, verified offline by anyone
+  'GET /.well-known/yag-provenance-keys',
   // self-hosted runners (#48): a one-time registration token in the body,
   // then the runner's own credential (test/ci-runners.test.ts)
   'POST /runner/v1/register',
@@ -289,6 +291,11 @@ const EXEMPT: Record<string, string> = {
   'GET /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/releases/:id/attestations': 'releases.test.ts',
   'POST /api/v1/repos/:repo{.+}/attestations/verify': 'releases.test.ts',
+  'GET /api/v1/repos/:repo{.+}/provenance': 'provenance.test.ts',
+  'POST /api/v1/repos/:repo{.+}/sessions': 'provenance.test.ts',
+  'GET /api/v1/repos/:repo{.+}/sessions/:id': 'provenance.test.ts',
+  'GET /api/v1/repos/:repo{.+}/sessions/:id/transcript': 'provenance.test.ts',
+  'POST /api/v1/repos/:repo{.+}/sessions/:id/link': 'provenance.test.ts',
 };
 
 /**

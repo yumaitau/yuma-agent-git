@@ -106,6 +106,8 @@ import {
   workListQuery,
 } from './work';
 import { createRepoSchema, updateRepoSchema } from './repos';
+import { addSigningKeySchema, provenanceQuery } from './provenance';
+import { createSessionSchema, linkSessionSchema } from '../provenance/sessions';
 import { patchPackageSchema } from './packages';
 import { publishSchema as npmPublishSchema } from '../registry/npm';
 import { patchRunnerBody, registrationTokenBody } from './runners';
@@ -221,6 +223,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /webhooks/github': { id: 'receiveGithubWebhook', rawBody: 'application/json' },
   'GET /ci/oidc/.well-known/openid-configuration': { id: 'getCiOidcConfiguration' },
   'GET /ci/oidc/jwks': { id: 'getCiOidcJwks' },
+  'GET /.well-known/yag-provenance-keys': { id: 'getProvenanceKeys' },
   'GET /ci/oidc/token': { id: 'getCiIdToken', query: idTokenQuery },
   'POST /ci/oidc/token': { id: 'createCiIdToken', query: idTokenQuery },
   'POST /runner/v1/register': { id: 'registerRunner', body: registerSchema },
@@ -393,6 +396,9 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/me/passkeys/options': { id: 'passkeyRegisterOptions' },
   'POST /api/v1/me/passkeys': { id: 'registerPasskey', body: registrationSchema },
   'DELETE /api/v1/me/passkeys/:id': { id: 'deletePasskey' },
+  'GET /api/v1/me/signing-keys': { id: 'listSigningKeys' },
+  'POST /api/v1/me/signing-keys': { id: 'addSigningKey', body: addSigningKeySchema },
+  'DELETE /api/v1/me/signing-keys/:id': { id: 'deleteSigningKey' },
   'POST /api/v1/me/totp': { id: 'startTotpEnrolment' },
   'POST /api/v1/me/totp/confirm': { id: 'confirmTotp', body: codeSchema },
   'DELETE /api/v1/me/totp': { id: 'deleteTotp' },
@@ -901,6 +907,14 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/attestations/verify': {
     id: 'verifyAttestation',
     body: verifyAttestationSchema,
+  },
+  'GET /api/v1/repos/:repo/provenance': { id: 'listProvenance', query: provenanceQuery },
+  'POST /api/v1/repos/:repo/sessions': { id: 'createSession', body: createSessionSchema },
+  'GET /api/v1/repos/:repo/sessions/:id': { id: 'getSession' },
+  'GET /api/v1/repos/:repo/sessions/:id/transcript': { id: 'getSessionTranscript' },
+  'POST /api/v1/repos/:repo/sessions/:id/link': {
+    id: 'linkSessionChangesets',
+    body: linkSessionSchema,
   },
   'GET /api/v1/orgs/:org/release-settings': { id: 'getOrgReleaseSettings' },
   'PUT /api/v1/orgs/:org/release-settings': {

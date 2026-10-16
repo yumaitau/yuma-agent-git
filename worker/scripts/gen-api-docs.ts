@@ -225,6 +225,8 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': 'Cancel a pipeline run',
   'GET /ci/oidc/.well-known/openid-configuration': 'CI OIDC discovery document (public)',
   'GET /ci/oidc/jwks': 'CI OIDC signing keys, current and previous (public)',
+  'GET /.well-known/yag-provenance-keys':
+    'Provenance signing keys, current and previous (public)',
   'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
   'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
   'POST /runner/v1/register':
@@ -406,6 +408,12 @@ const PURPOSES: Record<string, string> = {
     'Sign SLSA provenance for assets from a CI ID token (`audience=yag:attest`)',
   'POST /api/v1/repos/:repo/attestations/verify':
     'Verify a DSSE envelope against the published CI keys (optional `sha256` subject)',
+  'GET /api/v1/repos/:repo/provenance':
+    'Signed provenance records for a changeset or ref, checked against the keys',
+  'POST /api/v1/repos/:repo/sessions': 'Record an agent session and redacted transcript',
+  'GET /api/v1/repos/:repo/sessions/:id': 'An agent session and its changesets',
+  'GET /api/v1/repos/:repo/sessions/:id/transcript': 'Redacted session transcript',
+  'POST /api/v1/repos/:repo/sessions/:id/link': 'Link more changesets to your session',
   'GET /api/v1/orgs/:org/release-settings': 'Release asset size cap for the org',
   'PUT /api/v1/orgs/:org/release-settings': 'Set the org release asset size cap',
   'GET /api/v1/repos/:repo/work':
@@ -431,6 +439,9 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/me/passkeys/options': 'Passkey registration challenge',
   'POST /api/v1/me/passkeys': 'Register a passkey',
   'DELETE /api/v1/me/passkeys/:id': 'Remove a passkey',
+  'GET /api/v1/me/signing-keys': 'Your commit signing keys',
+  'POST /api/v1/me/signing-keys': 'Register an SSH or OpenPGP commit signing key',
+  'DELETE /api/v1/me/signing-keys/:id': 'Remove a commit signing key',
   'POST /api/v1/me/totp': 'Start authenticator app enrolment',
   'POST /api/v1/me/totp/confirm': 'Confirm authenticator enrolment with a code',
   'DELETE /api/v1/me/totp': 'Remove the authenticator app (recent MFA)',

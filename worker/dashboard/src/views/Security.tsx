@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { api, asApiError, type ApiError, type Security, type TotpSetup } from '../api';
+import {
+  api,
+  asApiError,
+  type ApiError,
+  type Security,
+  type SigningKey,
+  type TotpSetup,
+} from '../api';
 import { createPasskey, getPasskey, passkeysSupported } from '../passkeys';
 import { useToast } from '../toast';
 import {
@@ -15,7 +22,8 @@ import {
 
 /**
  * `/security` (issue #27): how this session signed in, second factors
- * (passkeys and an authenticator app) and linked sign-in identities.
+ * (passkeys and an authenticator app), linked sign-in identities and the
+ * SSH or OpenPGP keys pushed commits are verified against (#58).
  * Sensitive actions such as creating API tokens need a second factor within
  * the last 12 hours once one is enrolled.
  */
@@ -201,6 +209,124 @@ function PasskeysPanel({
   );
 }
 
+/** Keys whose signatures mark your pushed commits verified (#58). */
+function SigningKeysPanel(): ReactElement {
+  const toast = useToast();
+  const [keys, setKeys] = useState<SigningKey[] | null>(null);
+  const [kind, setKind] = useState<SigningKey['kind']>('ssh');
+  const [title, setTitle] = useState('');
+  const [publicKey, setPublicKey] = useState('');
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const load = useCallback(() => {
+    api
+      .listSigningKeys()
+      .then(setKeys)
+      .catch((err) => setError(asApiError(err)));
+  }, []);
+  useEffect(load, [load]);
+
+  const run = useCallback(
+    async (action: () => Promise<unknown>, done: string) => {
+      setError(null);
+      try {
+        await action();
+        toast.show(done);
+        load();
+      } catch (err) {
+        setError(asApiError(err));
+      }
+    },
+    [toast, load],
+  );
+
+  return (
+    <div className="panel">
+      <h2>Commit signing keys</h2>
+      {error && <ErrorNotice error={error} />}
+      {keys === null ? (
+        !error && <Loading />
+      ) : keys.length === 0 ? (
+        <Empty>No signing keys yet. Pushed commits you sign show as unverified.</Empty>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Kind</th>
+              <th>Fingerprint</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k.id}>
+                <td>{k.title}</td>
+                <td>{k.kind === 'ssh' ? 'SSH' : 'OpenPGP'}</td>
+                <td className="mono small wrap-any">{k.fingerprint}</td>
+                <td>
+                  <button
+                    className="danger"
+                    onClick={() =>
+                      void run(() => api.deleteSigningKey(k.id), 'signing key removed')
+                    }
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="row" style={{ alignItems: 'flex-end', marginTop: 10 }}>
+        <Field label="Kind">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as SigningKey['kind'])}
+          >
+            <option value="ssh">SSH</option>
+            <option value="gpg">OpenPGP</option>
+          </select>
+        </Field>
+        <Field label="Title">
+          <input
+            type="text"
+            placeholder="Work laptop"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Field>
+      </div>
+      <Field label="Public key">
+        <textarea
+          rows={3}
+          placeholder="ssh-ed25519 AAAA… or -----BEGIN PGP PUBLIC KEY BLOCK-----"
+          value={publicKey}
+          onChange={(e) => setPublicKey(e.target.value)}
+        />
+      </Field>
+      <button
+        className="primary"
+        disabled={publicKey.trim() === ''}
+        onClick={() =>
+          void run(async () => {
+            await api.addSigningKey({
+              kind,
+              title: title.trim() || 'Signing key',
+              public_key: publicKey,
+            });
+            setTitle('');
+            setPublicKey('');
+          }, 'signing key added')
+        }
+      >
+        Add signing key
+      </button>
+    </div>
+  );
+}
+
 function TotpPanel({
   security,
   onChange,
@@ -353,6 +479,7 @@ export function SecurityView(): ReactElement {
           <PasskeysPanel security={security} onChange={load} />
           <TotpPanel security={security} onChange={load} />
           <IdentitiesPanel security={security} />
+          <SigningKeysPanel />
         </>
       )}
     </div>
