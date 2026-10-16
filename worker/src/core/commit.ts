@@ -22,16 +22,21 @@ import { recordCommit } from '../observability/metrics';
 /** Max inline content per file in a commit request (route maps to 413). */
 export const MAX_INLINE_BYTES = 4 * 1024 * 1024;
 
+/** Git file modes a blob entry can take; absent means `100644`. */
+const modeSchema = z.enum(['100644', '100755', '120000']).optional();
+
 const inlineChangeSchema = z.object({
   path: pathSchema,
   op: z.enum(['add', 'mod']),
   content_b64: z.string(),
+  mode: modeSchema,
 });
 
 const preuploadedChangeSchema = z.object({
   path: pathSchema,
   op: z.enum(['add', 'mod']),
   blob_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  mode: modeSchema,
 });
 
 const deleteChangeSchema = z.object({
@@ -181,7 +186,9 @@ async function commitChangesInner(
       size = measured;
     }
     blobStats.push({ hash, size });
-    resolvedChanges.push({ path: change.path, op: change.op, hash, size });
+    // the default mode stays implicit so existing changeset IDs never change
+    const mode = change.mode === '100644' ? undefined : change.mode;
+    resolvedChanges.push({ path: change.path, op: change.op, hash, size, mode });
   }
 
   // --- 3. content-addressed idempotency (before ANY R2 write) -------------
@@ -350,6 +357,7 @@ interface EntryUpdate {
   op: 'add' | 'mod' | 'del';
   hash?: string;
   size?: number;
+  mode?: string;
 }
 
 function depth(dirPath: string): number {
@@ -389,6 +397,7 @@ async function rebuildTrees(
         op: change.op,
         hash: change.hash,
         size: change.size,
+        mode: change.mode,
       });
     }
   }
@@ -438,7 +447,7 @@ async function rebuildTrees(
                   kind: 'blob',
                   hash: upd.hash as string,
                   size: upd.size,
-                  mode: '100644',
+                  mode: upd.mode ?? '100644',
                 }
               : { name, kind: 'tree', hash: upd.hash as string };
           if (idx >= 0) entries[idx] = entry;

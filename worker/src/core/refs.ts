@@ -98,14 +98,17 @@ export async function readRefHead(
 
 export interface MoveRefInput {
   from: string | null;
-  to: string;
+  /** null deletes the ref. */
+  to: string | null;
   force?: boolean;
+  /** Allow a non-fast-forward move, still compare-and-swap on `from`. */
+  non_ff?: boolean;
 }
 
 export interface MoveRefResult {
   ok: true;
   from: string | null;
-  to: string;
+  to: string | null;
 }
 
 interface MoveRefErrorBody {
@@ -120,7 +123,7 @@ interface MoveRefErrorBody {
 const moveResultSchema = z.object({
   ok: z.literal(true),
   from: z.string().min(1).nullable(),
-  to: z.string().min(1),
+  to: z.string().min(1).nullable(),
 });
 
 /**
@@ -145,6 +148,7 @@ export async function moveRefViaDO(
         from: input.from,
         to: input.to,
         force: input.force ?? false,
+        non_ff: input.non_ff ?? false,
       }),
     }),
   );

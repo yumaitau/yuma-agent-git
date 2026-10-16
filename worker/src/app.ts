@@ -12,6 +12,7 @@ import { identityRoutes } from './auth/security';
 import { tokensRoutes } from './auth/tokens';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
+import { gitBasicAuth, gitRoutes } from './git/http';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -24,6 +25,8 @@ export const app = new Hono<AppEnv>();
 app.use('*', observeMiddleware);
 // Resolves `user` + `principal` on every request (never 401s by itself).
 app.use('*', authMiddleware);
+// Git smart HTTP also takes a token as the HTTP Basic password (git/http.ts).
+app.use('*', gitBasicAuth);
 // Sign-in is required to see anything: the whole /api surface rejects
 // anonymous callers, public repos included. OAuth, webhooks (signature
 // verified) and /healthz stay reachable. Every API response is therefore
@@ -46,6 +49,9 @@ app.use('*', cacheTierMiddleware);
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
+// Git clients (issues #31, #32): `/:owner/:repo.git/…`, before the SPA fallback.
+app.route('/', gitRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, and token management.
 app.route('/', authRoutes);
@@ -67,7 +73,8 @@ app.notFound((c) => {
     path.startsWith('/auth/') ||
     path.startsWith('/webhooks/') ||
     path.startsWith('/scim/') ||
-    path.startsWith('/healthz');
+    path.startsWith('/healthz') ||
+    /^\/[^/]+\/[^/]+\.git\//.test(path);
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);
   }

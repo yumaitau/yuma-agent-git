@@ -123,6 +123,11 @@ const PUBLIC = new Set([
   'GET /scim/v2/Users/:id',
   'PATCH /scim/v2/Users/:id',
   'DELETE /scim/v2/Users/:id',
+  // Git smart HTTP (#31, #32): its own token auth, 401 + WWW-Authenticate
+  // for anonymous callers, 404 for unreadable repos (test/git-*.test.ts)
+  'GET /:owner/:repo{[^/]+\\.git}/info/refs',
+  'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack',
+  'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack',
 ]);
 
 /**

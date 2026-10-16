@@ -5,7 +5,7 @@ import { isAncestorDag } from './ancestry';
 import { ApiError } from './errors';
 import { mutatePullLocked } from '../reviews/pulls';
 import { settings, parsePolicy } from '../ci/config';
-import { run } from '../db/client';
+import { run, tx } from '../db/client';
 import { getRepo } from '../db/repos';
 import { TAG_PREFIX, validateRefName } from './refs';
 
@@ -13,11 +13,14 @@ const moveSchema = z.object({
   repo_id: z.string().min(1),
   name: z.string().min(1),
   from: z.string().min(1).nullable(),
-  to: z.string().min(1),
+  /** null deletes the ref. */
+  to: z.string().min(1).nullable(),
   force: z.boolean().optional(),
+  /** Skip the fast-forward check but keep the compare-and-swap (git push). */
+  non_ff: z.boolean().optional(),
 });
 
-function ok(from: string | null, to: string): Response {
+function ok(from: string | null, to: string | null): Response {
   return new Response(JSON.stringify({ ok: true, from, to }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
@@ -113,7 +116,13 @@ export class RefLockDO {
     // from both parents) — the first-parent skip list alone would reject
     // moving off a merge's second parent.
     let fastForward = true;
-    if (!args.force && args.from !== null && args.to !== args.from) {
+    if (
+      !args.force &&
+      !args.non_ff &&
+      args.from !== null &&
+      args.to !== null &&
+      args.to !== args.from
+    ) {
       try {
         fastForward = await isAncestorDag(this.env, args.repo_id, args.from, args.to);
       } catch (err) {
@@ -157,12 +166,18 @@ export class RefLockDO {
           actual: null,
         });
       }
+      if (to === null) {
+        return fail(409, 'ref_stale', `ref ${name} does not exist`, {
+          expected: from,
+          actual: null,
+        });
+      }
       await setRef(this.env, repoId, name, to);
       return ok(null, to);
     }
 
     // Tags never move without force, as `git push` treats them.
-    if (name.startsWith(TAG_PREFIX) && !force && to !== current.head) {
+    if (name.startsWith(TAG_PREFIX) && !force && to !== null && to !== current.head) {
       return fail(409, 'tag_exists', `tag ${name} already exists`, {
         expected: from,
         actual: current.head,
@@ -197,6 +212,19 @@ export class RefLockDO {
       });
     }
 
+    if (to === null) {
+      // a deleted tag takes its annotation with it
+      await tx(this.env, (t) => {
+        t.q('DELETE FROM refs WHERE repo_id = ? AND name = ?', [repoId, name]);
+        if (name.startsWith(TAG_PREFIX)) {
+          t.q('DELETE FROM tags WHERE repo_id = ? AND name = ?', [
+            repoId,
+            name.slice(TAG_PREFIX.length),
+          ]);
+        }
+      });
+      return ok(current.head, null);
+    }
     await setRef(this.env, repoId, name, to);
     return ok(current.head, to);
   }

@@ -468,6 +468,7 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /scim/v2/Users/:id': 'scim.user.deprovision',
   'POST /api/v1/scim/tokens': 'scim_token.create',
   'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
+  'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack': 'ref.move',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -476,6 +477,7 @@ const EXEMPT: Record<string, string> = {
     'content-addressed write; invisible until an audited ref move points at it',
   'PUT /api/v1/repos/:repo{.+}/blob': 'content-addressed blob upload; same as changesets',
   'POST /api/v1/repos/:repo{.+}/fetch-objects': 'read-only batch fetch',
+  'POST /:owner/:repo{[^/]+\\.git}/git-upload-pack': 'read-only Git fetch',
   'POST /api/v1/me/passkeys/options': 'issues a one-time challenge; enrolment is audited',
   'POST /api/v1/me/totp':
     'stores an unconfirmed seed that cannot sign in; confirm is audited',

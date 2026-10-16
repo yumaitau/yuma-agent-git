@@ -168,13 +168,19 @@ const PURPOSES: Record<string, string> = {
   'PUT /api/v1/orgs/:org/teams/:team/repos': 'Grant the team a repo role',
   'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo': 'Remove a team repo grant',
   'GET /api/v1/orgs/:org/repos': 'Org repos the caller can read',
+  'GET /:owner/:repo.git/info/refs':
+    'Git smart HTTP advertisement: v2 capabilities, or refs for `git-receive-pack`',
+  'POST /:owner/:repo.git/git-upload-pack':
+    'Git protocol v2 `ls-refs` and `fetch` (clone, fetch)',
+  'POST /:owner/:repo.git/git-receive-pack':
+    'Git push: pack, pre-receive checks, ref CAS',
 };
 
 const METHOD_ORDER = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 
 /** `:repo{.+}` → `:repo` — the regex is a router detail, not part of the contract. */
 function displayPath(path: string): string {
-  return path.replace(/\{[^}]*\}/g, '');
+  return path.replace(/:repo\{[^}]*\.git\}/, ':repo.git').replace(/\{[^}]*\}/g, '');
 }
 
 /** A concrete path for `bucketFor()` (which only looks at path shape). */
@@ -191,6 +197,16 @@ function samplePath(path: string): string {
 function classify(path: string, src: string): { auth: string; perm: string | null } {
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
+  if (path.includes('.git/')) {
+    return {
+      auth: 'token (Basic or Bearer)',
+      perm: path.endsWith('/git-receive-pack')
+        ? 'write; read (whole repo)'
+        : path.endsWith('/info/refs')
+          ? 'read (whole repo); write for `git-receive-pack`'
+          : 'read (whole repo)',
+    };
+  }
   if (!path.startsWith('/api/')) return { auth: 'none', perm: '—' };
 
   let auth = 'any';

@@ -108,6 +108,8 @@ describe('rate limiting (sharded sliding window)', () => {
     expect(bucketFor('POST', '/api/v1/repos/x/fetch-objects')).toBe('object_fetch');
     expect(bucketFor('GET', '/api/v1/repos/x/object/blob/abc')).toBe('object_fetch');
     expect(bucketFor('GET', '/auth/github')).toBe('auth');
+    expect(bucketFor('POST', '/acme/x.git/git-upload-pack')).toBe('git');
+    expect(bucketFor('GET', '/auth/x.git/info/refs')).toBe('git');
     expect(bucketFor('POST', '/webhooks/github')).toBeNull();
   });
 
