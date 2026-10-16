@@ -27,6 +27,10 @@ export const WEBHOOK_EVENTS = [
   'release',
   // package registry (#53): published, tagged, deleted
   'package',
+  // agent review loops (#60): requested, completed, escalated
+  'agent_review',
+  // usage budgets (#61): soft_limit, hard_limit
+  'usage_budget',
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 

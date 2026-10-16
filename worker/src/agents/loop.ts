@@ -235,10 +235,18 @@ export async function runAgentLoop(env: Env, session: LoopSession): Promise<Loop
     // Infrastructure errors (model gateway down, DO eviction mid-run) are
     // allowed to kill the run: state is already persisted, and the queue's
     // retry re-enters from it.
-    const response = await chat(env, {
-      messages: buildMessages({ ...session.state(), budget: session.budget }, prompt),
-      tools: true,
-    });
+    const response = await chat(
+      env,
+      {
+        messages: buildMessages({ ...session.state(), budget: session.budget }, prompt),
+        tools: true,
+      },
+      {
+        repo_id: session.repo_id,
+        task_id: session.task_id,
+        ticket: session.github_issue ? `#${session.github_issue}` : null,
+      },
+    );
 
     if (response.content) {
       await session.record({ t: Date.now(), kind: 'llm', text: response.content });

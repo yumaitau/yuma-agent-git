@@ -100,6 +100,8 @@ export interface Pull {
   /** Set once merged (issue #42): the method and the changeset the target moved to. */
   merge_method?: MergeMethod | null;
   merged_cs?: string | null;
+  /** The agent identity that opened it, when one did (issue #60). */
+  author_agent_id?: string | null;
 }
 export interface Review {
   revision: number;

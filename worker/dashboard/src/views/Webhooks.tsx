@@ -49,6 +49,8 @@ const EVENTS = [
   'merge_group',
   'release',
   'package',
+  'agent_review',
+  'usage_budget',
 ];
 const STATUS_KIND = {
   pending: 'info',

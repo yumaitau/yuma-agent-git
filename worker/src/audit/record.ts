@@ -40,6 +40,10 @@ export type AuditAction =
   | 'pull.thread.unresolve'
   | 'pull.suggestion.apply'
   | 'pull.reviewers.update'
+  | 'pull.agent_review'
+  | 'pull.agent_review.escalate'
+  | 'agent_reviewer.set'
+  | 'agent_reviewer.delete'
   | 'merge_queue.enqueue'
   | 'merge_queue.dequeue'
   | 'merge_queue.land'
@@ -156,7 +160,10 @@ export type AuditAction =
   | 'mirror.update'
   | 'mirror.delete'
   | 'mirror.sync'
-  | 'repo.migration';
+  | 'repo.migration'
+  | 'usage.budget.set'
+  | 'usage.budget.delete'
+  | 'usage.budget.alert';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';
