@@ -169,6 +169,11 @@ describe('oidc sign-in', () => {
     });
     const session = await q1(testEnv, 'SELECT auth_method, mfa_at FROM sessions');
     expect(session).toEqual({ auth_method: 'oidc:google', mfa_at: null });
+    const login = await q1<{ target: string }>(
+      testEnv,
+      "SELECT target FROM audit_events WHERE action = 'auth.login'",
+    );
+    expect(JSON.parse(login?.target ?? '{}')).toMatchObject({ method: 'oidc:google' });
 
     // register a passkey
     const options = await app('/api/v1/me/passkeys/options', {
