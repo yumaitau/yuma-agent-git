@@ -30,7 +30,7 @@ export const GITHUB_EVENTS = new Set([
 ]);
 
 /** A stable positive integer for an id (52 bits, safe in JSON numbers). */
-async function numericId(id: string): Promise<number> {
+export async function numericId(id: string): Promise<number> {
   return parseInt((await sha256Hex(new TextEncoder().encode(id))).slice(0, 13), 16);
 }
 
@@ -123,7 +123,7 @@ const pullSchema = z.looseObject({
   merged_at: z.number().nullable(),
 });
 
-async function githubPull(
+export async function githubPull(
   env: Env,
   repo: RepoRecord,
   raw: unknown,
@@ -151,10 +151,30 @@ async function githubPull(
   };
 }
 
-async function githubUser(env: Env, userId: string | null) {
+export async function githubUser(env: Env, userId: string | null) {
   return userId === null
     ? null
     : { login: await login(env, userId), id: await numericId(userId), type: 'User' };
+}
+
+/** GitHub's `repository` object; the REST compatibility layer (#74) extends it. */
+export async function githubRepository(repo: RepoRecord, origin: string) {
+  const [owner, short] = repo.slug.split('/') as [string, string];
+  return {
+    id: await numericId(repo.id),
+    node_id: repo.id,
+    name: short,
+    full_name: repo.slug,
+    private: repo.visibility !== 'public',
+    owner: {
+      login: owner,
+      id: await numericId(repo.owner_id ?? owner),
+      type: repo.owner_kind === 'org' ? 'Organization' : 'User',
+    },
+    html_url: `${origin}/r/${repo.slug}`,
+    clone_url: `${origin}/${repo.slug}.git`,
+    default_branch: repo.default_branch,
+  };
 }
 
 /** GitHub event name for a forge event, or null when the format has none. */
@@ -201,22 +221,7 @@ export async function buildPayload(
 
   const name = githubName(event);
   if (name === null) return null;
-  const [owner, short] = repo.slug.split('/') as [string, string];
-  const repository = {
-    id: await numericId(repo.id),
-    node_id: repo.id,
-    name: short,
-    full_name: repo.slug,
-    private: repo.visibility !== 'public',
-    owner: {
-      login: owner,
-      id: await numericId(repo.owner_id ?? owner),
-      type: repo.owner_kind === 'org' ? 'Organization' : 'User',
-    },
-    html_url: `${origin}/r/${repo.slug}`,
-    clone_url: `${origin}/${repo.slug}.git`,
-    default_branch: repo.default_branch,
-  };
+  const repository = await githubRepository(repo, origin);
   const sender = {
     login: senderLogin ?? event.sender.id,
     id: await numericId(event.sender.user_id ?? event.sender.id),
