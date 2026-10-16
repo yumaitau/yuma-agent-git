@@ -92,7 +92,14 @@ export type AuditAction =
   | 'ruleset.create'
   | 'ruleset.update'
   | 'ruleset.delete'
-  | 'ruleset.bypass';
+  | 'ruleset.bypass'
+  | 'policy.update'
+  | 'policy.deny'
+  | 'policy.approval.request'
+  | 'policy.approval.approve'
+  | 'policy.approval.reject'
+  | 'agents.pause'
+  | 'agents.resume';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

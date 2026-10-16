@@ -125,6 +125,63 @@
         }
       }
     },
+    "/api/v1/admin/agents/pause": {
+      "get": {
+        "operationId": "getInstanceAgentPause",
+        "summary": "Whether every agent on the instance is paused",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "pauseInstanceAgents",
+        "summary": "Pause every agent: revoke agent tokens, cancel runs (`AGENTS_ADMIN_USER_IDS`)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": { "default": "", "type": "string", "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "resumeInstanceAgents",
+        "summary": "Resume agents on the instance",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/admin/metrics": {
       "get": {
         "operationId": "getMetrics",
@@ -757,6 +814,87 @@
         }
       }
     },
+    "/api/v1/orgs/{org}/agents/pause": {
+      "get": {
+        "operationId": "getOrgAgentPause",
+        "summary": "Org and instance agent pause, and who paused",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org member",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "pauseOrgAgents",
+        "summary": "Pause org agents: revoke their tokens, cancel runs, refuse writes",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": { "default": "", "type": "string", "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "resumeOrgAgents",
+        "summary": "Resume org agents",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/orgs/{org}/audit": {
       "get": {
         "operationId": "searchOrgAudit",
@@ -921,6 +1059,192 @@
           },
           {
             "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/policy": {
+      "get": {
+        "operationId": "getOrgPolicy",
+        "summary": "Agent policy in force (the default pack when unset)",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org member",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "putOrgPolicy",
+        "summary": "Save a new agent policy version",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": { "type": "number", "const": 1 },
+                  "rules": {
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$"
+                        },
+                        "description": {
+                          "default": "",
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "actions": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "push",
+                              "changeset.create",
+                              "ref.move",
+                              "pr.merge",
+                              "release.publish",
+                              "pipeline.run",
+                              "pipeline.edit",
+                              "secret.write",
+                              "issue.ready"
+                            ]
+                          }
+                        },
+                        "effect": {
+                          "type": "string",
+                          "enum": ["deny", "require_approval"]
+                        },
+                        "when": {
+                          "default": {},
+                          "type": "object",
+                          "properties": {
+                            "paths": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              }
+                            },
+                            "refs": {
+                              "minItems": 1,
+                              "maxItems": 100,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 256
+                              }
+                            },
+                            "max_files": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "max_bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "force_push": { "type": "boolean", "const": true },
+                            "risk": {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": ["low", "medium", "high"]
+                              }
+                            },
+                            "registries": {
+                              "minItems": 1,
+                              "maxItems": 50,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 253
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["id", "actions", "effect"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["version", "rules"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/orgs/{org}/policy/versions": {
+      "get": {
+        "operationId": "listOrgPolicyVersions",
+        "summary": "Agent policy version history",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "org owner or admin",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "org",
             "in": "path",
             "required": true,
             "schema": { "type": "string" }
@@ -1808,6 +2132,114 @@
         }
       }
     },
+    "/api/v1/policy/test": {
+      "post": {
+        "operationId": "testPolicy",
+        "summary": "Run an agent policy (or the default pack) against test cases",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "policy": {},
+                  "cases": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+                        "input": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string",
+                              "enum": [
+                                "push",
+                                "changeset.create",
+                                "ref.move",
+                                "pr.merge",
+                                "release.publish",
+                                "pipeline.run",
+                                "pipeline.edit",
+                                "secret.write",
+                                "issue.ready"
+                              ]
+                            },
+                            "ref": { "type": "string" },
+                            "files": {
+                              "maxItems": 10000,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "path": { "type": "string" },
+                                  "op": {
+                                    "type": "string",
+                                    "enum": ["add", "mod", "del"]
+                                  },
+                                  "size": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": ["path", "op"]
+                              }
+                            },
+                            "force_push": { "type": "boolean" },
+                            "risk": {
+                              "anyOf": [
+                                { "type": "string", "enum": ["low", "medium", "high"] },
+                                { "type": "null" }
+                              ]
+                            },
+                            "dependencies": {
+                              "maxItems": 5000,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": { "type": "string" },
+                                  "registry": { "type": "string" }
+                                },
+                                "required": ["name", "registry"]
+                              }
+                            }
+                          },
+                          "required": ["action"],
+                          "additionalProperties": false
+                        },
+                        "expect": {
+                          "type": "string",
+                          "enum": ["allow", "deny", "require_approval"]
+                        }
+                      },
+                      "required": ["name", "input", "expect"]
+                    }
+                  }
+                },
+                "required": ["cases"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos": {
       "get": {
         "operationId": "listRepos",
@@ -2300,6 +2732,92 @@
             }
           }
         ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/approvals": {
+      "get": {
+        "operationId": "listApprovals",
+        "summary": "Agent actions held for a human (`?state=pending|approved|rejected|all`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "approved", "rejected", "all"]
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/approvals/{id}": {
+      "post": {
+        "operationId": "decideApproval",
+        "summary": "Approve or reject a held agent action",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "admin (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": { "type": "string", "enum": ["approve", "reject"] }
+                },
+                "required": ["decision"]
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success",

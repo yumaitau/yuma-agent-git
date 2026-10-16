@@ -40,6 +40,8 @@ export interface Env {
   AUDIT_STREAM_SECRET?: string;
   /** Comma-separated user ids allowed to search and export the audit log. */
   AUDIT_ADMIN_USER_IDS?: string;
+  /** Comma-separated user ids allowed to pause every agent on the instance (#62). */
+  AGENTS_ADMIN_USER_IDS?: string;
   /** SPA assets (issue #20) — dashboard/dist served for non-API paths. */
   ASSETS?: Fetcher;
   /** Durable Object namespace for ref compare-and-swap locks (one per repo+ref). */

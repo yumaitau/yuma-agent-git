@@ -13,6 +13,7 @@ import {
 } from '../api';
 import { useToast } from '../toast';
 import { RulesetsPanel } from './Rulesets';
+import { ApprovalsPanel } from './Guardrails';
 import {
   Chip,
   Empty,
@@ -552,6 +553,7 @@ export function SettingsView(): ReactElement {
       <MembersPanel repos={repos} />
       <PathRulesPanel repos={repos} />
       <RulesetsPanel repos={repos} />
+      <ApprovalsPanel repos={repos} />
       <SuperfansPanel repos={repos} />
       <div className="small faint">
         Sign-in methods and second factors are managed on{' '}

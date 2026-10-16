@@ -1,0 +1,377 @@
+[
+  {
+    "name": "a README change passes",
+    "input": {
+      "action": "push",
+      "ref": "feature",
+      "files": [
+        {
+          "path": "README.md",
+          "op": "mod",
+          "size": 120
+        }
+      ]
+    },
+    "expect": "allow"
+  },
+  {
+    "name": "a CI workflow change waits for a human",
+    "input": {
+      "action": "push",
+      "ref": "feature",
+      "files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "op": "mod",
+          "size": 300
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "a pipeline change through the commit API waits for a human",
+    "input": {
+      "action": "changeset.create",
+      "files": [
+        {
+          "path": ".yuma/pipelines/deploy.yml",
+          "op": "add",
+          "size": 80
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "CODEOWNERS waits for a human",
+    "input": {
+      "action": "changeset.create",
+      "files": [
+        {
+          "path": ".github/CODEOWNERS",
+          "op": "mod"
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "a GitHub-hosted dependency waits for a human",
+    "input": {
+      "action": "push",
+      "files": [
+        {
+          "path": "package.json",
+          "op": "mod"
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "zod",
+          "registry": "registry.npmjs.org"
+        },
+        {
+          "name": "left-pad",
+          "registry": "github.com"
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "npm registry and workspace dependencies pass",
+    "input": {
+      "action": "push",
+      "files": [
+        {
+          "path": "package.json",
+          "op": "mod"
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "zod",
+          "registry": "registry.npmjs.org"
+        },
+        {
+          "name": "@yuma/sdk",
+          "registry": "local"
+        }
+      ]
+    },
+    "expect": "allow"
+  },
+  {
+    "name": "51 files wait for a human",
+    "input": {
+      "action": "push",
+      "files": [
+        {
+          "path": "f/1",
+          "op": "add"
+        },
+        {
+          "path": "f/2",
+          "op": "add"
+        },
+        {
+          "path": "f/3",
+          "op": "add"
+        },
+        {
+          "path": "f/4",
+          "op": "add"
+        },
+        {
+          "path": "f/5",
+          "op": "add"
+        },
+        {
+          "path": "f/6",
+          "op": "add"
+        },
+        {
+          "path": "f/7",
+          "op": "add"
+        },
+        {
+          "path": "f/8",
+          "op": "add"
+        },
+        {
+          "path": "f/9",
+          "op": "add"
+        },
+        {
+          "path": "f/10",
+          "op": "add"
+        },
+        {
+          "path": "f/11",
+          "op": "add"
+        },
+        {
+          "path": "f/12",
+          "op": "add"
+        },
+        {
+          "path": "f/13",
+          "op": "add"
+        },
+        {
+          "path": "f/14",
+          "op": "add"
+        },
+        {
+          "path": "f/15",
+          "op": "add"
+        },
+        {
+          "path": "f/16",
+          "op": "add"
+        },
+        {
+          "path": "f/17",
+          "op": "add"
+        },
+        {
+          "path": "f/18",
+          "op": "add"
+        },
+        {
+          "path": "f/19",
+          "op": "add"
+        },
+        {
+          "path": "f/20",
+          "op": "add"
+        },
+        {
+          "path": "f/21",
+          "op": "add"
+        },
+        {
+          "path": "f/22",
+          "op": "add"
+        },
+        {
+          "path": "f/23",
+          "op": "add"
+        },
+        {
+          "path": "f/24",
+          "op": "add"
+        },
+        {
+          "path": "f/25",
+          "op": "add"
+        },
+        {
+          "path": "f/26",
+          "op": "add"
+        },
+        {
+          "path": "f/27",
+          "op": "add"
+        },
+        {
+          "path": "f/28",
+          "op": "add"
+        },
+        {
+          "path": "f/29",
+          "op": "add"
+        },
+        {
+          "path": "f/30",
+          "op": "add"
+        },
+        {
+          "path": "f/31",
+          "op": "add"
+        },
+        {
+          "path": "f/32",
+          "op": "add"
+        },
+        {
+          "path": "f/33",
+          "op": "add"
+        },
+        {
+          "path": "f/34",
+          "op": "add"
+        },
+        {
+          "path": "f/35",
+          "op": "add"
+        },
+        {
+          "path": "f/36",
+          "op": "add"
+        },
+        {
+          "path": "f/37",
+          "op": "add"
+        },
+        {
+          "path": "f/38",
+          "op": "add"
+        },
+        {
+          "path": "f/39",
+          "op": "add"
+        },
+        {
+          "path": "f/40",
+          "op": "add"
+        },
+        {
+          "path": "f/41",
+          "op": "add"
+        },
+        {
+          "path": "f/42",
+          "op": "add"
+        },
+        {
+          "path": "f/43",
+          "op": "add"
+        },
+        {
+          "path": "f/44",
+          "op": "add"
+        },
+        {
+          "path": "f/45",
+          "op": "add"
+        },
+        {
+          "path": "f/46",
+          "op": "add"
+        },
+        {
+          "path": "f/47",
+          "op": "add"
+        },
+        {
+          "path": "f/48",
+          "op": "add"
+        },
+        {
+          "path": "f/49",
+          "op": "add"
+        },
+        {
+          "path": "f/50",
+          "op": "add"
+        },
+        {
+          "path": "f/51",
+          "op": "add"
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "more than 1 MiB waits for a human",
+    "input": {
+      "action": "changeset.create",
+      "files": [
+        {
+          "path": "data.bin",
+          "op": "add",
+          "size": 2000000
+        }
+      ]
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "a force push is refused",
+    "input": {
+      "action": "push",
+      "ref": "feature",
+      "files": [],
+      "force_push": true
+    },
+    "expect": "deny"
+  },
+  {
+    "name": "a high risk merge is refused",
+    "input": {
+      "action": "pr.merge",
+      "ref": "main",
+      "risk": "high"
+    },
+    "expect": "deny"
+  },
+  {
+    "name": "a medium risk merge passes",
+    "input": {
+      "action": "pr.merge",
+      "ref": "main",
+      "risk": "medium"
+    },
+    "expect": "allow"
+  },
+  {
+    "name": "a release waits for a human",
+    "input": {
+      "action": "release.publish",
+      "ref": "refs/tags/v1.0.0"
+    },
+    "expect": "require_approval"
+  },
+  {
+    "name": "a fast-forward ref move passes",
+    "input": {
+      "action": "ref.move",
+      "ref": "feature",
+      "force_push": false
+    },
+    "expect": "allow"
+  }
+]

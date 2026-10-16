@@ -15,11 +15,13 @@ import {
 } from '../api';
 import { useToast } from '../toast';
 import { Chip, Empty, ErrorNotice, Field, Loading } from '../ui';
+import { AgentPausePanel } from './Guardrails';
 
 /**
  * Organisation settings (issue #26): members and org roles, base role,
- * teams (nested via a parent team) and team repo grants. `/orgs` lists the
- * caller's orgs and creates new ones; `/orgs/:org` manages one org.
+ * teams (nested via a parent team), team repo grants and the agent kill
+ * switch (#62). `/orgs` lists the caller's orgs and creates new ones;
+ * `/orgs/:org` manages one org.
  */
 
 const ORG_ROLES: OrgRole[] = ['member', 'admin', 'owner', 'billing'];
@@ -310,6 +312,8 @@ function OrgDetail({ slug }: { slug: string }): ReactElement {
       <div className="small muted">
         <code>{org.slug}</code> · your role <Chip kind="info">{role}</Chip>
       </div>
+
+      <AgentPausePanel org={org.slug} canManage={canManage} />
 
       <div className="panel">
         <h2>Base permissions</h2>

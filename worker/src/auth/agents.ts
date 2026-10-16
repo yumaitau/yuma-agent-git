@@ -12,6 +12,7 @@ import { can } from './rbac';
 import { hasScope, type AppEnv, type Principal } from './principal';
 import { ssoMessage, ssoRequirement } from './sso';
 import { resolveTokenPrincipal } from './tokens';
+import { getPause, INSTANCE_SCOPE, pauseMessage } from '../policy/pause';
 
 /**
  * Agent identities (issue #57). An agent is a principal (`agent:<id>`) owned
@@ -147,8 +148,9 @@ const agentTokenRowSchema = z.object({
 
 /**
  * Resolve a raw `yagat_` token. Null when unknown, expired, revoked, its
- * agent disabled, its delegating API token revoked or expired, or the human
- * it acts for deprovisioned.
+ * agent disabled, its delegating API token revoked or expired, the human it
+ * acts for deprovisioned, or agents paused (#62) on the instance, the agent's
+ * org or the org of any repo the token is bound to.
  */
 export async function resolveAgentToken(
   env: Env,
@@ -164,7 +166,15 @@ export async function resolveAgentToken(
        JOIN ${T.users} u ON u.${C.users.id} = t.on_behalf_of
        JOIN ${T.apiTokens} s ON s.${C.apiTokens.id} = t.subject_token_id
       WHERE t.token_hash = ? AND a.disabled = 0 AND u.active = 1
-        AND (s.${C.apiTokens.expiresAt} IS NULL OR s.${C.apiTokens.expiresAt} >= ?)`,
+        AND (s.${C.apiTokens.expiresAt} IS NULL OR s.${C.apiTokens.expiresAt} >= ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM agent_pauses p
+           WHERE p.scope_id = '${INSTANCE_SCOPE}'
+              OR (a.owner_kind = 'org' AND p.scope_id = a.owner_id)
+              OR p.scope_id IN (
+                   SELECT r.${C.repos.ownerId} FROM json_each(t.repos) j
+                     JOIN ${T.repos} r ON r.${C.repos.id} = j.value
+                    WHERE r.${C.repos.ownerKind} = 'org'))`,
     [await hashToken(raw), now],
   );
   if (!row) return null;
@@ -343,6 +353,16 @@ agentIdentityRoutes.post('/oauth/token', async (c) => {
         );
       }
       repos.push(repo);
+    }
+    // kill switch (#62): no new tokens while the instance or an org is paused
+    const orgs = new Set([
+      INSTANCE_SCOPE,
+      ...(agent.owner_kind === 'org' ? [agent.owner_id] : []),
+      ...repos.flatMap((r) => (r.owner_kind === 'org' && r.owner_id ? [r.owner_id] : [])),
+    ]);
+    for (const scope of orgs) {
+      const pause = await getPause(c.env, scope);
+      if (pause) return apiError(c, 403, 'agents_paused', pauseMessage(pause));
     }
 
     const now = Date.now();

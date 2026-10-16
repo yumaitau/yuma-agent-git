@@ -11,6 +11,7 @@ import {
 } from '../auth/scim';
 import { createAgentSchema, exchangeSchema, patchAgentSchema } from '../auth/agents';
 import { rulesetInputSchema } from '../policy/rulesets';
+import { policySchema as agentPolicySchema } from '../policy/engine';
 import { assertionSchema, registrationSchema } from '../auth/webauthn';
 import { codeSchema } from '../auth/totp';
 import { connectSchema } from '../bridge/github';
@@ -37,6 +38,12 @@ import {
   updateMilestone,
 } from './issues';
 import { fetchObjectsSchema } from './objects';
+import {
+  approvalsQuery,
+  decisionSchema,
+  pauseSchema,
+  policyTestSchema,
+} from './guardrails';
 import { putSsoSchema } from './org-sso';
 import {
   createOrgSchema,
@@ -195,6 +202,21 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1': { id: 'getApiRoot' },
   'GET /api/v1/openapi.json': { id: 'getOpenApi' },
   'POST /api/v1/admin/secrets/rewrap': { id: 'rewrapSecretKeys' },
+  'GET /api/v1/admin/agents/pause': { id: 'getInstanceAgentPause' },
+  'POST /api/v1/admin/agents/pause': { id: 'pauseInstanceAgents', body: pauseSchema },
+  'DELETE /api/v1/admin/agents/pause': { id: 'resumeInstanceAgents' },
+  'POST /api/v1/policy/test': { id: 'testPolicy', body: policyTestSchema },
+  'GET /api/v1/orgs/:org/policy': { id: 'getOrgPolicy' },
+  'PUT /api/v1/orgs/:org/policy': { id: 'putOrgPolicy', body: agentPolicySchema },
+  'GET /api/v1/orgs/:org/policy/versions': { id: 'listOrgPolicyVersions' },
+  'GET /api/v1/orgs/:org/agents/pause': { id: 'getOrgAgentPause' },
+  'POST /api/v1/orgs/:org/agents/pause': { id: 'pauseOrgAgents', body: pauseSchema },
+  'DELETE /api/v1/orgs/:org/agents/pause': { id: 'resumeOrgAgents' },
+  'GET /api/v1/repos/:repo/approvals': { id: 'listApprovals', query: approvalsQuery },
+  'POST /api/v1/repos/:repo/approvals/:id': {
+    id: 'decideApproval',
+    body: decisionSchema,
+  },
   'GET /api/v1/admin/metrics': {
     id: 'getMetrics',
     query: z.object({

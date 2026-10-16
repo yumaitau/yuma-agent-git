@@ -4,6 +4,13 @@ import type { Principal } from '../auth/principal';
 import { can, pathDecider, restrictingDecision, type PathDecider } from '../auth/rbac';
 import { getRepo } from '../db/repos';
 import { enforcePushRules } from '../policy/rulesets';
+import {
+  agentKey,
+  changeFacts,
+  guardAgentAction,
+  type Guard,
+} from '../policy/guardrails';
+import { pauseFor, pauseMessage } from '../policy/pause';
 import { commitChanges } from '../core/commit';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
@@ -69,6 +76,25 @@ async function guardPath(
   if (!repo) return { error: 'repo_not_found' };
   const allowed = await can(env, repo, ctx.principal, perm, path);
   return allowed ? null : { error: 'forbidden', perm, path };
+}
+
+/**
+ * Every tool call is an agent action (#62): an agent identity, else the MCP
+ * caller's token, else the built-in run's task.
+ */
+function agentOf(ctx: ToolCtx): string {
+  const p = ctx.principal;
+  return (
+    agentKey(p) ??
+    (ctx.task_id === 'mcp' && p?.kind === 'token'
+      ? `token:${p.tokenId}`
+      : `task:${ctx.task_id}`)
+  );
+}
+
+/** A guardrail refusal as a tool result the agent can read and adjust to (#62). */
+function refusal(guard: Exclude<Guard, { outcome: 'allow' }>): ToolResult {
+  return { error: guard.code, message: guard.message, ...guard.details };
 }
 
 /** Rules + membership loaded once for a batch of per-path decisions. */
@@ -406,6 +432,22 @@ export const tools: Tool[] = [
         if (err instanceof ApiError) return { error: err.code, message: err.message };
         throw err;
       }
+      const guard = await guardAgentAction(
+        env,
+        ctx.principal,
+        repo,
+        { action: 'changeset.create', ...(await changeFacts(env, repo.id, changes)) },
+        {
+          exact: { first_parent: ctx.head_cs, parents: parsed.parents, changes },
+          summary: {
+            first_parent: ctx.head_cs,
+            files: changes.slice(0, 100).map((ch) => ch.path),
+            file_count: changes.length,
+          },
+        },
+        agentOf(ctx),
+      );
+      if (guard.outcome !== 'allow') return refusal(guard);
       const result = await commitChanges(env, ctx.repo_id, {
         first_parent: ctx.head_cs,
         parents: parsed.parents,
@@ -447,6 +489,19 @@ export const tools: Tool[] = [
       }
       const branch = repo.default_branch;
       const current = await readRefHead(env, ctx.repo_id, branch);
+      const guard = await guardAgentAction(
+        env,
+        ctx.principal,
+        repo,
+        { action: 'ref.move', ref: branch },
+        {
+          exact: { ref: branch, from: current, to: ctx.head_cs },
+          summary: { ref: branch, from: current, to: ctx.head_cs },
+        },
+        agentOf(ctx),
+      );
+      if (guard.outcome !== 'allow')
+        return { landed: false, reason: guard.code, final: true, ...refusal(guard) };
       try {
         await moveRefViaDO(env, ctx.repo_id, branch, {
           from: current,
@@ -607,6 +662,13 @@ export async function executeTool(
   if (!tool) return { error: 'unknown_tool', name };
   const budgetError = charge(ctx.budget, 'tool');
   if (budgetError) return budgetError;
+  // kill switch (#62): a paused org or instance ends the run at its next tool
+  const repo = await getRepo(env, ctx.repo_id);
+  const pause = repo ? await pauseFor(env, repo) : null;
+  if (pause) {
+    const reason = pauseMessage(pause);
+    return { error: 'agents_paused', message: reason, terminal: 'failure', reason };
+  }
   try {
     return await tool.execute(env, ctx, input);
   } catch (err) {

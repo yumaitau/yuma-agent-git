@@ -6,6 +6,8 @@ import type { PathDecider } from '../auth/rbac';
 import { MAX_FILE_BYTES } from '../bridge/import';
 import { agentRefOwner, TAG_PREFIX } from '../core/refs';
 import { actorFor, evaluate, rulesetsFor, type Outcome } from '../policy/rulesets';
+import { isManifest, npmDependencies, type Dependency } from '../policy/engine';
+import { agentKey, guardAgentAction } from '../policy/guardrails';
 
 /**
  * Pre-receive checks (issue #32): every check sees the whole push before any
@@ -13,8 +15,8 @@ import { actorFor, evaluate, rulesetsFor, type Outcome } from '../policy/ruleset
  * message `git push` prints. Checks are pure over the parsed push plus a
  * bounded number of D1 reads, so they are deterministic and quick.
  *
- * Secret scanning (#66) and agent policy (#62) join this list as further
- * `Check`s when those features exist.
+ * Secret scanning (#66) joins this list as a further `Check`. Agent policy
+ * (#62) runs last, so only pushes every other check passes ask a human.
  */
 
 /** One file change of a pushed commit, relative to its first parent. */
@@ -60,6 +62,8 @@ export interface PreReceiveContext {
   commits: Map<string, PushCommit>;
   /** Net file changes the ref sees (old head → new head). */
   refChanges(update: PushUpdate): Promise<GitChange[]>;
+  /** A blob's bytes from the pack or the store, or null. */
+  readBlob(sha: string): Promise<Uint8Array | null>;
 }
 
 export interface Verdict {
@@ -270,6 +274,60 @@ const pathSafety: Check = async (ctx, updates) =>
     return [];
   });
 
+/**
+ * Agent guardrails (#62): the kill switch and the org policy judge each ref
+ * update an agent pushes (`push`, or `release.publish` for tags). A held
+ * update names its approval; once a human approves, pushing the same old and
+ * new SHAs lands.
+ */
+const agentPolicy: Check = async (ctx, updates) => {
+  if (agentKey(ctx.principal) === null) return [];
+  const out: Verdict[] = [];
+  for (const u of updates) {
+    const changes = changesOf(ctx, u);
+    const dependencies: Dependency[] = [];
+    for (const c of changes) {
+      if (c.op === 'del' || !c.sha || !isManifest(c.path)) continue;
+      const bytes = await ctx.readBlob(c.sha);
+      dependencies.push(
+        ...(bytes
+          ? npmDependencies(new TextDecoder().decode(bytes))
+          : [{ name: c.path, registry: 'invalid' }]),
+      );
+    }
+    const guard = await guardAgentAction(
+      ctx.env,
+      ctx.principal,
+      ctx.repo,
+      {
+        // a tag is a release however it arrives
+        action: u.name.startsWith(TAG_PREFIX) ? 'release.publish' : 'push',
+        ref: u.name,
+        files: changes.map((c) => ({
+          path: c.path,
+          op: c.op,
+          ...(c.size === undefined ? {} : { size: c.size }),
+        })),
+        force_push: !u.deleting && !u.fastForward,
+        dependencies,
+      },
+      {
+        exact: { ref: u.name, old: u.oldSha, new: u.newSha },
+        summary: {
+          ref: u.name,
+          old: u.oldSha,
+          new: u.newSha,
+          files: changes.slice(0, 100).map((c) => c.path),
+          file_count: changes.length,
+        },
+      },
+    );
+    if (guard.outcome !== 'allow')
+      out.push({ ref: u.ref, rule: guard.code, message: guard.message });
+  }
+  return out;
+};
+
 export const CHECKS: Check[] = [
   agentRefs,
   agentLimits,
@@ -278,16 +336,22 @@ export const CHECKS: Check[] = [
   pathRules,
   maxFileSize,
   pathSafety,
+  agentPolicy,
 ];
 
-/** Run every check; the first verdict per ref is the one reported. */
+/**
+ * Run the checks in order; the first verdict per ref is the one reported, and
+ * a refused ref is not shown to later checks.
+ */
 export async function preReceive(
   ctx: PreReceiveContext,
   updates: PushUpdate[],
 ): Promise<Map<string, Verdict>> {
   const verdicts = new Map<string, Verdict>();
   for (const check of CHECKS) {
-    for (const verdict of await check(ctx, updates)) {
+    const open = updates.filter((u) => !verdicts.has(u.ref));
+    if (open.length === 0) break;
+    for (const verdict of await check(ctx, open)) {
       if (!verdicts.has(verdict.ref)) verdicts.set(verdict.ref, verdict);
     }
   }

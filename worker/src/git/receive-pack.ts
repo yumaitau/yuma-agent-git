@@ -476,6 +476,10 @@ export async function receivePack(
         await diffTrees(push, await treeOf(push, u.oldSha), head, '', out);
         return out.changes;
       },
+      async readBlob(sha) {
+        const object = push.objects.get(sha) ?? (await readGitObject(env, repo.id, sha));
+        return object?.type === 'blob' ? object.body : null;
+      },
     },
     pending,
   );
