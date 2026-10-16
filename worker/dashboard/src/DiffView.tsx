@@ -86,17 +86,19 @@ export function DiffBody({
       {lines.map((line, i) => (
         <Fragment key={i}>
           <div className={`diff-line ${line.kind === 'ctx' ? '' : line.kind}`}>
-            {review && (
-              <button
-                type="button"
-                className="ln"
-                disabled={!line.anchor}
-                aria-label={line.anchor && `Comment on line ${line.anchor.line}`}
-                onClick={() => line.anchor && review.onLine(line.anchor)}
-              >
-                {line.anchor?.line}
-              </button>
-            )}
+            {review &&
+              (line.anchor ? (
+                <button
+                  type="button"
+                  className="ln"
+                  aria-label={`Comment on ${line.anchor.side === 'base' ? 'old ' : ''}line ${line.anchor.line}`}
+                  onClick={() => line.anchor && review.onLine(line.anchor)}
+                >
+                  {line.anchor.line}
+                </button>
+              ) : (
+                <span className="ln" />
+              ))}
             <span className="sign">{SIGN[line.kind]}</span>
             <span className="txt">{line.text === '' ? '\u00a0' : line.text}</span>
           </div>

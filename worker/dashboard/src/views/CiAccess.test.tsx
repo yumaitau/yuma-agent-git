@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CiAccessView } from './CiAccess';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -69,6 +70,7 @@ it('lists secret names without values and saves a new secret write-only', async 
   });
   mount();
   expect(await screen.findByText('NPM_TOKEN')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('syd')).toBeTruthy();
   expect(screen.getByText(/reviewers: reviewer/)).toBeTruthy();
   const value = screen.getByLabelText('Secret value') as HTMLInputElement;
@@ -90,6 +92,7 @@ it('approves a pending run and hides secrets from non-admins', async () => {
   });
   mount();
   fireEvent.click(await screen.findByText('Approve'));
+  await expectAccessible(document.body);
   await screen.findByText('Run approved.');
   const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST');
   expect(post![0]).toBe('/api/v1/repos/acme/tools/environment-approvals/appr-1');

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { RunnersView } from './Runners';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,6 +45,7 @@ it('lists org runners and mints a trusted-only registration token once', async (
   const fetcher = stub();
   mount('/orgs/yuma/runners');
   expect(await screen.findByText('mac-mini')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('online')).toBeTruthy();
   expect(screen.getByText('trusted only')).toBeTruthy();
   fireEvent.click(screen.getByLabelText(/Trusted only/));
@@ -58,6 +60,7 @@ it('disables and removes a repo runner', async () => {
   const fetcher = stub();
   mount('/r/acme/tools/ci/runners');
   fireEvent.click(await screen.findByText('Disable'));
+  await expectAccessible(document.body);
   fireEvent.click(screen.getByText('Remove mac-mini'));
   await vi.waitFor(() =>
     expect(fetcher.mock.calls.map(([url, init]) => `${init?.method} ${url}`)).toEqual(

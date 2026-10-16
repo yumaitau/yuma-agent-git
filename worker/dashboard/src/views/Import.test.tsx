@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ImportView } from './Import';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -63,6 +64,7 @@ it('shows the per-repo report and resumes failed repos', async () => {
   const fetcher = stub();
   mount();
   expect(await screen.findByText('acme-gh/big')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('reply is over 25 MiB')).toBeTruthy();
   expect(screen.getByText('issues 3')).toBeTruthy();
   fireEvent.click(screen.getByText('Resume failed repos'));
@@ -79,6 +81,7 @@ it('starts an import for chosen repos', async () => {
   fireEvent.change(await screen.findByLabelText('GitHub organisation'), {
     target: { value: 'acme-gh' },
   });
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('App installation id'), {
     target: { value: '77' },
   });

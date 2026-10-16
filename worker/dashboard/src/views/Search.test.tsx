@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SearchView } from './Search';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -62,6 +63,7 @@ it('searches code with filters and highlights matches', async () => {
   fireEvent.click(screen.getByLabelText('Regular expression'));
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
   const mark = await screen.findByText('startServer');
+  await expectAccessible(document.body);
   expect(mark.tagName).toBe('MARK');
   expect(screen.getByText('src/server.ts').getAttribute('href')).toBe(
     '/r/acme/api/tree/c1/src/server.ts',
@@ -76,5 +78,6 @@ it('finds files by path from the URL', async () => {
   const fetcher = stub();
   mount('/search?q=server&mode=files&repo=acme%2Fapi');
   expect(await screen.findByText('src/server.ts')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(fetcher.mock.calls[0]![0]).toBe('/api/v1/search/paths?q=server&repo=acme%2Fapi');
 });

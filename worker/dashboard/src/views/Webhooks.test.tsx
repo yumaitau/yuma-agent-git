@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WebhooksView } from './Webhooks';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -64,6 +65,7 @@ it('shows the delivery log and redelivers', async () => {
   const fetcher = stub();
   mount();
   expect(await screen.findByText('https://hooks.example.com/ci')).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.click(screen.getByText('Deliveries'));
   expect(await screen.findByText('failed')).toBeTruthy();
   expect(screen.getByText(/12 attempts · HTTP 503/)).toBeTruthy();
@@ -77,6 +79,7 @@ it('creates a hook and shows a generated secret once', async () => {
   const fetcher = stub();
   mount();
   await screen.findByText('https://hooks.example.com/ci');
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Payload URL'), {
     target: { value: 'https://hooks.example.com/new' },
   });

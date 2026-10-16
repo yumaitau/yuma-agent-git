@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { api, type Approval, type Repo } from '../api';
 import { ToastProvider } from '../toast';
 import { AgentPausePanel, ApprovalsPanel } from './Guardrails';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -28,6 +29,7 @@ it('pauses agents and shows who paused them and why', async () => {
   fireEvent.change(await screen.findByLabelText('Reason'), {
     target: { value: ' incident 7 ' },
   });
+  await expectAccessible(document.body);
   fireEvent.click(screen.getByRole('button', { name: 'Pause all agents' }));
   await waitFor(() => expect(pauseAgents).toHaveBeenCalledWith('acme', 'incident 7'));
   expect(await screen.findByText(/justin .*: incident 7/)).toBeTruthy();
@@ -44,6 +46,7 @@ it('shows an instance pause to members who cannot manage the org', async () => {
     </ToastProvider>,
   );
   expect(await screen.findByText('paused on this forge')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.queryByRole('button', { name: 'Pause all agents' })).toBeNull();
 });
 
@@ -83,6 +86,7 @@ it('lists held agent changes and approves one', async () => {
       'policy ci-workflows needs approval: changes .github/workflows/ci.yml',
     ),
   ).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('sha256 abababababab')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
   await waitFor(() => expect(decide).toHaveBeenCalledWith('acme/app', 'ap1', 'approve'));

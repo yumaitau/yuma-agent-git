@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { SecretScanningView } from './SecretScanning';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -57,6 +58,7 @@ it('lists alerts with their location and bypass, and resolves one', async () => 
   const fetcher = stub();
   mount();
   expect(await screen.findByText('AWS access key ID')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('deploy.env:2')).toBeTruthy();
   expect(screen.getByText(/bypassed as will fix: rotating today/)).toBeTruthy();
   expect(screen.getByText(/12 changesets, 30 files/)).toBeTruthy();
@@ -76,6 +78,7 @@ it('starts a history scan and switches to resolved alerts', async () => {
   const fetcher = stub();
   mount();
   await screen.findByText('AWS access key ID');
+  await expectAccessible(document.body);
   fireEvent.click(screen.getByText('Scan history'));
   await screen.findByText('History scan queued.');
   expect(fetcher.mock.calls.find(([, init]) => init?.method === 'POST')![0]).toBe(

@@ -607,12 +607,8 @@ pre.code {
   border-radius: 0;
   font: inherit;
 }
-.diff-line button.ln:hover:not(:disabled) {
+.diff-line button.ln:hover {
   color: var(--accent-text);
-}
-.diff-line button.ln:disabled {
-  opacity: 1;
-  cursor: default;
 }
 .review-thread {
   border: 1px solid var(--border-soft);

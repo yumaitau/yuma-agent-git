@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CiView, PullView } from './Collaboration';
 import { parseUnified } from '../DiffView';
+import { expectAccessible } from '../axe';
 
 const overview = {
   can_admin: true,
@@ -49,6 +50,7 @@ it('detects commands, allows editing and saves a disabled pipeline without start
   vi.stubGlobal('fetch', fetcher);
   mount(<CiView />);
   const commands = await screen.findByLabelText('Commands');
+  await expectAccessible(document.body);
   await waitFor(() =>
     expect((commands as HTMLTextAreaElement).value).toContain('npm ci'),
   );
@@ -85,6 +87,7 @@ it('shows budget admission failures when starting checks', async () => {
   );
   mount(<CiView />);
   fireEvent.click(await screen.findByText('Run checks'));
+  await expectAccessible(document.body);
   expect(await screen.findByRole('alert')).toHaveProperty(
     'textContent',
     expect.stringContaining('Monthly budget exhausted'),
@@ -145,6 +148,7 @@ it('disables merging and shows the current revision requirements', async () => {
   expect(
     await screen.findByText('One teammate must approve this revision.'),
   ).toBeTruthy();
+  await expectAccessible(document.body);
   expect(
     (
       screen.getByText('Create a merge commit', {
@@ -166,6 +170,7 @@ it('merges with the picked method', async () => {
   vi.stubGlobal('fetch', fetcher);
   mount(<PullView />, 'pulls/:id');
   const picker = await screen.findByLabelText('Merge method');
+  await expectAccessible(document.body);
   expect((picker as HTMLSelectElement).value).toBe('squash');
   fireEvent.change(picker, { target: { value: 'rebase' } });
   const button = screen.getByText('Rebase and merge', { selector: 'button' });
@@ -216,6 +221,7 @@ it('shows the code owners of each changed file and CODEOWNERS errors', async () 
   );
   mount(<PullView />, 'pulls/:id');
   const section = await screen.findByRole('region', { name: 'Code owners' });
+  await expectAccessible(document.body);
   expect(section.textContent).toContain('from .github/CODEOWNERS');
   expect(section.textContent).toContain(
     'src/pay.ts acme/payments, ada waiting for an owner',
@@ -249,6 +255,7 @@ it('shows conflicting paths and hunks and blocks the merge', async () => {
   );
   mount(<PullView />, 'pulls/:id');
   expect(await screen.findByText('Conflicts with main')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('src/app.ts')).toBeTruthy();
   expect(screen.getByText('changed on one side, deleted on the other')).toBeTruthy();
   expect(screen.getByText('const a = 3;')).toBeTruthy();
@@ -313,6 +320,7 @@ it('draws the pipeline job graph by stage and shows line-numbered spec errors', 
   );
   mount(<CiView />);
   const graph = await screen.findByLabelText('ci job graph');
+  await expectAccessible(document.body);
   const stages = [...graph.querySelectorAll('ol')].map((ol) =>
     [...ol.querySelectorAll('strong')].map((s) => s.textContent),
   );
@@ -369,6 +377,7 @@ it("lists a pipeline run's artifacts with download links when asked", async () =
   vi.stubGlobal('fetch', fetcher);
   mount(<CiView />);
   fireEvent.click(await screen.findByText('Artifacts'));
+  await expectAccessible(document.body);
   const link = await screen.findByText('report.txt');
   expect(link.getAttribute('href')).toBe('/api/v1/repos/acme/tools/ci/artifacts/a1');
   expect(screen.getByText(/2\.0 KiB · build · kept until/)).toBeTruthy();
@@ -424,6 +433,7 @@ it('retries a run through its retry endpoint and shows deploy jobs waiting for a
   expect(
     await screen.findByText('Waiting for approval to deploy to production'),
   ).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.click(await screen.findByText('Retry'));
   await screen.findByText(/waiting for environment approval/);
   const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST');
@@ -442,7 +452,7 @@ it('numbers diff lines on both sides', () => {
   ]);
 });
 
-it('shows inline review threads and starts, resolves and applies them', async () => {
+it('shows inline review threads and starts, replies to, resolves and applies them', async () => {
   const pull = {
     id: 1,
     number: 1,
@@ -520,9 +530,10 @@ it('shows inline review threads and starts, resolves and applies them', async ()
   expect(screen.getAllByText('grace').length).toBeGreaterThan(0);
 
   fireEvent.click(screen.getByLabelText('Comment on line 3'));
-  fireEvent.change(screen.getByLabelText('Comment on line 3', { selector: 'textarea' }), {
-    target: { value: 'Why?' },
-  });
+  const box = screen.getByLabelText('Comment on line 3', { selector: 'textarea' });
+  expect(document.activeElement).toBe(box);
+  await expectAccessible(document.body);
+  fireEvent.change(box, { target: { value: 'Why?' } });
   fireEvent.click(screen.getByText('Add comment'));
   const isPost = (path: string) => (call: [string, RequestInit?]) =>
     String(call[0]).endsWith(path) && call[1]?.method === 'POST';
@@ -556,4 +567,27 @@ it('shows inline review threads and starts, resolves and applies them', async ()
       ),
     ).toBe(true),
   );
+
+  const card = (await screen.findAllByLabelText('Thread on src/a.ts line 2'))[0]!;
+  fireEvent.change(within(card).getByLabelText('Reply'), { target: { value: 'Done' } });
+  const send = within(card).getByRole('button', { name: 'Reply' });
+  await waitFor(() => expect((send as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(send);
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(isPost('/threads/7/replies'))).toBe(true),
+  );
+  const replied = fetcher.mock.calls.find(isPost('/threads/7/replies'));
+  expect(JSON.parse(replied![1]!.body as string)).toEqual({ body: 'Done' });
+
+  // Escape closes a new comment box without posting
+  fireEvent.click(await screen.findByLabelText('Comment on line 3'));
+  fireEvent.keyDown(
+    screen.getByLabelText('Comment on line 3', { selector: 'textarea' }),
+    {
+      key: 'Escape',
+    },
+  );
+  expect(
+    screen.queryByLabelText('Comment on line 3', { selector: 'textarea' }),
+  ).toBeNull();
 });

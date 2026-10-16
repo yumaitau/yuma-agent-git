@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { BoardView, columnOf } from './Board';
 import type { WorkItem } from '../../../shared/work';
+import { expectAccessible } from '../axe';
 
 function item(number: number, extra: Partial<WorkItem> = {}): WorkItem {
   return {
@@ -66,6 +67,7 @@ it('shows the board in columns and filters by risk and agent', async () => {
     </MemoryRouter>,
   );
   const queued = await screen.findByRole('region', { name: 'Queued' });
+  await expectAccessible(document.body);
   expect(within(queued).getByText('Queued low')).toBeTruthy();
   const running = screen.getByRole('region', { name: 'Running' });
   expect(within(running).getByText('Running high')).toBeTruthy();

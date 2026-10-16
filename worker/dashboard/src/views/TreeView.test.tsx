@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TreeView } from './TreeView';
+import { expectAccessible } from '../axe';
 
 const HASH = 'ab'.repeat(32);
 
@@ -36,6 +37,7 @@ describe('TreeView', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText('main.ts')).toBeTruthy();
+    await expectAccessible(document.body);
     expect(screen.getByText('lib/')).toBeTruthy();
     expect(screen.getByText('src')).toBeTruthy();
   });
@@ -66,6 +68,7 @@ describe('TreeView', () => {
       </MemoryRouter>,
     );
     const picker = (await screen.findByLabelText('Branch or tag')) as HTMLSelectElement;
+    await expectAccessible(document.body);
     expect(picker.value).toBe('main');
     expect(screen.getByRole('option', { name: 'v1.2.3' })).toBeTruthy();
 

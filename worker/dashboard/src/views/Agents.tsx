@@ -245,7 +245,11 @@ export function AgentsView(): ReactElement {
           <Link className="btn" to={`/r/${slug}`}>
             ← repo
           </Link>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select
+            aria-label="Task status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
             <option value="">all statuses</option>
             {['queued', 'running', 'landed', 'failed', 'cancelled'].map((s) => (
               <option key={s} value={s}>

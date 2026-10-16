@@ -5,6 +5,7 @@ import { api } from '../api';
 import { Layout } from '../Layout';
 import { ToastProvider } from '../toast';
 import { OrgSettingsView } from './OrgSettings';
+import { expectAccessible } from '../axe';
 
 const org = {
   id: 'o1',
@@ -38,6 +39,7 @@ it('creates an organisation and opens its settings', async () => {
   vi.spyOn(api, 'listOrgRepos').mockResolvedValue([]);
   renderAt('/orgs');
   expect(await screen.findByText('You are not in any organisation yet.')).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Organisation slug'), {
     target: { value: 'yuma' },
   });
@@ -79,6 +81,7 @@ it('manages members, nested teams and team repo grants', async () => {
   renderAt('/orgs/yuma');
 
   expect(await screen.findByText('olive')).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('GitHub login'), { target: { value: 'max' } });
   fireEvent.change(screen.getByLabelText('Org role'), { target: { value: 'admin' } });
   fireEvent.click(screen.getByRole('button', { name: 'Add / update member' }));
@@ -121,6 +124,7 @@ it('shows the org switcher once signed in and navigates to the chosen org', asyn
     </MemoryRouter>,
   );
   const switcher = await screen.findByLabelText('Organisation');
+  await expectAccessible(document.body);
   await screen.findByRole('option', { name: 'yuma' });
   fireEvent.change(switcher, { target: { value: 'yuma' } });
   expect(await screen.findByText('org page')).toBeTruthy();

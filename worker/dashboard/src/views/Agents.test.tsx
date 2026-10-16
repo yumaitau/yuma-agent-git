@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { api, type AgentIdentity } from '../api';
 import { ToastProvider } from '../toast';
 import { AgentIdentities } from './Agents';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -30,6 +31,7 @@ it('lists agents and disables one with the kill switch', async () => {
     </ToastProvider>,
   );
   expect(await screen.findByText('Codex')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('active')).toBeTruthy();
   list.mockResolvedValue([{ ...codex, disabled: true, live_tokens: 0 }]);
   fireEvent.click(screen.getByRole('button', { name: 'Disable' }));
@@ -46,6 +48,7 @@ it('adds an agent identity', async () => {
     </ToastProvider>,
   );
   expect(await screen.findByText('No agent identities yet.')).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Agent name'), { target: { value: 'Codex' } });
   fireEvent.change(screen.getByLabelText('Agent kind'), { target: { value: 'codex' } });
   fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));

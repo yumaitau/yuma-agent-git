@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { usd, UsageView } from './Usage';
 import { AgentReviewPanel } from './AgentReview';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -78,6 +79,7 @@ it('formats micro-dollars', () => {
 it('shows cost per merged pull request, rows and a CSV export for a repo', async () => {
   const fetcher = mount('/r/acme/tools/usage');
   expect(await screen.findByText('Fix parser')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getAllByText('$1.50').length).toBeGreaterThan(1);
   expect(screen.getByText('(1 merged)')).toBeTruthy();
   expect(screen.getByText('merged')).toBeTruthy();
@@ -97,6 +99,7 @@ it('shows cost per merged pull request, rows and a CSV export for a repo', async
 it('shows org budgets and the hard stop', async () => {
   mount('/orgs/acme/usage');
   expect(await screen.findByText('claims stopped')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText(/hard limit reached/)).toBeTruthy();
 });
 
@@ -131,6 +134,7 @@ it('shows the agent review rounds and risk of a pull request', async () => {
   );
   render(<AgentReviewPanel slug="acme/tools" id="7" revision={3} />);
   expect(await screen.findByText('high risk')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText(/after 3 rounds/)).toBeTruthy();
   expect(screen.getByText('high: Null check.')).toBeTruthy();
   expect(screen.getByText('fail')).toBeTruthy();

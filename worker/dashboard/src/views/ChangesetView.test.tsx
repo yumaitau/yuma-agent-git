@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChangesetView } from './ChangesetView';
+import { expectAccessible } from '../axe';
 
 const PARENT = 'a'.repeat(64);
 const ID = 'b'.repeat(64);
@@ -66,6 +67,7 @@ describe('ChangesetView', () => {
     );
 
     expect(await screen.findByText('add healthcheck')).toBeTruthy();
+    await expectAccessible(document.body);
     expect(screen.getByText(/export function health/)).toBeTruthy();
     expect(screen.getByText(/@@ -0,0 \+1,2 @@/)).toBeTruthy();
   });
@@ -107,6 +109,7 @@ describe('ChangesetView', () => {
     );
 
     expect(await screen.findByText('Codex on behalf of Justin, task #42')).toBeTruthy();
+    await expectAccessible(document.body);
   });
 
   it('shows the signature, signed provenance and a transcript link', async () => {
@@ -174,6 +177,7 @@ describe('ChangesetView', () => {
     );
 
     expect(await screen.findByText('Verified')).toBeTruthy();
+    await expectAccessible(document.body);
     expect(screen.getByText('x509 · ada')).toBeTruthy();
     expect(screen.getByText('Signed provenance')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'transcript' }).getAttribute('href')).toBe(

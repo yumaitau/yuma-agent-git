@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api, type Security } from '../api';
 import { ToastProvider } from '../toast';
 import { SecurityView } from './Security';
+import { expectAccessible } from '../axe';
 
 beforeEach(() => {
   vi.spyOn(api, 'listSigningKeys').mockResolvedValue([]);
@@ -36,6 +37,7 @@ it('shows how the session signed in and offers to link other providers', async (
   vi.spyOn(api, 'getSecurity').mockResolvedValue(base);
   renderView();
   expect(await screen.findByText('no second factor enrolled')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getAllByText('Google').length).toBeGreaterThan(0);
   expect(screen.getByText('ada@yuma.test')).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Link Microsoft' }).getAttribute('href')).toBe(
@@ -53,6 +55,7 @@ it('enrols an authenticator app: shows the key once, then confirms a code', asyn
   const confirm = vi.spyOn(api, 'confirmTotp').mockResolvedValue();
   renderView();
   fireEvent.click(await screen.findByText('Set up an authenticator app'));
+  await expectAccessible(document.body);
   expect(await screen.findByText('JBSWY3DPEHPK3PXP')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('Code from the app'), {
     target: { value: '123456' },
@@ -72,6 +75,7 @@ it('asks for a fresh second factor when one is enrolled but stale', async () => 
   expect(
     await screen.findByText('second factor needed for sensitive actions'),
   ).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Authenticator code'), {
     target: { value: '654321' },
   });
@@ -100,6 +104,7 @@ it('registers a commit signing key and lists it', async () => {
   const add = vi.spyOn(api, 'addSigningKey').mockResolvedValue(key);
   renderView();
   expect(await screen.findByText(/No signing keys yet/)).toBeTruthy();
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Laptop' } });
   fireEvent.change(screen.getByLabelText('Public key'), {
     target: { value: 'ssh-ed25519 AAAA' },

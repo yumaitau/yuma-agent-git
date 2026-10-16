@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { OAuthAuthorizeView } from './OAuthAuthorize';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -32,6 +33,7 @@ it('shows what the app asks for and approves', async () => {
     </MemoryRouter>,
   );
   expect(await screen.findByText('Authorise Tool')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('Read the repositories you can read')).toBeTruthy();
   fireEvent.click(screen.getByText('Authorise'));
   await waitFor(() =>

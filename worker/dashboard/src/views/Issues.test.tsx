@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { IssuesView, NewIssueView } from './Issues';
 import { IssueView } from './IssueView';
 import type { Issue, IssueDetail } from '../issues';
+import { expectAccessible } from '../axe';
 
 function issue(number: number, extra: Partial<Issue> = {}): Issue {
   return {
@@ -60,6 +61,7 @@ it('lists pinned and filtered issues with labels and sub-issue progress', async 
   vi.stubGlobal('fetch', fetcher);
   mount('/r/acme/tools/issues', '/r/:owner/:name/issues', <IssuesView />);
   expect(await screen.findByText('Read me first')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('Issue 2')).toBeTruthy();
   expect(screen.getByText(/3 of 5 done/)).toBeTruthy();
   fireEvent.change(await screen.findByLabelText('Label'), { target: { value: 'bug' } });
@@ -107,6 +109,7 @@ it('renders Markdown safely, shows progress and posts comments', async () => {
     <IssueView />,
   );
   expect(await screen.findByText('Crash on save')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(container.querySelector('script, img, [onerror]')).toBeNull();
   expect(container.querySelector('a[href="/r/acme/tools/issues/3"]')).toBeTruthy();
   expect(container.querySelector('.markdown strong')?.textContent).toBe('First');
@@ -139,6 +142,7 @@ it('sends a pull request number to the pull request page', async () => {
   );
   mount('/r/acme/tools/issues/4', '/r/:owner/:name/issues/:number', <IssueView />);
   expect(await screen.findByText('Pull page')).toBeTruthy();
+  await expectAccessible(document.body);
 });
 
 it('fills an issue form template and submits its answers as Markdown', async () => {
@@ -176,6 +180,7 @@ it('fills an issue form template and submits its answers as Markdown', async () 
   vi.stubGlobal('fetch', fetcher);
   mount('/r/acme/tools/issues/new', '/r/:owner/:name/issues/new', <NewIssueView />);
   fireEvent.click(await screen.findByText('Use template'));
+  await expectAccessible(document.body);
   fireEvent.change(screen.getByLabelText('Title'), { target: { value: '[bug] Crash' } });
   fireEvent.change(screen.getByLabelText('What happened?'), {
     target: { value: 'It broke' },

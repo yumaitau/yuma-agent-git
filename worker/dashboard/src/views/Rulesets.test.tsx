@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { api, type Repo, type Ruleset } from '../api';
 import { ToastProvider } from '../toast';
 import { RulesetsPanel } from './Rulesets';
+import { expectAccessible } from '../axe';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -57,6 +58,7 @@ it('lists repo and org rulesets, the evaluate-mode report, and edits rulesets', 
     target: { value: 'team/app' },
   });
   expect(await screen.findByText('pull request only; 1 approval(s)')).toBeTruthy();
+  await expectAccessible(document.body);
   expect(screen.getByText('Org tags')).toBeTruthy();
   expect(screen.getByText('force pushes to main are not allowed')).toBeTruthy();
 
