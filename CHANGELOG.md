@@ -35,6 +35,17 @@ All notable changes to this project are documented here. The format follows
   HTTP accepts. The new `ssh-gateway/` Go module serves `git-upload-pack` and
   `git-receive-pack` over SSH with those tokens and refuses everything else.
   Where it runs is open (ADR 0007, Proposed); nothing is deployed.
+- Scale (#78). Metadata can be sharded by org (ADR 0006, proposed): `DB` is
+  the directory, `shard_directory` (migration 0046) maps an org to a
+  `DB_SHARD_<n>` binding, and the cron moves an org online. Usage accounting
+  is the first routed slice; nothing changes until an operator adds a shard.
+  Built-in CI runs fetch their source over Git with the job token instead of a
+  tar copied through the runner object, so 20,000-file repos check out; the
+  32 MiB, 2,000-file limit applies only to the fallback. Clone packs of 1,000
+  objects or more are kept in R2 and serve repeat clones. A load harness
+  (`scripts/load/`), endpoint budgets in CI and `docs/performance.md` with
+  local measurements only.
+
 - Wave 4a seams. GitHub Actions translation (#49) maps `actions/cache`,
   `upload-artifact`, `download-artifact` and `codeql-action/upload-sarif` onto
   job caches and artifacts (#51) and code scanning (#67). Notifications (#44)

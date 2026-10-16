@@ -12,8 +12,9 @@ export async function storeArtifact(
   key: string,
   stream: ReadableStream<Uint8Array>,
   limit: number,
+  options?: R2MultipartOptions,
 ): Promise<number> {
-  const upload = await bucket.createMultipartUpload(key);
+  const upload = await bucket.createMultipartUpload(key, options);
   const reader = stream.getReader();
   const parts: R2UploadedPart[] = [];
   const size = 5 * 1024 * 1024;

@@ -4,6 +4,8 @@ import { q1, run } from '../db/client';
 import { getChangeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
 import { getTree } from '../core/trees';
+import { getRepo } from '../db/repos';
+import { commitShas } from '../git/upload-pack';
 import { tarEntry, tarEnd } from '../bridge/tar';
 import { storeArtifact } from './artifacts';
 import { advancePipelines } from './planner';
@@ -76,15 +78,27 @@ export class CiRunnerDO extends DurableObject<Env> {
       await this.checkpoint(job);
       const instance = runnerInstance(job.config);
       await this.start(id, deadline, instance);
+      // the job token reads this repo over Git and reaches artifacts and caches (#51)
+      const origin = parseContext(job.context)?.origin;
+      const token = origin ? await issueJobToken(this.env, id) : null;
+      if (token) this.masker = createMasker([token]);
       this.append('Reading repository source…\n');
       await this.checkpoint(job);
       await this.command(['mkdir', '-p', '/workspace']);
-      const source = await this.source(job);
-      this.append('Transferring source to runner…\n');
-      await this.checkpoint(job);
-      await this.command(['tar', '-xf', '-', '-C', '/workspace', '--no-same-owner'], {
-        stdin: source,
-      });
+      const remote = origin && token ? await this.gitRemote(job, origin) : null;
+      if (remote && token) {
+        // The VM fetches over Git smart HTTP (#78): no source bytes pass through this object.
+        this.append('Fetching source over Git…\n');
+        await this.checkpoint(job);
+        await this.checkout(remote, token);
+      } else {
+        const source = await this.source(job);
+        this.append('Transferring source to runner…\n');
+        await this.checkpoint(job);
+        await this.command(['tar', '-xf', '-', '-C', '/workspace', '--no-same-owner'], {
+          stdin: source,
+        });
+      }
       for (const service of runnerServices(job.config)) {
         await this.assertRunning(id, deadline);
         this.append(`\nStarting service ${service.name} (${service.image})…\n`);
@@ -114,9 +128,7 @@ export class CiRunnerDO extends DurableObject<Env> {
         },
       );
       // artifacts and caches (issue #51) through the forge, with a token for this run only
-      const origin = parseContext(job.context)?.origin;
-      if (origin) {
-        const token = await issueJobToken(this.env, id);
+      if (origin && token) {
         access.env.YAG_RUNTIME_URL = `${origin}/runner/v1/jobs/${id}`;
         access.env.YAG_RUNTIME_TOKEN = token;
         access.mask.push(token);
@@ -383,6 +395,64 @@ export class CiRunnerDO extends DurableObject<Env> {
       throw new Error('Run no longer active');
   }
 
+  /**
+   * The Git URL and commit a run checks out, or null when its commit has no
+   * Git ID yet (still being computed); the run then falls back to the tar copy.
+   */
+  private async gitRemote(
+    job: CiRun,
+    origin: string,
+  ): Promise<{ url: string; commit: string } | null> {
+    const repo = await getRepo(this.env, job.repo_id);
+    const commit = await commitShas(this.env, job.repo_id, [job.head_cs])
+      .then((shas) => shas.get(job.head_cs))
+      .catch(() => undefined);
+    return repo && commit ? { url: `${origin}/${repo.slug}.git`, commit } : null;
+  }
+
+  /** A shallow fetch of one commit, as self-hosted runners do; the token stays in Git's environment. */
+  private async checkout(
+    remote: { url: string; commit: string },
+    token: string,
+  ): Promise<void> {
+    const env = {
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'http.extraHeader',
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${btoa(`runner:${token}`)}`,
+      GIT_CONFIG_KEY_1: 'protocol.version',
+      GIT_CONFIG_VALUE_1: '2',
+    };
+    await this.command(['git', 'init', '-q', '/workspace']);
+    await this.command(
+      [
+        'git',
+        '-C',
+        '/workspace',
+        'fetch',
+        '-q',
+        '--depth=1',
+        '--no-tags',
+        remote.url,
+        remote.commit,
+      ],
+      { env },
+    );
+    await this.command([
+      'git',
+      '-C',
+      '/workspace',
+      'checkout',
+      '-q',
+      '--detach',
+      'FETCH_HEAD',
+    ]);
+  }
+
+  /**
+   * Fallback for runs with no request origin (schedules) or no Git ID yet: a
+   * tar built here from R2, within MAX_SOURCE_BYTES and MAX_SOURCE_FILES.
+   */
   private async source(job: CiRun): Promise<ReadableStream<Uint8Array>> {
     const cs = await getChangeset(this.env, job.repo_id, job.head_cs);
     if (!cs?.root_tree) throw new Error('Revision has no source tree');

@@ -4,6 +4,10 @@ import { q1 } from '../db/client';
 import { ApiError } from '../core/errors';
 
 export const MAX_LOG_BYTES = 512 * 1024;
+/**
+ * The tar fallback only (ci/runner.ts): runs with a request origin fetch over
+ * Git (#78), bounded by the runner's disk and the job timeout instead.
+ */
 export const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_SOURCE_FILES = 2000;
 export const MAX_IMAGE_BYTES = 256 * 1024 * 1024;

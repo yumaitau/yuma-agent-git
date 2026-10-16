@@ -293,6 +293,15 @@ cleanup covers process/platform failures. Never apply that rule to repository
 object prefixes. These cleanup rules are operator configuration, not automatically
 provisioned by this change.
 
+Built-in runs started from a request fetch their source over Git with the
+run's job token (#78), so the runner VM must reach the forge's public origin.
+Runs with no origin (schedules) and commits whose Git IDs are still being
+computed fall back to the 32 MiB, 2,000-file tar copy.
+
+Clone packs of 1,000 objects or more are kept in R2 under `git/packs/` (#78).
+Add an R2 lifecycle rule deleting `git/packs/` objects after 7 days; a lost
+pack is only a cache miss.
+
 The local validation suite mocks container execution for lifecycle tests. The
 runner Dockerfile can be built and its tools checked without privileged Docker.
 The Yuma pilot additionally verified Docker-in-Docker, native `exec` output,

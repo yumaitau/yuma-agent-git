@@ -64,6 +64,13 @@ Push uses the v0 receive-pack protocol, as Git does for every push.
   Git ID mapping (#30). Objects are undeltified and streamed one at a time
   with zlib from `CompressionStream`, then the SHA-1 trailer, so a pack is
   never held in memory.
+- Clone pack cache (#78): a fetch that holds no history (no common `have`, no
+  shallow commits) names immutable commits, so a pack of 1,000 objects or
+  more is copied to R2 at `git/packs/<repo id>/<key>.pack` as it streams, keyed
+  by the wants, `deepen` and filter. The next identical clone, CI checkouts
+  included, streams that object back without reading a tree or blob. Only a
+  complete pack is kept (up to 2 GiB). An R2 lifecycle rule expires them
+  (docs/deploy.md).
 - Git IDs are computed when a changeset is created. If a long history is still
   waiting for its IDs, the client gets
   `remote error: Git object IDs for this repository are still being computed`
@@ -123,11 +130,17 @@ default branch.
 Packs are held in memory while they are checked, so a push is capped at 24 MiB
 of pack data and 48 MiB inflated, 100,000 objects. Larger pushes get
 `push too large`; push in smaller batches. Spilling large packs to R2 and a
-`git-receive` queue is not built yet.
+`git-receive` queue is not built yet: the queue consumer has the same 128 MB
+memory as the request, so it needs a pack reader that resolves deltas from R2
+instead of memory first (#78, docs/performance.md).
 
 Not supported yet: annotated tag objects (push a lightweight tag), submodules,
 a commit that replaces a file with a directory of the same name (or the
 reverse), empty commit messages, and commits touching more than 5,000 files.
+The 5,000 cap (`MAX_CHANGED_FILES`, `core/changesets.ts`) exists because a
+changeset row holds its whole file list and a D1 row is at most 2 MB; at about
+150 bytes an entry, 5,000 entries stay well inside it. Import a larger first
+commit as several commits.
 
 ## Git LFS
 

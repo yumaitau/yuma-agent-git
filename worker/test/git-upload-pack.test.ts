@@ -1,13 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../src/env';
-import { cleanDb, loginAs, makeApp, seedSchema, type TestEnv } from './helpers';
+import {
+  cleanDb,
+  instrumentObjects,
+  loginAs,
+  makeApp,
+  seedSchema,
+  type TestEnv,
+} from './helpers';
 import { commandBody, lines, parseFetch } from './git-helpers';
 import { createRepo, getRef, setRef } from '../src/db/repos';
 import { run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
 import { commitChanges } from '../src/core/commit';
-import { commitShas } from '../src/git/upload-pack';
+import {
+  commitShas,
+  PACK_CACHE_MIN_OBJECTS,
+  PACK_CACHE_PREFIX,
+  packCacheKey,
+} from '../src/git/upload-pack';
 import { readPack } from '../src/git/pack-reader';
 import { parseCommit, parseTree } from '../src/git/objects';
 
@@ -297,5 +309,59 @@ describe('git upload-pack (protocol v2)', () => {
     expect(lines(new Uint8Array(await res.arrayBuffer()))[0]).toMatch(
       /^ERR invalid pkt-line/,
     );
+  });
+
+  it('keeps a large clone pack in R2 and serves the next clone from it', async () => {
+    const files = PACK_CACHE_MIN_OBJECTS + 50;
+    const { changeset } = await commitChanges(dbEnv, repoId, {
+      first_parent: null,
+      message: 'many\n',
+      author: { name: 'Ada', email: 'ada@example.com' },
+      changes: Array.from({ length: files }, (_, i) => ({
+        path: `d${i % 10}/f${i}.txt`,
+        op: 'add' as const,
+        content_b64: b64(`file ${i}\n`),
+      })),
+    });
+    await setRef(dbEnv, repoId, 'main', changeset.id);
+    const sha = (await commitShas(dbEnv, repoId, [changeset.id])).get(changeset.id)!;
+    const args = [`want ${sha}`, 'deepen 1', 'done'];
+    const key = await packCacheKey(repoId, [sha], 1, 'none');
+    expect(await testEnv.OBJECTS.head(key)).toBeNull();
+    const first = await command('fetch', args);
+    expect((await testEnv.OBJECTS.head(key))?.customMetadata).toEqual({
+      shallow: JSON.stringify(['shallow-info']),
+    });
+
+    const probe = instrumentObjects(testEnv);
+    const res = await makeApp(probe.env)(
+      new Request(`https://x/${SLUG}.git/git-upload-pack`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-git-upload-pack-request',
+          'git-protocol': 'version=2',
+          authorization: auth,
+        },
+        body: commandBody('fetch', args),
+      }),
+    );
+    const second = new Uint8Array(await res.arrayBuffer());
+    // the same pack and sections; only the sideband framing may differ
+    expect(parseFetch(second)).toEqual(parseFetch(first));
+    // served from the cached pack: no tree or blob reads
+    expect(probe.gets).toEqual([key]);
+    const objects = await readPack(
+      parseFetch(second).pack,
+      { ...LIMITS, maxObjects: 2000 },
+      async () => null,
+    );
+    expect(objects.size).toBe(files + 1 + 1 + 10);
+
+    // a fetch that holds history is never cached
+    await command('fetch', [`want ${sha}`, `have ${sha}`, 'done']);
+    const listed = await testEnv.OBJECTS.list({
+      prefix: `${PACK_CACHE_PREFIX}${repoId}/`,
+    });
+    expect(listed.objects.map((o) => o.key)).toEqual([key]);
   });
 });

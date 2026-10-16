@@ -185,7 +185,8 @@ export type AuditAction =
   | 'deploy_key.remove'
   | 'usage.budget.set'
   | 'usage.budget.delete'
-  | 'usage.budget.alert';
+  | 'usage.budget.alert'
+  | 'shard.move';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

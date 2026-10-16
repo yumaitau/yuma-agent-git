@@ -5,14 +5,15 @@ revisit it. Records are numbered in order and never renumbered. To change a
 decision, write a new record that supersedes the old one and update the old
 record's status.
 
-| ADR                            | Title                                   | Status                    |
-| ------------------------------ | --------------------------------------- | ------------------------- |
-| [0001](0001-forge-strategy.md) | Forge strategy                          | Accepted (spikes not run) |
-| [0002](0002-saml-sso.md)       | SAML sign-in waits for a safe verifier  | Accepted                  |
-| [0003](0003-policy-engine.md)  | Agent policies use a typed TS rules DSL | Accepted                  |
-| [0004](0004-code-search.md)    | Code search uses a trigram index in D1  | Accepted                  |
-| [0005](0005-residency.md)      | Where customer data lives (residency)   | Proposed (draft)          |
-| [0007](0007-ssh-gateway.md)    | Where the Git over SSH gateway runs     | Proposed                  |
+| ADR                               | Title                                           | Status                    |
+| --------------------------------- | ----------------------------------------------- | ------------------------- |
+| [0001](0001-forge-strategy.md)    | Forge strategy                                  | Accepted (spikes not run) |
+| [0002](0002-saml-sso.md)          | SAML sign-in waits for a safe verifier          | Accepted                  |
+| [0003](0003-policy-engine.md)     | Agent policies use a typed TS rules DSL         | Accepted                  |
+| [0004](0004-code-search.md)       | Code search uses a trigram index in D1          | Accepted                  |
+| [0005](0005-residency.md)         | Where customer data lives (residency)           | Proposed (draft)          |
+| [0006](0006-metadata-sharding.md) | Metadata shards by org, with directory database | Proposed                  |
+| [0007](0007-ssh-gateway.md)       | Where the Git over SSH gateway runs             | Proposed                  |
 
 ## Template
 
