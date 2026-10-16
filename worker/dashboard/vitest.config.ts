@@ -24,5 +24,7 @@ export default defineConfig({
     include: ['src/**/*.test.tsx', 'src/**/*.test.ts'],
     setupFiles: ['./src/test-setup.ts'],
     clearMocks: true,
+    // theme.test.ts reads the stylesheet source through `?raw`.
+    css: { include: [/theme\.css/] },
   },
 });

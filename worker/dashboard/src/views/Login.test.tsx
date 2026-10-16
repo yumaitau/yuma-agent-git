@@ -35,6 +35,21 @@ it('explains incomplete setup instead of sending visitors to a broken OAuth endp
   expect(screen.queryByRole('link', { name: 'Sign in with GitHub' })).toBeNull();
 });
 
+it('shows the Yuma IT logo on the sign-in page', () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json({ github_configured: true })),
+  );
+  render(
+    <MemoryRouter>
+      <LoginView />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('img', { name: 'Yuma IT' }).getAttribute('src')).toBe(
+    '/logo.svg',
+  );
+});
+
 it('offers GitHub sign-in when credentials are configured', async () => {
   vi.stubGlobal(
     'fetch',

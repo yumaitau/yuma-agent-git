@@ -189,8 +189,15 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
   return (
     <div className="shell">
       <header className="topnav">
-        <Link to="/" className="brand">
-          yuma-agent-git
+        <Link to="/" className="brand" aria-label="Yuma Git home">
+          <img
+            className="brand-logo"
+            src="/logo.svg"
+            alt="Yuma IT"
+            width={84}
+            height={30}
+          />
+          Git
         </Link>
         <nav>
           <Link to="/">Repos</Link>
