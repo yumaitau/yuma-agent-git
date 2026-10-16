@@ -32,6 +32,7 @@ import { agentKey, changeFacts, enforceAgentAction } from '../policy/guardrails'
 import { recordAgentProvenance } from '../auth/agents';
 import { enforceSecretScan } from '../security/secrets/scan';
 import { pullCodeowners } from './codeowners';
+import { newSecurityAlerts } from '../security/pull-security';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
   authorKey,
@@ -227,6 +228,12 @@ async function checkMerge(
   )
     ? await pullCodeowners(env, repo, pull)
     : null;
+  // so are new security alerts (#67)
+  const security = rulesets.some((r) =>
+    r.rules.some((rule) => rule.type === 'security_alerts'),
+  )
+    ? await newSecurityAlerts(env, pull)
+    : null;
   const facts = (m: MergeMethod): EvalInput => ({
     repo,
     actor: evalActor,
@@ -248,6 +255,7 @@ async function checkMerge(
               },
             }
           : {}),
+        ...(security ? { securityAlerts: security } : {}),
       },
     },
   });

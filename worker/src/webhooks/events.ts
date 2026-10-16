@@ -23,6 +23,9 @@ export const WEBHOOK_EVENTS = [
   'ci_run',
   'work_item',
   'secret_scanning_alert',
+  // dependency and code scanning alerts (#67): created, fixed, reopened, dismissed
+  'dependency_alert',
+  'code_scanning_alert',
   'merge_group',
   'release',
   // package registry (#53): published, tagged, deleted

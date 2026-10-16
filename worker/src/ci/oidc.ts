@@ -292,7 +292,7 @@ function unauthorized(): ApiError {
 }
 
 /** Resolve a request token to its running job, or throw. */
-async function jobForRequest(
+export async function jobForRequest(
   env: Env,
   raw: string,
   runId: string | undefined,
