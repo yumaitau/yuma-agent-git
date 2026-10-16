@@ -188,7 +188,7 @@ export async function resolveTokenPrincipal(
 
 export const tokensRoutes = new Hono<AppEnv>();
 
-const createTokenSchema = z.object({
+export const createTokenSchema = z.object({
   label: z.string().min(1).max(120),
   scopes: z.array(z.enum(TOKEN_SCOPES)).optional(),
   repo_id: z.string().min(1).nullable().optional(),

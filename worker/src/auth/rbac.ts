@@ -30,7 +30,7 @@ export type Role = 'admin' | 'write' | 'read';
 
 export type RepoWithCreator = RepoRecord & { created_by?: string | null };
 
-const pathRuleInputSchema = z.object({
+export const pathRuleInputSchema = z.object({
   path_prefix: z.string().min(1).max(512),
   effect: z.enum(['grant', 'deny']),
   principal: z.string().min(1),

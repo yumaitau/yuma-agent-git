@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
   migrations), a deterministic commit-graph fuzzer, and a generated API reference
   (`docs/api.md`) checked against the router in CI.
 - `yag clone --token`.
+- Public API contract (#28): `docs/openapi.json` (OpenAPI 3.1, also at
+  `GET /api/v1/openapi.json`) generated from the router and zod schemas, a
+  versioning and deprecation policy (`docs/api-versioning.md`), and the generated
+  `@yuma/agent-git-sdk` package that the CLI's request types now come from.
 - Organisations and teams (#26): org-owned repos, nested teams with repo grants,
   org base roles, and an org settings page in the dashboard.
 - Yuma-owned sign-in (#27): OIDC providers, passkeys, authenticator-app MFA with

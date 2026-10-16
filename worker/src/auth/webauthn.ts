@@ -371,7 +371,7 @@ const b64Field = z
   .max(16_384)
   .regex(/^[A-Za-z0-9_-]+={0,2}$/);
 
-const registrationSchema = z.object({
+export const registrationSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
   credential: z.object({
     id: b64Field,
@@ -379,7 +379,7 @@ const registrationSchema = z.object({
   }),
 });
 
-const assertionSchema = z.object({
+export const assertionSchema = z.object({
   credential: z.object({
     id: b64Field,
     response: z.object({

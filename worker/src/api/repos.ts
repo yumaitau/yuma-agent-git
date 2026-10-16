@@ -18,7 +18,7 @@ import { recordAudit } from '../audit/record';
  */
 export const reposRoutes = new Hono<AppEnv>();
 
-const createRepoSchema = z.object({
+export const createRepoSchema = z.object({
   slug: z
     .string()
     .min(3)
@@ -111,7 +111,7 @@ reposRoutes.get('/api/v1/repos/:owner/:name', async (c) => {
   }
 });
 
-const updateRepoSchema = z.object({
+export const updateRepoSchema = z.object({
   default_branch: z.string().min(1).max(255).optional(),
   refs_mode: z.enum(['scion', 'git']).optional(),
 });

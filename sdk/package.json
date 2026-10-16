@@ -1,0 +1,27 @@
+{
+  "name": "@yuma/agent-git-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed client for the yuma-agent-git /api/v1 API, generated from docs/openapi.json",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "openapi-typescript ../docs/openapi.json -o src/schema.ts && prettier --write src/schema.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p test",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

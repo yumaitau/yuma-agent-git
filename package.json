@@ -5,13 +5,15 @@
   "type": "module",
   "workspaces": [
     "worker",
-    "cli"
+    "cli",
+    "sdk"
   ],
   "scripts": {
     "dev": "npm run dev -w worker",
     "deploy": "npm run deploy -w worker",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "docs:openapi": "npm run docs:api -w worker && npm run generate -w @yuma/agent-git-sdk",
     "test": "npm test -w worker"
   },
   "devDependencies": {

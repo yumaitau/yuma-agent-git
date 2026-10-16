@@ -170,7 +170,7 @@ export async function cacheTierMiddleware(
  */
 export const cacheTokenRoutes = new Hono<AppEnv>();
 
-const mintSchema = z.object({ url: z.string().min(1) });
+export const mintSchema = z.object({ url: z.string().min(1) });
 
 cacheTokenRoutes.post('/api/v1/cache-token', async (c) => {
   try {

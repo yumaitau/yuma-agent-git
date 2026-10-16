@@ -57,7 +57,7 @@ const time = z.string().transform((raw, ctx) => {
   return ms;
 });
 
-const querySchema = z.object({
+export const querySchema = z.object({
   action: z.string().max(64).optional(),
   actor: z.string().max(128).optional(),
   repo: z.string().max(128).optional(),
