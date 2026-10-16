@@ -377,6 +377,24 @@ describe('usage accounting (#61)', () => {
         run_id: 'run-1',
       },
     ]);
+    // priced per built-in instance type (#52): standard-4 costs more per second
+    await run(
+      dbEnv,
+      `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by, state,
+         publish, month, reserved_micros, created_at, started_at, finished_at)
+       VALUES ('run-2', ?, 'x', 0, '{"instance_type":"standard-4"}', ?, 'passed', 0, '2026-10', 0, 0, 1000, 11000)`,
+      [repoId, owner.userId],
+    );
+    await emitCiRun(dbEnv, 'run-2', 'completed');
+    expect(
+      await q(
+        dbEnv,
+        "SELECT model, usd_micros FROM usage_events WHERE kind = 'ci_seconds' ORDER BY run_id",
+      ),
+    ).toEqual([
+      { model: 'standard-2', usd_micros: 91 * 36 },
+      { model: 'standard-4', usd_micros: 10 * 112 },
+    ]);
   });
 
   it('records stored bytes per repo once a day', async () => {
@@ -385,6 +403,26 @@ describe('usage accounting (#61)', () => {
       "INSERT INTO search_repos (repo_id, cs_id, files, bytes, updated_at) VALUES (?, 'x', 3, 2000000000, 0)",
       [repoId],
     );
+    // Git LFS (#35) and CI artifacts and caches (#51) count too; unstored ones do not
+    await run(
+      dbEnv,
+      `INSERT INTO lfs_objects (repo_id, oid, size, status, updated_at)
+       VALUES (?, 'a', 300000000, 'stored', 0), (?, 'b', 999, 'pending', 0)`,
+      [repoId, repoId],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO ci_artifacts (id, repo_id, run_scope, ci_run_id, name, size, object_key, created_at, expires_at)
+       VALUES ('art', ?, 'p', 'r', 'dist', 200000000, 'k', 0, 1)`,
+      [repoId],
+    );
+    await run(
+      dbEnv,
+      `INSERT INTO ci_caches (id, repo_id, scope, key, state, size, object_key, ci_run_id, created_at, last_used_at)
+       VALUES ('c1', ?, 'refs/heads/main', 'npm', 'ready', 500000000, 'k1', 'r', 0, 0),
+              ('c2', ?, 'refs/heads/main', 'pnpm', 'pending', 7, 'k2', 'r', 0, 0)`,
+      [repoId, repoId],
+    );
     await recordStorageUsage(dbEnv, Date.parse('2026-10-16T01:00:00Z'));
     await recordStorageUsage(dbEnv, Date.parse('2026-10-16T02:00:00Z'));
     expect(
@@ -392,7 +430,7 @@ describe('usage accounting (#61)', () => {
         dbEnv,
         "SELECT quantity, usd_micros FROM usage_events WHERE kind = 'storage'",
       ),
-    ).toEqual([{ quantity: 2_000_000_000, usd_micros: 1_000 }]);
+    ).toEqual([{ quantity: 3_000_000_000, usd_micros: 1_500 }]);
   });
 
   it('alerts once per level and stops new claims at the hard limit', async () => {

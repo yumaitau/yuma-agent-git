@@ -203,8 +203,10 @@ export async function recordCiUsage(
 
 /**
  * Stored bytes per repo for one UTC day (cron): the default branch as code
- * search last indexed it, release assets and package files. One event per
- * repo and day, so a second run the same day is a no-op.
+ * search last indexed it, release assets, package files, Git LFS objects the
+ * repo links (a fork network's shared object counts in each repo linking it,
+ * as LFS quotas do) and CI artifacts and caches. One event per repo and day,
+ * so a second run the same day is a no-op.
  */
 export async function recordStorageUsage(env: Env, now = Date.now()): Promise<void> {
   const day = new Date(now).toISOString().slice(0, 10);
@@ -219,7 +221,10 @@ export async function recordStorageUsage(env: Env, now = Date.now()): Promise<vo
        COALESCE((SELECT bytes FROM search_repos WHERE repo_id = r.id), 0)
        + COALESCE((SELECT SUM(size) FROM release_assets WHERE repo_id = r.id), 0)
        + COALESCE((SELECT SUM(f.size) FROM package_files f JOIN packages p ON p.id = f.package_id
-                    WHERE p.repo_id = r.id), 0) AS bytes
+                    WHERE p.repo_id = r.id), 0)
+       + COALESCE((SELECT SUM(size) FROM lfs_objects WHERE repo_id = r.id AND status = 'stored'), 0)
+       + COALESCE((SELECT SUM(size) FROM ci_artifacts WHERE repo_id = r.id), 0)
+       + COALESCE((SELECT SUM(size) FROM ci_caches WHERE repo_id = r.id AND state = 'ready'), 0) AS bytes
        FROM repos r
       WHERE NOT EXISTS (SELECT 1 FROM usage_events WHERE id = 'storage_' || r.id || '_' || ?)`,
     [day],
