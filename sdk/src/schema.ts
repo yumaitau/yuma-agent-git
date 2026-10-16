@@ -209,6 +209,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/apps': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Apps you manage */
+    get: operations['listApps'];
+    put?: never;
+    /** Create an app (private key returned once), optionally with its webhook */
+    post: operations['createApp'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/apps/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** An app you manage, its installations and webhook */
+    get: operations['getApp'];
+    put?: never;
+    post?: never;
+    /** Delete an app, its installations, tokens and webhook */
+    delete: operations['deleteApp'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/apps/{id}/installations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Install an app on repositories you administer */
+    post: operations['installApp'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/audit/stream': {
     parameters: {
       query?: never;
@@ -255,6 +308,93 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/hooks/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** A webhook (never its secret) */
+    get: operations['getHook'];
+    put?: never;
+    post?: never;
+    /** Delete a webhook and its delivery log */
+    delete: operations['deleteHook'];
+    options?: never;
+    head?: never;
+    /** Change a webhook URL, secret, events, format or state */
+    patch: operations['updateHook'];
+    trace?: never;
+  };
+  '/api/v1/hooks/{id}/deliveries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Recent deliveries: status, attempts, response code */
+    get: operations['listHookDeliveries'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/hooks/{id}/deliveries/{delivery}/redeliver': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Send a delivery again */
+    post: operations['redeliverHookDelivery'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/installations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** App installations you made */
+    get: operations['listInstallations'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/installations/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove an installation (its tokens stop at once) */
+    delete: operations['deleteInstallation'];
     options?: never;
     head?: never;
     patch?: never;
@@ -363,6 +503,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/oauth-apps': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** OAuth apps you manage */
+    get: operations['listOAuthApps'];
+    put?: never;
+    /** Register an OAuth app (client secret returned once) */
+    post: operations['createOAuthApp'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/oauth-apps/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete an OAuth app and revoke its tokens */
+    delete: operations['deleteOAuthApp'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/oauth/authorize': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Check an authorization request for the consent page */
+    get: operations['getOAuthAuthorization'];
+    put?: never;
+    /** Approve or deny an authorization request (returns the redirect) */
+    post: operations['approveOAuthAuthorization'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/openapi.json': {
     parameters: {
       query?: never;
@@ -427,6 +620,24 @@ export interface paths {
     get: operations['searchOrgAudit'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/hooks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List org webhooks */
+    get: operations['listOrgHooks'];
+    put?: never;
+    /** Create an org webhook (all org repositories) */
+    post: operations['createOrgHook'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1332,6 +1543,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/hooks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List repository webhooks */
+    get: operations['listRepoHooks'];
+    put?: never;
+    /** Create a repository webhook */
+    post: operations['createRepoHook'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/import': {
     parameters: {
       query?: never;
@@ -2097,6 +2326,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/user': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The person a session or user token belongs to (OAuth sign-in) */
+    get: operations['getUser'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/auth/github': {
     parameters: {
       query?: never;
@@ -2379,7 +2625,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** RFC 8693 token exchange: an `agent:run` API token delegates to an agent */
+    /** Token endpoint: agent token exchange (RFC 8693), app installation tokens (JWT bearer) and OAuth app codes (PKCE) */
     post: operations['exchangeAgentToken'];
     delete?: never;
     options?: never;
@@ -2846,6 +3092,161 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listApps: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          name: string;
+          permissions: (
+            | 'contents:read'
+            | 'contents:write'
+            | 'pulls:write'
+            | 'ci:run'
+            | 'releases:write'
+          )[];
+          org?: string;
+          webhook?: {
+            url: string;
+            secret?: string;
+            events: (
+              | 'push'
+              | 'ref'
+              | 'pull_request'
+              | 'pull_request_review'
+              | 'issues'
+              | 'ci_run'
+            )[];
+            /**
+             * @default yag
+             * @enum {string}
+             */
+            format?: 'yag' | 'github';
+            /** @default true */
+            active?: boolean;
+          };
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  installApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          repos: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getAuditStream: {
     parameters: {
       query?: never;
@@ -2911,6 +3312,186 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getHook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteHook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateHook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          url?: string;
+          secret?: string;
+          events?: (
+            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+          )[];
+          /** @enum {string} */
+          format?: 'yag' | 'github';
+          active?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listHookDeliveries: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  redeliverHookDelivery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        delivery: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listInstallations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteInstallation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
@@ -3091,6 +3672,153 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listOAuthApps: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createOAuthApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          name: string;
+          redirect_uris: string[];
+          org?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteOAuthApp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getOAuthAuthorization: {
+    parameters: {
+      query: {
+        client_id: string;
+        redirect_uri: string;
+        response_type?: 'code';
+        scope?: string;
+        state?: string;
+        code_challenge: string;
+        code_challenge_method: 'S256';
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  approveOAuthAuthorization: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          client_id: string;
+          redirect_uri: string;
+          /**
+           * @default code
+           * @constant
+           */
+          response_type?: 'code';
+          /** @default  */
+          scope?: string;
+          state?: string;
+          code_challenge: string;
+          /** @constant */
+          code_challenge_method: 'S256';
+          approve: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getOpenApi: {
     parameters: {
       query?: never;
@@ -3243,6 +3971,69 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listOrgHooks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createOrgHook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          url: string;
+          secret?: string;
+          events: (
+            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+          )[];
+          /**
+           * @default yag
+           * @enum {string}
+           */
+          format?: 'yag' | 'github';
+          /** @default true */
+          active?: boolean;
+        };
+      };
+    };
     responses: {
       /** @description Success */
       '2XX': {
@@ -5281,6 +6072,71 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listRepoHooks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createRepoHook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          url: string;
+          secret?: string;
+          events: (
+            'push' | 'ref' | 'pull_request' | 'pull_request_review' | 'issues' | 'ci_run'
+          )[];
+          /**
+           * @default yag
+           * @enum {string}
+           */
+          format?: 'yag' | 'github';
+          /** @default true */
+          active?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   startImport: {
     parameters: {
       query?: never;
@@ -7120,6 +7976,28 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getUser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   startGithubLogin: {
     parameters: {
       query?: never;
@@ -7540,17 +8418,34 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': {
-          grant_type: string;
-          subject_token: string;
-          /** @constant */
-          subject_token_type: 'urn:ietf:params:oauth:token-type:access_token';
-          agent_id: string;
-          resource: string | string[];
-          scope?: string;
-          task_id?: string;
-          expires_in?: number;
-        };
+        'application/json':
+          | {
+              grant_type: string;
+              subject_token: string;
+              /** @constant */
+              subject_token_type: 'urn:ietf:params:oauth:token-type:access_token';
+              agent_id: string;
+              resource: string | string[];
+              scope?: string;
+              task_id?: string;
+              expires_in?: number;
+            }
+          | {
+              /** @constant */
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+              assertion: string;
+              installation_id: string;
+              scope?: string;
+            }
+          | {
+              /** @constant */
+              grant_type: 'authorization_code';
+              code: string;
+              redirect_uri: string;
+              code_verifier: string;
+              client_id?: string;
+              client_secret?: string;
+            };
       };
     };
     responses: {
@@ -7559,9 +8454,7 @@ export interface operations {
         headers: {
           [name: string]: unknown;
         };
-        content: {
-          'application/json': unknown;
-        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];

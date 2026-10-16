@@ -497,6 +497,7 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /auth/logout': 'auth.logout',
   'POST /api/v1/tokens': 'token.create',
   'DELETE /api/v1/tokens/:id': 'token.revoke',
+  // also app.token.issue and oauth.token.issue (#75)
   'POST /oauth/token': 'agent.token.issue',
   'POST /api/v1/agents': 'agent.create',
   'PATCH /api/v1/agents/:id': 'agent.disable',
@@ -592,6 +593,19 @@ const AUDITED: Record<string, AuditAction> = {
   'PUT /api/v1/orgs/:org/variables/:name': 'variable.set',
   'DELETE /api/v1/orgs/:org/variables/:name': 'variable.delete',
   'POST /api/v1/admin/secrets/rewrap': 'secret.kek.rewrap',
+  'POST /api/v1/oauth-apps': 'oauth_app.create',
+  'DELETE /api/v1/oauth-apps/:id': 'oauth_app.delete',
+  // a denial changes nothing; an approval records oauth.authorize
+  'POST /api/v1/oauth/authorize': 'oauth.authorize',
+  'POST /api/v1/apps': 'app.create',
+  'DELETE /api/v1/apps/:id': 'app.delete',
+  'POST /api/v1/apps/:id/installations': 'app.install',
+  'DELETE /api/v1/installations/:id': 'app.uninstall',
+  'POST /api/v1/repos/:repo{.+}/hooks': 'webhook.create',
+  'POST /api/v1/orgs/:org/hooks': 'webhook.create',
+  'PATCH /api/v1/hooks/:id': 'webhook.update',
+  'DELETE /api/v1/hooks/:id': 'webhook.delete',
+  'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'webhook.redeliver',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':

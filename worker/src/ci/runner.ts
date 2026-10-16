@@ -11,6 +11,7 @@ import { runnerServices } from './spec';
 import { createMasker, type Masker } from './mask';
 import { ApiError } from '../core/errors';
 import { prepareJob } from './inject';
+import { emitCiRun } from './runs';
 import {
   MAX_IMAGE_BYTES,
   MAX_LOG_BYTES,
@@ -229,6 +230,7 @@ export class CiRunnerDO extends DurableObject<Env> {
         WHERE id = ?`,
         [state, Date.now(), logKey, state === 'passed' ? published : null, error, id],
       );
+      await emitCiRun(this.env, id, 'completed');
       await this.ctx.storage.deleteAlarm();
       await this.advance();
     }
@@ -261,16 +263,17 @@ export class CiRunnerDO extends DurableObject<Env> {
       }
       await this.ctx.container?.destroy();
       await this.env.OBJECTS.delete(`ci/images/${id}.tar`);
-      await run(
-        this.env,
+      const stopped = await this.env.DB.prepare(
         "UPDATE ci_runs SET state = ?, finished_at = ?, error = ? WHERE id = ? AND state IN ('queued','running')",
-        [
+      )
+        .bind(
           expired ? 'timed_out' : 'cancelled',
           Date.now(),
           expired ? 'Run exceeded its time limit' : null,
           id,
-        ],
-      );
+        )
+        .run();
+      if (stopped.meta.changes > 0) await emitCiRun(this.env, id, 'completed');
     });
     await this.advance();
   }

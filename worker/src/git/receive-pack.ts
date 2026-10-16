@@ -10,6 +10,7 @@ import { ciReady, pushPipelines } from '../ci/triggers';
 import { triggerOf } from '../ci/context';
 import { linkLanded, linkPushed } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
+import { emitRefUpdate } from '../webhooks/events';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
 import { MAX_CHANGED_FILES } from '../core/changesets';
@@ -573,6 +574,19 @@ export async function receivePack(
         via: 'git-push',
       });
     }
+    await emitRefUpdate(
+      env,
+      repo,
+      {
+        name: u.name,
+        from: u.from,
+        to: u.deleting ? null : (push.csOf.get(u.newSha) ?? null),
+        commits: u.commits.flatMap((sha) => push.csOf.get(sha) ?? []),
+        forced: !u.fastForward,
+      },
+      actorOf(principal),
+      new URL(c.req.url).origin,
+    );
   }
   // Commit messages link issues (#38); landing on the default branch closes them.
   for (const u of moved) {

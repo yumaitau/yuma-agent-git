@@ -13,7 +13,8 @@ import {
 import { errorResponse, readJsonBody } from './errors';
 import { q, q1 } from '../db/client';
 import { ApiError } from '../core/errors';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitEvent } from '../webhooks/events';
 import {
   actorKey,
   eventStatement,
@@ -30,6 +31,7 @@ import {
 } from '../collab/references';
 import { listTemplates } from '../collab/templates';
 import type {
+  Issue,
   IssueComment,
   IssueDetail,
   IssueEvent,
@@ -86,6 +88,22 @@ function requireWriteScope(c: Context<AppEnv>): void {
 
 function forbidden(message: string): ApiError {
   return new ApiError(403, 'forbidden', message);
+}
+
+/** The `issues` webhook event (#75). */
+async function emitIssue(
+  c: Context<AppEnv>,
+  repo: RepoWithCreator,
+  action: string,
+  issue: Issue,
+): Promise<void> {
+  await emitEvent(c.env, repo, {
+    event: 'issues',
+    action,
+    actor: actorOf(principalOf(c)),
+    origin: new URL(c.req.url).origin,
+    data: { issue },
+  });
 }
 
 const numberParam = z.coerce.number().int().positive().max(999_999_999);
@@ -510,6 +528,7 @@ issuesRoutes.post(`${base}/issues`, async (c) => {
       input.body,
     );
     const [hydrated] = await hydrateIssues(c.env, [issue]);
+    await emitIssue(c, repo, 'opened', hydrated!);
     return c.json({ issue: hydrated }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -731,6 +750,17 @@ issuesRoutes.patch(`${base}/issues/:number`, async (c) => {
     const [hydrated] = await hydrateIssues(c.env, [
       (await getIssueRow(c.env, repo.id, issue.number)) as IssueRow,
     ]);
+    if (stmts.length)
+      await emitIssue(
+        c,
+        repo,
+        hydrated!.state === issue.state
+          ? 'edited'
+          : hydrated!.state === 'closed'
+            ? 'closed'
+            : 'reopened',
+        hydrated!,
+      );
     return c.json({ issue: hydrated });
   } catch (err) {
     return errorResponse(c, err);
@@ -742,6 +772,7 @@ issuesRoutes.delete(`${base}/issues/:number`, async (c) => {
     const loaded = await loadAdminRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const issue = await loadIssue(c, loaded.repo);
+    const [snapshot] = await hydrateIssues(c.env, [issue]);
     const db = c.env.DB;
     // The number is never reused: repo_counters only grows.
     await recordAudit(
@@ -762,6 +793,7 @@ issuesRoutes.delete(`${base}/issues/:number`, async (c) => {
         ].map((sql) => db.prepare(sql).bind(issue.id)),
       ],
     );
+    await emitIssue(c, loaded.repo, 'deleted', snapshot!);
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

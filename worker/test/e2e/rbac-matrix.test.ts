@@ -217,6 +217,8 @@ const EXEMPT: Record<string, string> = {
   'DELETE /api/v1/repos/:repo{.+}/environments/:env': 'secrets.test.ts',
   'GET /api/v1/repos/:repo{.+}/environment-approvals': 'secrets.test.ts',
   'POST /api/v1/repos/:repo{.+}/environment-approvals/:id': 'secrets.test.ts',
+  'GET /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
+  'POST /api/v1/repos/:repo{.+}/hooks': 'webhooks-out.test.ts',
 };
 
 /**

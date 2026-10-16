@@ -92,7 +92,20 @@ export type AuditAction =
   | 'ruleset.create'
   | 'ruleset.update'
   | 'ruleset.delete'
-  | 'ruleset.bypass';
+  | 'ruleset.bypass'
+  | 'webhook.create'
+  | 'webhook.update'
+  | 'webhook.delete'
+  | 'webhook.redeliver'
+  | 'app.create'
+  | 'app.delete'
+  | 'app.install'
+  | 'app.uninstall'
+  | 'app.token.issue'
+  | 'oauth_app.create'
+  | 'oauth_app.delete'
+  | 'oauth.authorize'
+  | 'oauth.token.issue';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

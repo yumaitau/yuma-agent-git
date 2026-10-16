@@ -101,7 +101,32 @@ const PURPOSES: Record<string, string> = {
   'POST /api/v1/tokens': 'Create an API token (raw value returned once)',
   'DELETE /api/v1/tokens/:id': 'Revoke one of your API tokens',
   'POST /oauth/token':
-    'RFC 8693 token exchange: an `agent:run` API token delegates to an agent',
+    'Token endpoint: agent token exchange (RFC 8693), app installation tokens (JWT bearer) and OAuth app codes (PKCE)',
+  'GET /api/v1/user': 'The person a session or user token belongs to (OAuth sign-in)',
+  'GET /api/v1/oauth-apps': 'OAuth apps you manage',
+  'POST /api/v1/oauth-apps': 'Register an OAuth app (client secret returned once)',
+  'DELETE /api/v1/oauth-apps/:id': 'Delete an OAuth app and revoke its tokens',
+  'GET /api/v1/oauth/authorize': 'Check an authorization request for the consent page',
+  'POST /api/v1/oauth/authorize':
+    'Approve or deny an authorization request (returns the redirect)',
+  'GET /api/v1/apps': 'Apps you manage',
+  'POST /api/v1/apps':
+    'Create an app (private key returned once), optionally with its webhook',
+  'GET /api/v1/apps/:id': 'An app you manage, its installations and webhook',
+  'DELETE /api/v1/apps/:id': 'Delete an app, its installations, tokens and webhook',
+  'POST /api/v1/apps/:id/installations': 'Install an app on repositories you administer',
+  'GET /api/v1/installations': 'App installations you made',
+  'DELETE /api/v1/installations/:id': 'Remove an installation (its tokens stop at once)',
+  'GET /api/v1/repos/:repo/hooks': 'List repository webhooks',
+  'POST /api/v1/repos/:repo/hooks': 'Create a repository webhook',
+  'GET /api/v1/orgs/:org/hooks': 'List org webhooks',
+  'POST /api/v1/orgs/:org/hooks': 'Create an org webhook (all org repositories)',
+  'GET /api/v1/hooks/:id': 'A webhook (never its secret)',
+  'PATCH /api/v1/hooks/:id': 'Change a webhook URL, secret, events, format or state',
+  'DELETE /api/v1/hooks/:id': 'Delete a webhook and its delivery log',
+  'GET /api/v1/hooks/:id/deliveries':
+    'Recent deliveries: status, attempts, response code',
+  'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'Send a delivery again',
   'GET /api/v1/agents': 'Agent identities you manage, with live token counts',
   'POST /api/v1/agents': 'Create an agent identity (you or an org own it)',
   'PATCH /api/v1/agents/:id': 'Disable (kill switch, revokes tokens) or enable an agent',
@@ -324,7 +349,9 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (
     (/c\.get\("user"\)/.test(src) && /session required/.test(src)) ||
     /requireSession\d*\(/.test(src) ||
-    /(sessionUserId|loadOrg)\d*\(/.test(src)
+    /(sessionUserId|sessionUser|loadOrg|loadOwnedOrg|loadHook|loadManagedApp)\d*\(/.test(
+      src,
+    )
   ) {
     auth = 'session';
   }
@@ -356,6 +383,9 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
       ],
     );
   }
+  if (/loadOwnedOrg\d*\(/.test(src)) parts.push('org owner');
+  if (/loadHook\d*\(/.test(src)) parts.push("manages the hook's repo, org or app");
+  if (/loadManagedApp\d*\(/.test(src)) parts.push('app owner');
   if (/guardPathRead\d*\(/.test(src)) parts.push('path:read');
   if (/guardPathHistory\d*\(/.test(src)) parts.push('path:history');
   if (/"agent:run"/.test(src)) parts.push('`agent:run`');

@@ -10,6 +10,7 @@ import { mcpRoutes } from '../agents/mcp';
 import { diffRoutes } from './diff';
 import { exportRoutes } from './export';
 import { importRoutes } from './imports';
+import { hooksRoutes } from './hooks';
 import { issuesRoutes } from './issues';
 import { objectsRoutes } from './objects';
 import { openapiRoutes } from './openapi';
@@ -28,6 +29,7 @@ apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1
 
 apiRouter.route('/', collaborationRoutes);
 apiRouter.route('/', issuesRoutes);
+apiRouter.route('/', hooksRoutes);
 apiRouter.route('/', secretsRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);

@@ -10,6 +10,13 @@ import {
   patchSchema,
 } from '../auth/scim';
 import { createAgentSchema, exchangeSchema, patchAgentSchema } from '../auth/agents';
+import { appTokenGrantSchema, createAppSchema, installAppSchema } from '../auth/apps';
+import {
+  approveSchema,
+  authorizeSchema,
+  codeGrantSchema,
+  createOAuthAppSchema,
+} from '../auth/oauth-apps';
 import { rulesetInputSchema } from '../policy/rulesets';
 import { assertionSchema, registrationSchema } from '../auth/webauthn';
 import { codeSchema } from '../auth/totp';
@@ -37,6 +44,7 @@ import {
   updateMilestone,
 } from './issues';
 import { fetchObjectsSchema } from './objects';
+import { hookInputSchema, hookPatchSchema } from './hooks';
 import { putSsoSchema } from './org-sso';
 import {
   createOrgSchema,
@@ -178,7 +186,10 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /scim/v2/Groups/:id': { id: 'scimGetGroup' },
   'PATCH /scim/v2/Groups/:id': { id: 'scimPatchGroup', body: patchSchema },
   'DELETE /scim/v2/Groups/:id': { id: 'scimDeleteGroup' },
-  'POST /oauth/token': { id: 'exchangeAgentToken', body: exchangeSchema },
+  'POST /oauth/token': {
+    id: 'exchangeAgentToken',
+    body: z.union([exchangeSchema, appTokenGrantSchema, codeGrantSchema]),
+  },
   'GET /:owner/:repo.git/info/refs': {
     id: 'gitInfoRefs',
     query: z.object({ service: z.enum(['git-upload-pack', 'git-receive-pack']) }),
@@ -218,6 +229,29 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/tokens': { id: 'listTokens' },
   'POST /api/v1/tokens': { id: 'createToken', body: createTokenSchema },
   'DELETE /api/v1/tokens/:id': { id: 'deleteToken' },
+  'GET /api/v1/user': { id: 'getUser' },
+  'GET /api/v1/oauth-apps': { id: 'listOAuthApps' },
+  'POST /api/v1/oauth-apps': { id: 'createOAuthApp', body: createOAuthAppSchema },
+  'DELETE /api/v1/oauth-apps/:id': { id: 'deleteOAuthApp' },
+  'GET /api/v1/oauth/authorize': { id: 'getOAuthAuthorization', query: authorizeSchema },
+  'POST /api/v1/oauth/authorize': {
+    id: 'approveOAuthAuthorization',
+    body: approveSchema,
+  },
+  'GET /api/v1/apps': { id: 'listApps' },
+  'POST /api/v1/apps': { id: 'createApp', body: createAppSchema },
+  'GET /api/v1/apps/:id': { id: 'getApp' },
+  'DELETE /api/v1/apps/:id': { id: 'deleteApp' },
+  'POST /api/v1/apps/:id/installations': { id: 'installApp', body: installAppSchema },
+  'GET /api/v1/installations': { id: 'listInstallations' },
+  'DELETE /api/v1/installations/:id': { id: 'deleteInstallation' },
+  'GET /api/v1/hooks/:id': { id: 'getHook' },
+  'PATCH /api/v1/hooks/:id': { id: 'updateHook', body: hookPatchSchema },
+  'DELETE /api/v1/hooks/:id': { id: 'deleteHook' },
+  'GET /api/v1/hooks/:id/deliveries': { id: 'listHookDeliveries' },
+  'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': {
+    id: 'redeliverHookDelivery',
+  },
 
   'GET /api/v1/agents': { id: 'listAgents' },
   'POST /api/v1/agents': { id: 'createAgent', body: createAgentSchema },
@@ -235,6 +269,8 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/orgs/:org': { id: 'getOrg' },
   'PATCH /api/v1/orgs/:org': { id: 'updateOrg', body: patchOrgSchema },
   'GET /api/v1/orgs/:org/audit': { id: 'searchOrgAudit', query: auditQuerySchema },
+  'GET /api/v1/orgs/:org/hooks': { id: 'listOrgHooks' },
+  'POST /api/v1/orgs/:org/hooks': { id: 'createOrgHook', body: hookInputSchema },
   'GET /api/v1/orgs/:org/members': { id: 'listOrgMembers' },
   'PUT /api/v1/orgs/:org/members': { id: 'putOrgMember', body: putMemberSchema },
   'DELETE /api/v1/orgs/:org/members/:userId': { id: 'deleteOrgMember' },
@@ -407,6 +443,8 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   },
   'POST /api/v1/repos/:repo/import': { id: 'startImport', body: importRequestSchema },
   'GET /api/v1/repos/:repo/issue-templates': { id: 'listIssueTemplates' },
+  'GET /api/v1/repos/:repo/hooks': { id: 'listRepoHooks' },
+  'POST /api/v1/repos/:repo/hooks': { id: 'createRepoHook', body: hookInputSchema },
   'GET /api/v1/repos/:repo/issues': { id: 'listIssues', query: issueListQuery },
   'POST /api/v1/repos/:repo/issues': { id: 'createIssue', body: createIssue },
   'GET /api/v1/repos/:repo/issues/:number': { id: 'getIssue' },

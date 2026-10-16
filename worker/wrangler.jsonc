@@ -56,6 +56,7 @@
         "queue": "git-import",
       },
       { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
+      { "binding": "EVENTS_QUEUE", "queue": "forge-events" },
     ],
     "consumers": [
       { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 0 },
@@ -106,6 +107,7 @@
           { "binding": "AGENT_QUEUE", "queue": "agent-jobs" },
           { "binding": "IMPORT_QUEUE", "queue": "git-import" },
           { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
+          { "binding": "EVENTS_QUEUE", "queue": "forge-events" },
         ],
         "consumers": [
           {
@@ -124,6 +126,8 @@
             "max_concurrency": 1,
             "max_retries": 10,
           },
+          // webhook fan-out and delivery; retries are scheduled as new messages
+          { "queue": "forge-events", "max_batch_size": 10, "max_retries": 3 },
         ],
       },
       "ai": {
