@@ -18,6 +18,7 @@ import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
 import { oidcRoutes } from './ci/oidc';
 import { runnerRoutes } from './ci/runners';
+import { jobStorageRoutes } from './ci/job-routes';
 import { mcpOAuthRoutes } from './mcp/oauth';
 import { mcpServerRoutes } from './mcp/server';
 import { npmRoutes } from './registry/npm';
@@ -68,6 +69,8 @@ app.route('/', oidcRoutes);
 // Self-hosted runners (issue #48): a one-time registration token, then the
 // runner's own credential. Outside /api: runners are not users.
 app.route('/', runnerRoutes);
+// Job artifacts and caches (issue #51): the runner credential or the job token.
+app.route('/', jobStorageRoutes);
 
 // Package registry (issue #53): OCI images at /v2/ and npm at /npm/, each
 // with its own credential handling (registry/auth.ts).

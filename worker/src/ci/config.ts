@@ -7,9 +7,29 @@ export const MAX_LOG_BYTES = 512 * 1024;
 export const MAX_SOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_SOURCE_FILES = 2000;
 export const MAX_IMAGE_BYTES = 256 * 1024 * 1024;
-// standard-2: 1 vCPU + 6 GiB + 12 GB disk at published full CPU rates.
-// Round up $0.00003584/sec. Includes two sequential phases, never two VMs at once.
-export const MICROS_PER_SECOND = 36;
+/**
+ * Cloudflare container instance types the built-in pool can start (issue
+ * #52), priced at the published full-CPU rates and rounded up per second:
+ * $0.00002 per vCPU-second, $0.0000025 per GiB-second and $0.00000007 per
+ * GB-second of disk. standard-2 (the pilot's) is $0.00003584, so 36.
+ * A run's two sequential phases never hold two VMs at once.
+ */
+export const INSTANCE_TYPES = {
+  'standard-1': { vcpu: 0.5, memory_gib: 4, disk_gb: 8 },
+  'standard-2': { vcpu: 1, memory_gib: 6, disk_gb: 12 },
+  'standard-3': { vcpu: 2, memory_gib: 8, disk_gb: 16 },
+  'standard-4': { vcpu: 4, memory_gib: 12, disk_gb: 20 },
+} as const;
+export type InstanceType = keyof typeof INSTANCE_TYPES;
+export const INSTANCE_NAMES = Object.keys(INSTANCE_TYPES) as [
+  InstanceType,
+  ...InstanceType[],
+];
+export const DEFAULT_INSTANCE: InstanceType = 'standard-2';
+export function microsPerSecond(type: InstanceType): number {
+  const t = INSTANCE_TYPES[type];
+  return Math.ceil(t.vcpu * 20 + t.memory_gib * 2.5 + t.disk_gb * 0.07);
+}
 /**
  * Deployment access (issue #50), for the settings pipeline and for each v2
  * pipeline job. Jobs get nothing unless they ask.
@@ -43,8 +63,7 @@ export const accessFields = {
     .default(null),
 };
 export const AWS_NEEDS_ID_TOKEN = 'aws needs permissions.id_token: write';
-export const policySchema = z
-  .object({
+const policyObject = z.object({
     preset: z.enum(['node', 'docker', 'custom']).default('node'),
     commands: z.array(z.string().trim().min(1).max(2000)).min(1).max(8),
     timeout_seconds: z.number().int().min(30).max(600).default(300),
@@ -65,8 +84,16 @@ export const policySchema = z
       .nullable()
       .default(null),
     ...accessFields,
-  })
-  .refine((p) => !p.aws || p.permissions.id_token === 'write', AWS_NEEDS_ID_TOKEN);
+  });
+const awsNeedsIdToken = (p: { aws: unknown; permissions: { id_token: string } }) =>
+  !p.aws || p.permissions.id_token === 'write';
+/** The settings pipeline, which always runs on the built-in pool. */
+export const policySchema = policyObject.refine(awsNeedsIdToken, AWS_NEEDS_ID_TOKEN);
+/** Stored run configs: pipeline jobs may run up to 6 hours (issue #52), within their pool. */
+export const MAX_TIMEOUT_S = 6 * 60 * 60;
+const storedPolicySchema = policyObject
+  .extend({ timeout_seconds: z.number().int().min(30).max(MAX_TIMEOUT_S).default(300) })
+  .refine(awsNeedsIdToken, AWS_NEEDS_ID_TOKEN);
 import type { CiPolicy } from '../../shared/collaboration';
 export type { CiPolicy, CiRun } from '../../shared/collaboration';
 export interface Settings {
@@ -84,8 +111,11 @@ export const PRESETS = {
   ],
   docker: ['docker build --network=host -f Dockerfile -t yag-check .'],
 };
-export function parsePolicy(input: unknown): CiPolicy {
-  const parsed = policySchema.safeParse(input);
+export function parsePolicy(
+  input: unknown,
+  schema: z.ZodType<CiPolicy, unknown> = storedPolicySchema,
+): CiPolicy {
+  const parsed = schema.safeParse(input);
   if (!parsed.success)
     throw new ApiError(
       400,
@@ -108,7 +138,10 @@ export function monthlyBudget(env: Env): number {
   if (!Number.isFinite(value) || value <= 0 || value > 1000) return 0;
   return Math.floor(value * 1_000_000);
 }
-export function reservation(policy: CiPolicy): number {
+export function reservation(
+  policy: CiPolicy,
+  instance: InstanceType = DEFAULT_INSTANCE,
+): number {
   // The deadline covers startup, checks, build, export and publishing together.
-  return (policy.timeout_seconds + 30) * MICROS_PER_SECOND;
+  return (policy.timeout_seconds + 30) * microsPerSecond(instance);
 }

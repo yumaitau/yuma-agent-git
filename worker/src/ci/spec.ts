@@ -6,7 +6,14 @@ import { getBlob } from '../core/blobs';
 import { getChangeset } from '../core/changesets';
 import { getTree, resolvePath } from '../core/trees';
 import type { CiPolicy, SpecError } from '../../shared/collaboration';
-import { accessFields, AWS_NEEDS_ID_TOKEN } from './config';
+import {
+  accessFields,
+  AWS_NEEDS_ID_TOKEN,
+  DEFAULT_INSTANCE,
+  INSTANCE_NAMES,
+  MAX_TIMEOUT_S,
+  type InstanceType,
+} from './config';
 
 /**
  * Pipeline spec v2 (issue #47): `.yuma/pipelines/*.yml` in the repository.
@@ -16,7 +23,11 @@ import { accessFields, AWS_NEEDS_ID_TOKEN } from './config';
  * `${NAME}` shell references, so their values never enter command text.
  * A job's `environment`, `secrets`, `permissions` and `aws` are the issue #50
  * access fields of the settings pipeline, gated per job.
- * Limits match the settings pipeline so one job reserves what one run did.
+ * Limits match the settings pipeline so one job reserves what one run did,
+ * except `timeout_seconds` (up to 6 hours, within the org's pool, issue #52).
+ * `runs-on: [cloudflare, standard-4]` picks a Cloudflare instance type and
+ * `matrix.shard: N` splits a job into N shards (YAG_SHARD_INDEX of
+ * YAG_SHARD_TOTAL, 1-based, for `vitest --shard`).
  */
 const PIPELINE_DIR = ['.yuma', 'pipelines'];
 const MAX_FILES = 20;
@@ -128,18 +139,36 @@ export function runnerLabels(config: string): string[] | null {
     .parse(JSON.parse(config)).runs_on;
 }
 
+/** The Cloudflare instance type in a stored run config (issue #52). */
+export function runnerInstance(config: string): InstanceType {
+  return z
+    .object({ instance_type: z.enum(INSTANCE_NAMES).default(DEFAULT_INSTANCE) })
+    .parse(JSON.parse(config)).instance_type;
+}
+
+/** Fixed job environment in a stored run config: the shard variables. */
+export function jobEnv(config: string): Record<string, string> {
+  return z
+    .object({ env: z.record(z.string(), z.string()).default({}) })
+    .parse(JSON.parse(config)).env;
+}
+
 const job = z.strictObject({
   needs: z.preprocess(one, z.array(id).max(MAX_JOBS)).optional(),
   matrix: z
     .record(
       id,
-      z
-        .array(z.union([z.string().min(1).max(100), z.number(), z.boolean()]))
-        .min(1)
-        .max(MAX_MATRIX),
+      z.union([
+        z
+          .array(z.union([z.string().min(1).max(100), z.number(), z.boolean()]))
+          .min(1)
+          .max(MAX_MATRIX),
+        // `shard: N` only: N shards, 1-based
+        z.number().int().min(1).max(MAX_MATRIX),
+      ]),
     )
     .optional(),
-  timeout_seconds: z.number().int().min(30).max(600).default(300),
+  timeout_seconds: z.number().int().min(30).max(MAX_TIMEOUT_S).default(300),
   'runs-on': z.preprocess(one, labelsSchema).optional(),
   services: z
     .record(
@@ -189,7 +218,17 @@ const specSchema = z
             message: need === name ? 'A job cannot need itself' : `Unknown job "${need}"`,
           });
       }
-      const size = Object.values(j.matrix ?? {}).reduce((n, v) => n * v.length, 1);
+      for (const [axis, v] of Object.entries(j.matrix ?? {}))
+        if (!Array.isArray(v) && axis !== 'shard')
+          ctx.addIssue({
+            code: 'custom',
+            path: ['jobs', name, 'matrix', axis],
+            message: 'Use a list of values (only shard takes a number)',
+          });
+      const size = Object.values(j.matrix ?? {}).reduce(
+        (n: number, v) => n * axisValues(v).length,
+        1,
+      );
       if (size > MAX_MATRIX)
         ctx.addIssue({
           code: 'custom',
@@ -216,14 +255,21 @@ const specSchema = z
         }
       }
       const runsOn = j['runs-on'] ?? [];
+      const types = runsOn.filter((l) => (INSTANCE_NAMES as string[]).includes(l));
       if (
         runsOn.includes('cloudflare') &&
-        runsOn.some((l) => !BUILTIN_LABELS.includes(l))
+        runsOn.some((l) => !BUILTIN_LABELS.includes(l) && !types.includes(l))
       )
         ctx.addIssue({
           code: 'custom',
           path: ['jobs', name, 'runs-on'],
-          message: `Cloudflare runners only carry the labels ${BUILTIN_LABELS.join(', ')}`,
+          message: `Cloudflare runners only carry the labels ${BUILTIN_LABELS.join(', ')} and an instance type (${INSTANCE_NAMES.join(', ')})`,
+        });
+      if (runsOn.includes('cloudflare') && types.length > 1)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jobs', name, 'runs-on'],
+          message: 'Pick one instance type',
         });
       if (j.aws && j.permissions.id_token !== 'write')
         ctx.addIssue({
@@ -272,6 +318,13 @@ const specSchema = z
   });
 
 type Spec = z.infer<typeof specSchema>;
+
+/** Matrix values of one axis; `shard: N` is 1..N. */
+function axisValues(v: (string | number | boolean)[] | number): string[] {
+  return Array.isArray(v)
+    ? v.map(String)
+    : Array.from({ length: v }, (_, i) => String(i + 1));
+}
 type Triggers = Spec['on'];
 
 /** Secrets a job lists or references in its steps, by stored (upper-case) name. */
@@ -297,6 +350,10 @@ export interface PlannedJob extends Pick<
   services: Service[];
   /** Self-hosted runner labels, or null for the built-in pool. */
   runs_on: string[] | null;
+  /** Cloudflare instance type for the built-in pool (issue #52). */
+  instance_type: InstanceType;
+  /** Fixed environment: YAG_SHARD_INDEX and YAG_SHARD_TOTAL for a sharded job. */
+  env: Record<string, string>;
 }
 
 export interface Pipeline {
@@ -363,12 +420,18 @@ export function parseSpec(path: string, text: string): PipelineFile {
     let combos: [string, string][][] = [[]];
     for (const [axis, values] of Object.entries(j.matrix ?? {}))
       combos = combos.flatMap((c) =>
-        values.map((v): [string, string][] => [...c, [axis, String(v)]]),
+        axisValues(values).map((v): [string, string][] => [...c, [axis, v]]),
       );
+    const shards = typeof j.matrix?.shard === 'number' ? j.matrix.shard : null;
+    const runsOn = j['runs-on'];
+    const builtin = !runsOn || runsOn.includes('cloudflare');
     for (const combo of combos) {
       const values = new Map(combo);
+      const shard = shards ? values.get('shard')! : null;
+      const label = ([axis, v]: [string, string]): string =>
+        shards && axis === 'shard' ? `${v}/${shards}` : v;
       jobs.push({
-        key: combo.length ? `${name} (${combo.map(([, v]) => v).join(', ')})` : name,
+        key: combo.length ? `${name} (${combo.map(label).join(', ')})` : name,
         job: name,
         needs: j.needs ?? [],
         commands: j.steps.map((s) =>
@@ -384,8 +447,13 @@ export function parseSpec(path: string, text: string): PipelineFile {
           image: s.image,
           env: s.env ?? {},
         })),
-        runs_on:
-          j['runs-on'] && !j['runs-on'].includes('cloudflare') ? j['runs-on'] : null,
+        runs_on: builtin ? null : runsOn,
+        instance_type:
+          ((builtin &&
+            runsOn?.find((l) => (INSTANCE_NAMES as string[]).includes(l))) as
+            | InstanceType
+            | undefined) || DEFAULT_INSTANCE,
+        env: shard ? { YAG_SHARD_INDEX: shard, YAG_SHARD_TOTAL: String(shards) } : {},
         environment: j.environment,
         secrets: jobSecrets(j),
         permissions: j.permissions,

@@ -17,6 +17,7 @@ import { getPull, pullGate, type Pull, type Review } from '../reviews/pulls';
 import {
   monthlyBudget,
   parsePolicy,
+  policySchema,
   PRESETS,
   reservation,
   settings,
@@ -404,7 +405,7 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'admin', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
-    const config = parsePolicy(await readJsonBody(c));
+    const config = parsePolicy(await readJsonBody(c), policySchema);
     const lock = c.env.REF_LOCK.get(
       c.env.REF_LOCK.idFromName(`${loaded.repo.id}:${loaded.repo.default_branch}`),
     );
