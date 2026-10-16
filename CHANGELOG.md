@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Code search (#45): `GET /api/v1/search/code` searches file contents across
+  every readable repo by text or regular expression, with `repo`, `path`,
+  `lang` and `rev` filters and match ranges; `GET /api/v1/search/paths` finds
+  files by path. Results respect repo access and path rules. A trigram index
+  (derived data, migration 0033) is built per changeset, one new blob at a
+  time. MCP tools `code_search` and `file_find`, and a dashboard Search page.
+  The agent `grep` tool now searches through the index, so it no longer comes
+  back empty on large repos.
 - Wave 2b seams. Agent guardrails judge work queue claims (`queue.claim`, with
   the item's risk; a held claim goes back to the queue), an agent marking work
   ready (`issue.ready`), update-branch by an agent (`pr.merge`), each
