@@ -23,12 +23,13 @@ Use an API token (`yag_…`, created in the dashboard or with `POST /api/v1/toke
 
 Basic credentials are accepted only on the Git paths, never on `/api`.
 
-| Caller                                       | Answer                                        |
-| -------------------------------------------- | --------------------------------------------- |
-| No credentials (public repos included)       | `401` with `WWW-Authenticate: Basic`          |
-| Cannot read the repository                   | `404`, the same as a missing repository       |
-| Can read but not write, pushing              | `403`                                         |
-| A path rule hides any part of the repository | `ERR path_restricted` (the path is not named) |
+| Caller                                          | Answer                                        |
+| ----------------------------------------------- | --------------------------------------------- |
+| No credentials (public repos included)          | `401` with `WWW-Authenticate: Basic`          |
+| Cannot read the repository                      | `404`, the same as a missing repository       |
+| Can read but not write, pushing                 | `403`                                         |
+| A path rule hides any part of the repository    | `ERR path_restricted` (the path is not named) |
+| Org enforces SSO the token was not minted under | `ERR sso_required` with where to sign in      |
 
 A commit names its whole tree, so a caller with any read restriction cannot use
 Git at all. Those callers use the `yag` CLI or the API, which filter by path.

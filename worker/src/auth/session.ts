@@ -87,6 +87,15 @@ export async function readSession(
   cookieHeader: string | undefined,
   now: number = Date.now(),
 ): Promise<UserRecord | null> {
+  return (await loadSession(env, cookieHeader, now))?.user ?? null;
+}
+
+/** `readSession` plus how that session signed in. */
+async function loadSession(
+  env: Env,
+  cookieHeader: string | undefined,
+  now: number = Date.now(),
+): Promise<{ user: UserRecord; authMethod: string } | null> {
   const match = /(?:^|;\s*)yag_session=([^;]+)/.exec(cookieHeader ?? '');
   if (!match) return null;
   const tokenHash = await sha256Hex(new TextEncoder().encode(match[1] as string));
@@ -114,7 +123,9 @@ export async function readSession(
   ]);
   if (!user) return null;
   const parsed = parseUserRow(user);
-  return parsed.active === 0 ? null : parsed;
+  return parsed.active === 0
+    ? null
+    : { user: parsed, authMethod: z.string().parse(row['auth_method']) };
 }
 
 const sessionInfoSchema = z.object({
@@ -236,8 +247,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next): Promise<vo
 
   const cookie = c.req.header('cookie');
   if (cookie) {
-    user = await readSession(c.env, cookie);
-    if (user) principal = { kind: 'user', userId: user.id };
+    const session = await loadSession(c.env, cookie);
+    if (session) {
+      user = session.user;
+      principal = { kind: 'user', userId: user.id, authMethod: session.authMethod };
+    }
   }
 
   if (principal === null) {

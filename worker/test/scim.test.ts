@@ -32,7 +32,7 @@ function scim(path: string, method = 'GET', body?: unknown): Promise<Response> {
 }
 
 /** An admin with a fresh second factor mints the provisioning token. */
-async function mintScimToken(): Promise<string> {
+async function mintScimToken(org?: string): Promise<string> {
   const admin = await loginAs(testEnv, 1, 'admin');
   scimEnv = {
     ...testEnv,
@@ -48,7 +48,7 @@ async function mintScimToken(): Promise<string> {
   const res = await app('/api/v1/scim/tokens', {
     method: 'POST',
     headers: { ...admin.headers, 'content-type': 'application/json' },
-    body: JSON.stringify({ label: 'entra' }),
+    body: JSON.stringify({ label: 'entra', org }),
   });
   expect(res.status).toBe(201);
   return ((await res.json()) as { token: string }).token;
@@ -253,5 +253,146 @@ describe('scim users', () => {
     expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
       'account_disabled',
     );
+  });
+});
+
+describe('scim groups', () => {
+  let adminCookie = '';
+
+  beforeEach(async () => {
+    await seedSchema(testEnv);
+    await cleanDb(testEnv);
+    adminCookie = (await loginAs(testEnv, 1, 'admin')).cookie;
+    const post = (path: string, body: unknown) =>
+      app(path, {
+        method: 'POST',
+        headers: { cookie: adminCookie, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    expect((await post('/api/v1/orgs', { slug: 'yuma' })).status).toBe(201);
+    expect((await post('/api/v1/repos', { slug: 'yuma/core', org: 'yuma' })).status).toBe(
+      201,
+    );
+  });
+
+  async function provision(userName: string): Promise<string> {
+    const res = await scim('/Users', 'POST', { userName });
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  /** Status of GET yuma/core for a fresh session of `userId`. */
+  async function repoStatus(userId: string): Promise<number> {
+    const { token } = await createSession(testEnv, userId);
+    const res = await app('/api/v1/repos/yuma/core', {
+      headers: { cookie: `yag_session=${token}` },
+    });
+    return res.status;
+  }
+
+  it('needs a token bound to an org', async () => {
+    bearer = await mintScimToken();
+    const res = await scim('/Groups');
+    expect(res.status).toBe(403);
+    expect(res.headers.get('content-type')).toBe('application/scim+json');
+  });
+
+  it('maps groups to teams; membership changes move repo access', async () => {
+    bearer = await mintScimToken('yuma');
+    const grace = await provision('grace@yuma.test');
+    const lin = await provision('lin@yuma.test');
+
+    const created = await scim('/Groups', 'POST', {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+      displayName: 'Platform Engineers',
+      externalId: 'entra-1',
+      members: [{ value: grace }],
+    });
+    expect(created.status).toBe(201);
+    const group = (await created.json()) as { id: string };
+    expect(group).toMatchObject({
+      displayName: 'Platform Engineers',
+      externalId: 'entra-1',
+      members: [{ value: grace, display: 'grace' }],
+    });
+    const team = await q1<{ id: string; slug: string }>(
+      testEnv,
+      'SELECT id, slug FROM teams WHERE id = ?',
+      [group.id],
+    );
+    expect(team?.slug).toBe('platform-engineers');
+    // teams need org members, so the IdP's member joins the org
+    expect(
+      await q(testEnv, 'SELECT user_id, role FROM org_members WHERE user_id = ?', [
+        grace,
+      ]),
+    ).toEqual([{ user_id: grace, role: 'member' }]);
+    expect(
+      (await scim('/Groups', 'POST', { displayName: 'platform engineers' })).status,
+    ).toBe(409);
+
+    const grant = await app('/api/v1/orgs/yuma/teams/platform-engineers/repos', {
+      method: 'PUT',
+      headers: { cookie: adminCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ repo: 'yuma/core', role: 'read' }),
+    });
+    expect(grant.status).toBe(200);
+    expect(await repoStatus(grace)).toBe(200);
+    expect(await repoStatus(lin)).toBe(404);
+
+    const patch = (Operations: unknown[]) =>
+      scim(`/Groups/${group.id}`, 'PATCH', {
+        schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+        Operations,
+      });
+    // Entra adds and removes members one operation at a time
+    expect(
+      (await patch([{ op: 'Add', path: 'members', value: [{ value: lin }] }])).status,
+    ).toBe(200);
+    expect(await repoStatus(lin)).toBe(200);
+    expect(
+      (await patch([{ op: 'Remove', path: `members[value eq "${grace}"]` }])).status,
+    ).toBe(200);
+    expect(await repoStatus(grace)).toBe(404);
+    // Okta replaces the whole list
+    const replaced = await patch([
+      { op: 'replace', path: 'members', value: [{ value: grace }] },
+      { op: 'replace', value: { displayName: 'Platform' } },
+    ]);
+    expect(await replaced.json()).toMatchObject({
+      displayName: 'Platform',
+      members: [{ value: grace }],
+    });
+    expect(await repoStatus(grace)).toBe(200);
+    expect(await repoStatus(lin)).toBe(404);
+    expect(
+      (await patch([{ op: 'add', path: 'members', value: [{ value: 'nobody' }] }]))
+        .status,
+    ).toBe(400);
+
+    const found = await scim(
+      `/Groups?filter=${encodeURIComponent('displayName eq "Platform"')}&excludedAttributes=members`,
+    );
+    const list = (await found.json()) as { totalResults: number; Resources: object[] };
+    expect(list.totalResults).toBe(1);
+    expect(list.Resources[0]).not.toHaveProperty('members');
+
+    expect((await scim(`/Groups/${group.id}`, 'DELETE')).status).toBe(204);
+    expect((await scim(`/Groups/${group.id}`)).status).toBe(404);
+    expect(await q(testEnv, 'SELECT * FROM teams WHERE id = ?', [group.id])).toEqual([]);
+    expect(await q(testEnv, 'SELECT * FROM team_repos')).toEqual([]);
+    expect(await repoStatus(grace)).toBe(404);
+
+    const audited = await q<{ action: string }>(
+      testEnv,
+      "SELECT action FROM audit_events WHERE action LIKE 'scim.group.%' ORDER BY id",
+    );
+    expect(audited.map((a) => a.action)).toEqual([
+      'scim.group.create',
+      'scim.group.update',
+      'scim.group.update',
+      'scim.group.update',
+      'scim.group.delete',
+    ]);
   });
 });

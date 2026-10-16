@@ -6,15 +6,22 @@ import type { UserRecord } from '../db/client';
  *   - `user`: a human with a GitHub OAuth session cookie
  *   - `token`: a machine/agent bearer token, scoped and optionally bound to
  *     one repo
+ *
+ * `authMethod` is how the credential signed in: the session's method, or for a
+ * token the method of the session that minted it (null when not recorded).
+ * Org SSO (auth/sso.ts) checks it. Only the credential resolvers set it;
+ * internal principals (agent runs, review checks) leave it undefined and are
+ * not gated, since the request that started them was.
  */
 export type Principal =
-  | { kind: 'user'; userId: string }
+  | { kind: 'user'; userId: string; authMethod?: string | null }
   | {
       kind: 'token';
       userId: string;
       tokenId: string;
       scopes: string[];
       repoId: string | null;
+      authMethod?: string | null;
     };
 
 export interface AppVariables {

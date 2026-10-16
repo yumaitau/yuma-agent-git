@@ -44,6 +44,8 @@ export type AuditAction =
   | 'org.update'
   | 'org.member.set'
   | 'org.member.remove'
+  | 'org.sso.set'
+  | 'org.sso.delete'
   | 'team.create'
   | 'team.member.set'
   | 'team.member.remove'
@@ -58,6 +60,9 @@ export type AuditAction =
   | 'scim.user.create'
   | 'scim.user.update'
   | 'scim.user.deprovision'
+  | 'scim.group.create'
+  | 'scim.group.update'
+  | 'scim.group.delete'
   | 'scim_token.create'
   | 'scim_token.revoke';
 

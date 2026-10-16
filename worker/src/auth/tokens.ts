@@ -37,6 +37,7 @@ const tokenRowSchema = z.object({
   created_at: z.number(),
   last_used_at: z.number().nullable().optional(),
   expires_at: z.number().nullable().optional(),
+  auth_method: z.string().nullable().optional(),
 });
 
 export interface ApiTokenMetadata {
@@ -63,6 +64,8 @@ export async function createApiToken(
     scopes?: string[];
     repoId?: string | null;
     expiresAt?: number | null;
+    /** How the minting session signed in (org SSO checks it). */
+    authMethod?: string | null;
     now?: number;
   },
 ): Promise<{ id: string; raw: string; metadata: ApiTokenMetadata }> {
@@ -87,12 +90,13 @@ export async function createApiToken(
     created_at: now,
     last_used_at: null,
     expires_at: opts.expiresAt ?? null,
+    auth_method: opts.authMethod ?? null,
   };
   await run(
     env,
     `INSERT INTO ${T.apiTokens}
-       (id, token_hash, repo_id, user_id, label, scopes, created_at, last_used_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, token_hash, repo_id, user_id, label, scopes, created_at, last_used_at, expires_at, auth_method)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.token_hash,
@@ -103,6 +107,7 @@ export async function createApiToken(
       row.created_at,
       row.last_used_at,
       row.expires_at,
+      row.auth_method,
     ],
   );
   return {
@@ -179,6 +184,7 @@ export async function resolveTokenPrincipal(
     tokenId: token.id,
     scopes: JSON.parse(token.scopes) as string[],
     repoId: token.repo_id,
+    authMethod: token.auth_method ?? null,
   };
 }
 
@@ -199,7 +205,11 @@ tokensRoutes.post('/api/v1/tokens', async (c) => {
   try {
     const user = c.get('user');
     if (!user) return apiError(c, 401, 'unauthorized', 'session required');
-    const mfa = await requireRecentMfa(c);
+    // REQUIRE_MFA_FOR_TOKENS=true also refuses users with no factor enrolled;
+    // off by default so GitHub-only users are not locked out
+    const mfa = await requireRecentMfa(c, {
+      strict: c.env.REQUIRE_MFA_FOR_TOKENS === 'true',
+    });
     if (mfa) return mfa;
     const body = await readJsonBody(c);
     const parsed = createTokenSchema.safeParse(body);
@@ -216,6 +226,7 @@ tokensRoutes.post('/api/v1/tokens', async (c) => {
       scopes: parsed.data.scopes,
       repoId: parsed.data.repo_id,
       expiresAt: parsed.data.expires_at,
+      authMethod: c.get('principal')?.authMethod ?? null,
     });
     await recordAudit(c, {
       action: 'token.create',

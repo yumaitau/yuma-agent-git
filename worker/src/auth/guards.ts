@@ -9,6 +9,7 @@ import {
   type Perm,
   type RepoWithCreator,
 } from './rbac';
+import { ssoMessage } from './sso';
 import type { Principal } from './principal';
 
 /**
@@ -23,6 +24,8 @@ import type { Principal } from './principal';
  *   - whole-repo surfaces (content-addressed objects, exports, ref moves,
  *     pulls/CI) are 403 `whole_repository_required` for callers any path rule
  *     restricts: a hash or a changeset cannot be mapped to the paths it covers
+ *   - 403 `sso_required` when the caller's roles allow it but their org
+ *     enforces SSO they have not signed in through (rbac.ts, sso.ts)
  */
 
 export type RepoLoad =
@@ -41,6 +44,15 @@ async function decideOrResponse(
   const principal = principalOf(c);
   const decision = await decide(c.env, repo, principal, perm, path);
   if (decision.allowed) return null;
+  if (decision.ssoRequired) {
+    return apiError(
+      c,
+      403,
+      'sso_required',
+      ssoMessage(decision.ssoRequired, new URL(c.req.url).origin),
+      { ...decision.ssoRequired },
+    );
+  }
 
   // never confirm the existence of repos the caller cannot read
   const canRead = (await decide(c.env, repo, principal, 'read')).allowed;

@@ -117,6 +117,17 @@ npx wrangler secret put TOTP_ENCRYPTION_KEY --env prod -c worker/wrangler.jsonc 
   after verifying a passkey or authenticator code, mint a provisioning token with
   `POST /api/v1/scim/tokens` and give the IdP `https://<your-worker>/scim/v2` with
   that bearer token. Deactivating a user revokes all their sessions and API tokens.
+  To sync IdP groups to teams, mint the token with `"org": "<org slug>"`; groups
+  pushed to `/scim/v2/Groups` become teams in that org, and their members join it.
+- Org SSO: an org owner sets `PUT /api/v1/orgs/<org>/sso` with the `issuer` and
+  `client_id` of one of the `OIDC_PROVIDERS`, optional `allowed_domains`, and
+  `enforced`. Once enforced, members reach org repos (API and Git) only from a
+  session that signed in through that provider, or a token minted from one;
+  anything else gets `sso_required`. Owners must sign in that way before they can
+  enforce it. SAML is not supported (see `docs/adr/0002-saml-sso.md`).
+- Set `REQUIRE_MFA_FOR_TOKENS` to `true` to make API token creation need a passkey
+  or authenticator code from the last 12 hours, even for people with none
+  enrolled. It is off by default so GitHub-only users are not locked out.
 
 Rotating `TOTP_ENCRYPTION_KEY` makes enrolled authenticator apps unreadable, so
 people would need to enrol again.

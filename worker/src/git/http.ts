@@ -1,7 +1,8 @@
 import { Hono, type Context, type Next } from 'hono';
 import type { AppEnv, Principal } from '../auth/principal';
 import { apiError, errorResponse } from '../api/errors';
-import { decide, pathDecider, restrictingDecision } from '../auth/rbac';
+import { decide, pathDecider, restrictingDecision, type Decision } from '../auth/rbac';
+import { ssoMessage } from '../auth/sso';
 import { resolveTokenPrincipal } from '../auth/tokens';
 import { PayloadTooLargeError } from '../core/errors';
 import { getRepoBySlug } from '../db/repos';
@@ -84,8 +85,8 @@ type Loaded =
 
 /**
  * The repo and caller for a Git request: 401 anonymous, 404 unreadable, 403
- * without write for a push, and `path_restricted` for any read or history
- * restriction.
+ * without write for a push, `path_restricted` for any read or history
+ * restriction, and `sso_required` while org SSO withholds access.
  */
 async function loadGitRepo(
   c: Context<AppEnv>,
@@ -97,11 +98,28 @@ async function loadGitRepo(
   if (!principal) return { ok: false, response: unauthorized(c) };
   const slug = `${c.req.param('owner')}/${(c.req.param('repo') ?? '').slice(0, -'.git'.length)}`;
   const repo = await getRepoBySlug(c.env, slug);
-  if (!repo || !(await decide(c.env, repo, principal, 'read')).allowed) {
+  // org SSO: an ERR line, so Git prints where to sign in
+  const ssoRefusal = (d: Decision): Loaded | null =>
+    d.ssoRequired
+      ? {
+          ok: false,
+          response: gitError(
+            service,
+            `sso_required: ${ssoMessage(d.ssoRequired, new URL(c.req.url).origin)}`,
+            advert,
+          ),
+        }
+      : null;
+  const read = repo ? await decide(c.env, repo, principal, 'read') : null;
+  const readRefused = read && ssoRefusal(read);
+  if (readRefused) return readRefused;
+  if (!repo || !read?.allowed) {
     return { ok: false, response: apiError(c, 404, 'repo_not_found', `no repo ${slug}`) };
   }
   if (perm === 'write') {
     const decision = await decide(c.env, repo, principal, 'write');
+    const refused = ssoRefusal(decision);
+    if (refused) return refused;
     if (!decision.allowed) {
       return {
         ok: false,

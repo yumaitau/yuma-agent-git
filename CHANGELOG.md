@@ -22,7 +22,11 @@ All notable changes to this project are documented here. The format follows
 - Organisations and teams (#26): org-owned repos, nested teams with repo grants,
   org base roles, and an org settings page in the dashboard.
 - Yuma-owned sign-in (#27): OIDC providers, passkeys, authenticator-app MFA with
-  step-up, and SCIM 2.0 user provisioning. SAML and SCIM groups are not built yet.
+  step-up, and SCIM 2.0 user provisioning.
+- Org SSO (#27): org owners can require sign-in through an OIDC provider; members
+  who signed in another way get `sso_required` on org repos over the API and Git.
+  SCIM groups sync to teams, and `REQUIRE_MFA_FOR_TOKENS` makes token creation
+  need recent MFA. SAML stays out (`docs/adr/0002-saml-sso.md`).
 - Hash-chained audit log (#65) with search, CSV/NDJSON export, `yag audit verify`
   and an HMAC-signed SIEM stream. Org, team, tag, MFA and SCIM actions are audited,
   and org owners and admins can read their org's chain.

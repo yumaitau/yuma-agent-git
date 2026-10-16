@@ -157,6 +157,7 @@ Repo existence is never leaked (`worker/src/auth/guards.ts`):
 | Any path rule restricts the caller on a `(whole repo)` route                | `403 whole_repository_required` with `denied_by`                   |
 | Token bound to another repo (pulls/CI)                                      | `404 repo_not_found`                                               |
 | Token lacks the scope a route checks                                        | `403 insufficient_scope`, or `403 forbidden` with `required_scope` |
+| Org member's roles allow it, but the org enforces SSO they have not met     | `403 sso_required` with `org` and `sign_in`                        |
 
 `denied_by` is `{id, path_prefix, effect, principal}` of the deciding rule, so the UI
 can name it.
@@ -178,7 +179,7 @@ failures are logged and returned as `500 internal_error` with no internals.
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 400    | `invalid_json`, `invalid_request`, `invalid_path`, `missing_sha256`, `hash_mismatch`, `unknown_parent`, `unknown_target`, `not_a_tree`, `invalid_ci_config`, `invalid_review`           |
 | 401    | `unauthorized`, `invalid_signature` (webhook)                                                                                                                                           |
-| 403    | `forbidden`, `insufficient_scope`, `whole_repository_required`, `protected_branch`, `self_review`, `not_admin`                                                                          |
+| 403    | `forbidden`, `insufficient_scope`, `whole_repository_required`, `sso_required`, `mfa_required`, `protected_branch`, `self_review`, `not_admin`                                          |
 | 404    | `not_found`, `repo_not_found`, `revision_not_found`, `path_not_found`, `object_not_found`, `changeset_not_found`, `ref_not_found`, `task_not_found`, `token_not_found`, `run_not_found` |
 | 409    | `repo_exists`, `repo_initialized`, `ref_stale`, `ref_not_fast_forward`, `no_changes`, `pull_stale`, `pull_closed`, `merge_blocked`, `tree_too_large`                                    |
 | 413    | `file_too_large`, `fetch_too_large`, `payload_too_large`, `export_too_large`                                                                                                            |
@@ -259,7 +260,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-116 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+124 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                              | Auth                    | Permission                                                  | Rate bucket  | Purpose                                                                       |
 | ------ | ------------------------------------------------- | ----------------------- | ----------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------- |
@@ -290,6 +291,9 @@ Without a configured signing key, tokens fail closed.
 | PUT    | `/api/v1/orgs/:org/members`                       | session                 | org owner or admin                                          | api_write    | Add or change an org member                                                   |
 | DELETE | `/api/v1/orgs/:org/members/:userId`               | session                 | org owner or admin                                          | api_write    | Remove an org member (and from its teams)                                     |
 | GET    | `/api/v1/orgs/:org/repos`                         | session                 | org member                                                  | api_read     | Org repos the caller can read                                                 |
+| GET    | `/api/v1/orgs/:org/sso`                           | session                 | org member                                                  | api_read     | Org SSO settings and whether the caller meets them                            |
+| PUT    | `/api/v1/orgs/:org/sso`                           | session                 | org owner                                                   | api_write    | Set org SSO (owners, recent MFA)                                              |
+| DELETE | `/api/v1/orgs/:org/sso`                           | session                 | org owner                                                   | api_write    | Remove org SSO (owners, recent MFA)                                           |
 | GET    | `/api/v1/orgs/:org/teams`                         | session                 | org member                                                  | api_read     | List teams                                                                    |
 | POST   | `/api/v1/orgs/:org/teams`                         | session                 | org owner or admin                                          | api_write    | Create a team (optional parent)                                               |
 | GET    | `/api/v1/orgs/:org/teams/:team`                   | session                 | org member                                                  | api_read     | Team, members and repo grants                                                 |
@@ -373,6 +377,11 @@ Without a configured signing key, tokens fail closed.
 | POST   | `/auth/passkey/options`                           | none                    | —                                                           | auth         | Passkey sign-in challenge                                                     |
 | GET    | `/auth/status`                                    | none                    | —                                                           | auth         | Whether GitHub OAuth is configured                                            |
 | GET    | `/healthz`                                        | none                    | —                                                           | api_read     | Liveness probe: `{ok: true}`                                                  |
+| GET    | `/scim/v2/Groups`                                 | SCIM token              | —                                                           | api_read     | SCIM: list groups (`displayName eq` filter)                                   |
+| POST   | `/scim/v2/Groups`                                 | SCIM token              | —                                                           | api_write    | SCIM: create a group as a team in the token's org                             |
+| GET    | `/scim/v2/Groups/:id`                             | SCIM token              | —                                                           | api_read     | SCIM: one group and its members                                               |
+| PATCH  | `/scim/v2/Groups/:id`                             | SCIM token              | —                                                           | api_write    | SCIM: change group members or name                                            |
+| DELETE | `/scim/v2/Groups/:id`                             | SCIM token              | —                                                           | api_write    | SCIM: delete a group and its team                                             |
 | GET    | `/scim/v2/Users`                                  | SCIM token              | —                                                           | api_read     | SCIM: list users (`userName eq` filter)                                       |
 | POST   | `/scim/v2/Users`                                  | SCIM token              | —                                                           | api_write    | SCIM: provision a user                                                        |
 | GET    | `/scim/v2/Users/:id`                              | SCIM token              | —                                                           | api_read     | SCIM: one user                                                                |

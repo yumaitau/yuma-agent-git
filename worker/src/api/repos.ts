@@ -6,6 +6,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 import { createRepo, getRef, getRepoBySlug, listRefs, listRefsPage } from '../db/repos';
 import { loadAdminRepo, loadReadableRepo } from '../auth/guards';
 import { decide, USER_TEAMS_CTE } from '../auth/rbac';
+import { unmetSso } from '../auth/sso';
 import { getOrgBySlug, orgMembership } from './orgs';
 import { commitChanges } from '../core/commit';
 import { moveRefViaDO, validateBranchName } from '../core/refs';
@@ -275,10 +276,18 @@ reposRoutes.get('/api/v1/repos', async (c) => {
         limit + 1,
       ],
     );
-    const page = rows.slice(0, limit).map((row) => parseRepoRow(row));
-    const last = page[page.length - 1];
+    const slice = rows.slice(0, limit).map((row) => parseRepoRow(row));
+    const last = slice[slice.length - 1];
     const nextCursor =
       rows.length > limit && last ? `${last.created_at}:${last.id}` : null;
+    // private repos of an org whose SSO the caller has not met stay hidden
+    const unmet = await unmetSso(c.env, principal);
+    const page = slice.filter(
+      (r) =>
+        r.visibility === 'public' ||
+        r.owner_kind !== 'org' ||
+        !unmet.has(r.owner_id ?? ''),
+    );
     return c.json({ repos: page, next_cursor: nextCursor }, 200, {
       'cache-control': 'private, no-store',
     });
