@@ -38,6 +38,11 @@ export type AuditAction =
   | 'agent.task.cancel'
   | 'agent.superfan.start'
   | 'agent.superfan.stop'
+  | 'agent.create'
+  | 'agent.disable'
+  | 'agent.enable'
+  | 'agent.token.issue'
+  | 'agent.token.revoke'
   | 'repo.settings.update'
   | 'tag.create'
   | 'org.create'
@@ -108,6 +113,9 @@ async function hashRow(row: AuditRow): Promise<string> {
 export function actorOf(principal: Principal | null): AuditActor {
   if (principal === null) return { kind: 'anonymous', id: 'anonymous' };
   if (principal.kind === 'user') return { kind: 'user', id: principal.userId };
+  if (principal.kind === 'agent') {
+    return { kind: 'agent', id: principal.agentId, onBehalfOf: principal.userId };
+  }
   return { kind: 'token', id: principal.tokenId, onBehalfOf: principal.userId };
 }
 

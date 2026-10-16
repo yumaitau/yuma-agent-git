@@ -2,7 +2,8 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
-import type { AppEnv, Principal } from '../auth/principal';
+import { agentIdOf, type AppEnv, type Principal } from '../auth/principal';
+import { recordAgentProvenance } from '../auth/agents';
 import { pathDecider } from '../auth/rbac';
 import { recordAudit } from '../audit/record';
 import { listRefs, getRef } from '../db/repos';
@@ -93,7 +94,8 @@ class PushError extends Error {}
 /** Refs this principal may see in a push advertisement (own agent refs only). */
 function visibleToPusher(name: string, principal: Principal): boolean {
   if (!name.startsWith(AGENT_PREFIX)) return true;
-  return principal.kind === 'token' && agentRefOwner(name) === principal.tokenId;
+  const id = agentIdOf(principal);
+  return id !== null && agentRefOwner(name) === id;
 }
 
 export async function advertiseReceivePack(
@@ -528,6 +530,16 @@ export async function receivePack(
     moved.length = 0;
     failAll();
   }
+  await recordAgentProvenance(
+    env,
+    repo.id,
+    [
+      ...new Set(
+        moved.flatMap((u) => u.commits.flatMap((sha) => push.csOf.get(sha) ?? [])),
+      ),
+    ],
+    principal,
+  );
   for (const u of moved) {
     await recordAudit(c, {
       action: 'ref.move',

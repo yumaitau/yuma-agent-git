@@ -108,6 +108,8 @@ const PUBLIC = new Set([
   'POST /auth/logout',
   'GET /auth/github/install-callback',
   'POST /webhooks/github', // HMAC-verified
+  // agent token exchange (#57): the subject token in the body authenticates
+  'POST /oauth/token',
   // sign-in (#27): OIDC redirect/callback and passkey assertions
   'GET /auth/oidc/:provider',
   'GET /auth/oidc/:provider/callback',

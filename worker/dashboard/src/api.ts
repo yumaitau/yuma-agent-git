@@ -365,6 +365,46 @@ export type ApiToken = z.infer<typeof tokenSchema>;
 export const createdTokenSchema = tokenSchema.extend({ token: z.string() });
 export type CreatedToken = z.infer<typeof createdTokenSchema>;
 
+export const AGENT_KINDS = [
+  'factory',
+  'claude_code',
+  'codex',
+  'grok',
+  'builtin',
+] as const;
+export const AGENT_SCOPES = [
+  'contents:read',
+  'contents:write',
+  'pulls:write',
+  'ci:run',
+  'releases:write',
+] as const;
+
+export const agentIdentitySchema = z.object({
+  id: z.string(),
+  owner_kind: z.enum(['user', 'org']),
+  owner_id: z.string(),
+  name: z.string(),
+  kind: z.enum(AGENT_KINDS),
+  max_scopes: z.array(z.string()),
+  allowed_repos: z.array(z.string()).nullable(),
+  created_at: z.number(),
+  disabled: z.boolean(),
+  live_tokens: z.number().optional(),
+});
+export type AgentIdentity = z.infer<typeof agentIdentitySchema>;
+
+/** Which agent wrote a changeset, for whom and for which task (#57). */
+export const provenanceSchema = z.object({
+  agent_id: z.string(),
+  agent_name: z.string().nullable(),
+  agent_kind: z.string().nullable(),
+  on_behalf_of: z.string(),
+  on_behalf_of_login: z.string().nullable(),
+  task_id: z.string().nullable(),
+});
+export type AgentProvenance = z.infer<typeof provenanceSchema>;
+
 export const memberSchema = z.object({
   user_id: z.string(),
   role: z.enum(['admin', 'write', 'read']),
@@ -619,13 +659,16 @@ export const api = {
     return body.changesets;
   },
 
-  async getChangeset(slug: string, id: string): Promise<Changeset> {
+  async getChangeset(
+    slug: string,
+    id: string,
+  ): Promise<Changeset & { provenance: AgentProvenance | null }> {
     const body = await requestJson(
       `/api/v1/repos/${slug}/changesets/${id}`,
       {},
-      z.object({ changeset: changesetSchema }),
+      z.object({ changeset: changesetSchema, provenance: provenanceSchema.nullish() }),
     );
-    return body.changeset;
+    return { ...body.changeset, provenance: body.provenance ?? null };
   },
 
   // -- diff -----------------------------------------------------------------
@@ -781,6 +824,38 @@ export const api = {
 
   async deleteToken(id: string): Promise<void> {
     await requestJson(`/api/v1/tokens/${id}`, { method: 'DELETE' }, okSchema);
+  },
+
+  // -- agent identities (#57) -------------------------------------------------
+  async listAgents(): Promise<AgentIdentity[]> {
+    const body = await requestJson(
+      '/api/v1/agents',
+      {},
+      z.object({ agents: z.array(agentIdentitySchema) }),
+    );
+    return body.agents;
+  },
+
+  async createAgent(input: {
+    name: string;
+    kind: AgentIdentity['kind'];
+    max_scopes?: string[];
+    org?: string;
+  }): Promise<AgentIdentity> {
+    return requestJson(
+      '/api/v1/agents',
+      { method: 'POST', body: input },
+      agentIdentitySchema,
+    );
+  },
+
+  /** Kill switch: disabling also revokes every live token of the agent. */
+  async setAgentDisabled(id: string, disabled: boolean): Promise<AgentIdentity> {
+    return requestJson(
+      `/api/v1/agents/${id}`,
+      { method: 'PATCH', body: { disabled } },
+      agentIdentitySchema,
+    );
   },
 
   // -- account security (passkeys, TOTP, linked identities) -------------------

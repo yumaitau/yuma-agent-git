@@ -7,7 +7,9 @@ import type { GitSignature } from './objects';
  * independent: a Git ID must never change because a deploy moved.
  *
  * Agents (`{agent: id}`) become `id <id@agents.yuma-agent-git>`, so provenance
- * (#58) can map a Git author back to the agent with `agentIdFromEmail`.
+ * (#58) can map a Git author back to the agent with `agentIdFromEmail`. The id
+ * is the agent identity (`agt_…`, #57) for commits made with an agent token;
+ * built-in task runs and older `agent:run` API tokens use their task or token id.
  */
 
 export const AGENT_EMAIL_DOMAIN = 'agents.yuma-agent-git';

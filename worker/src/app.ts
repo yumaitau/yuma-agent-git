@@ -10,6 +10,7 @@ import { githubRoutes } from './bridge/github';
 import { authMiddleware } from './auth/session';
 import { identityRoutes } from './auth/security';
 import { tokensRoutes } from './auth/tokens';
+import { agentIdentityRoutes } from './auth/agents';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
@@ -53,10 +54,12 @@ app.get('/healthz', (c) => c.json({ ok: true }));
 app.route('/', gitRoutes);
 
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
-// passkeys, SCIM, webhooks, the GitHub App handshake, and token management.
+// passkeys, SCIM, webhooks, the GitHub App handshake, token management and
+// agent identities with their token exchange.
 app.route('/', authRoutes);
 app.route('/', identityRoutes);
 app.route('/', tokensRoutes);
+app.route('/', agentIdentityRoutes);
 app.route('/', webhooksRoutes);
 app.route('/', githubRoutes);
 app.route('/', adminRoutes);

@@ -9,7 +9,7 @@ import { decide, USER_TEAMS_CTE } from '../auth/rbac';
 import { getOrgBySlug, orgMembership } from './orgs';
 import { commitChanges } from '../core/commit';
 import { moveRefViaDO, validateBranchName } from '../core/refs';
-import type { AppEnv } from '../auth/principal';
+import { boundRepos, hasScope, type AppEnv } from '../auth/principal';
 import { recordAudit } from '../audit/record';
 
 /**
@@ -210,11 +210,14 @@ reposRoutes.get('/api/v1/repos', async (c) => {
   try {
     const principal = c.get('principal');
     if (
-      principal?.kind === 'token' &&
-      !principal.scopes.some((scope) => scope === 'repo:read' || scope === 'repo:write')
+      principal &&
+      principal.kind !== 'user' &&
+      !hasScope(principal, 'repo:read') &&
+      !hasScope(principal, 'repo:write')
     )
       return apiError(c, 403, 'insufficient_scope', 'Token requires repository access');
-    const tokenRepo = principal?.kind === 'token' ? principal.repoId : null;
+    const bound = boundRepos(principal);
+    const tokenRepos = bound === null ? null : JSON.stringify(bound);
     const userId = principal?.userId ?? '';
     const limit = pageLimit(c.req.query('limit'));
     const cursorRaw = c.req.query('cursor');
@@ -258,7 +261,7 @@ reposRoutes.get('/api/v1/repos', async (c) => {
             AND (om.${C.orgMembers.role} = 'owner'
                  OR (om.${C.orgMembers.role} IN ('admin', 'member') AND o.${C.orgs.baseRole} <> 'none'))
        )
-       WHERE (? IS NULL OR id = ?) AND ((? = 0) OR created_at < ? OR (created_at = ? AND id < ?))
+       WHERE (? IS NULL OR id IN (SELECT value FROM json_each(?))) AND ((? = 0) OR created_at < ? OR (created_at = ? AND id < ?))
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
       [
@@ -266,8 +269,8 @@ reposRoutes.get('/api/v1/repos', async (c) => {
         userId,
         userId,
         userId,
-        tokenRepo,
-        tokenRepo,
+        tokenRepos,
+        tokenRepos,
         hasCursor,
         cursorCreated,
         cursorCreated,

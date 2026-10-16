@@ -14,8 +14,12 @@ import {
 } from '../core/refs';
 import { listRefsPage } from '../db/repos';
 import { q, run } from '../db/client';
-import { loadReadableRepo as loadReadable, loadWholeRepo } from '../auth/guards';
-import { hasScope, type AppEnv } from '../auth/principal';
+import {
+  loadReadableRepo as loadReadable,
+  loadWholeRepo,
+  requireAgentScope,
+} from '../auth/guards';
+import { agentIdOf, type AppEnv } from '../auth/principal';
 import { recordAudit } from '../audit/record';
 
 /**
@@ -116,19 +120,24 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
     const repo = loaded.repo;
     const name = validateRefName(c.req.param('name'), repo.refs_mode ?? 'scion');
 
-    // refs/agents/<id>/ belongs to the agent token with that id (#57 adds
-    // full agent identity; today the token id is the agent principal).
+    // refs/agents/<id>/ belongs to the agent with that id (#57).
     const owner = agentRefOwner(name);
     const principal = c.get('principal');
-    if (
-      owner !== null &&
-      !(
-        principal?.kind === 'token' &&
-        hasScope(principal, 'agent:run') &&
-        principal.tokenId === owner
-      )
-    ) {
+    if (owner !== null && agentIdOf(principal) !== owner) {
       return apiError(c, 403, 'forbidden', `only agent ${owner} may write ${name}`);
+    }
+    // Agent tokens never move the default branch: they open a pull request.
+    if (principal?.kind === 'agent' && name === repo.default_branch) {
+      return apiError(
+        c,
+        403,
+        'protected_branch',
+        'agents cannot update the default branch; open a pull request',
+      );
+    }
+    if (name.startsWith(TAG_PREFIX)) {
+      const scoped = requireAgentScope(c, 'releases:write');
+      if (scoped) return scoped;
     }
 
     const body = await readJsonBody(c);
@@ -224,6 +233,8 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
+    const scoped = requireAgentScope(c, 'releases:write');
+    if (scoped) return scoped;
     const parsed = createTagSchema.safeParse(await readJsonBody(c));
     if (!parsed.success) return invalid(c, 'invalid tag request', parsed.error);
     const input = parsed.data;
@@ -249,7 +260,9 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
     const tagger =
       principal?.kind === 'token'
         ? { agent: principal.tokenId }
-        : { user: principal?.userId };
+        : principal?.kind === 'agent'
+          ? { agent: principal.agentId }
+          : { user: principal?.userId };
     const now = Date.now();
     if (input.message !== undefined) {
       await run(

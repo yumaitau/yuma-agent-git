@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import type { Env } from '../env';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { commitChanges, commitRequestSchema } from '../core/commit';
 import { firstParentHistory, getChangeset } from '../core/changesets';
@@ -11,6 +10,8 @@ import {
   pathReadFilter,
   visibleChangeset,
 } from '../auth/guards';
+import type { AppEnv } from '../auth/principal';
+import { changesetProvenance, recordAgentProvenance } from '../auth/agents';
 
 /**
  * Changeset routes (architecture §2):
@@ -20,8 +21,11 @@ import {
  *
  * Path rules: a commit needs `write` on every path it touches; reads drop
  * `changed_files` entries the caller may not `read` (`omitted_paths_count`).
+ *
+ * Agent tokens (#57) always commit as `{agent: <agent id>}`, and the agent,
+ * the human and the task are recorded as the changeset's `provenance`.
  */
-export const changesetsRoutes = new Hono<{ Bindings: Env }>();
+export const changesetsRoutes = new Hono<AppEnv>();
 
 /** Metadata routes are principal-dependent: never cache them (issue #21). */
 const NO_STORE = 'private, no-store';
@@ -72,7 +76,13 @@ changesetsRoutes.post('/repos/:repo{.+}/changesets', async (c) => {
     );
     if (denied) return denied;
 
-    const result = await commitChanges(c.env, repo.id, parsed.data);
+    const principal = c.get('principal');
+    const request =
+      principal?.kind === 'agent'
+        ? { ...parsed.data, author: { agent: principal.agentId } }
+        : parsed.data;
+    const result = await commitChanges(c.env, repo.id, request);
+    await recordAgentProvenance(c.env, repo.id, [result.changeset.id], principal);
     return c.json(
       { changeset: result.changeset, deduped: result.deduped },
       result.deduped ? 200 : 201,
@@ -91,9 +101,14 @@ changesetsRoutes.get('/repos/:repo{.+}/changesets/:id', async (c) => {
       return apiError(c, 404, 'changeset_not_found', `no changeset ${c.req.param('id')}`);
     }
     const canRead = await pathReadFilter(c, loaded.repo);
-    return c.json({ changeset: visibleChangeset(cs, canRead) }, 200, {
-      'cache-control': NO_STORE,
-    });
+    return c.json(
+      {
+        changeset: visibleChangeset(cs, canRead),
+        provenance: await changesetProvenance(c.env, loaded.repo.id, cs.id),
+      },
+      200,
+      { 'cache-control': NO_STORE },
+    );
   } catch (err) {
     return errorResponse(c, err);
   }

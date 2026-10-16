@@ -16,7 +16,8 @@ import { getOrgBySlug, orgMembership } from './orgs';
  *
  * Audit admins are the user ids in `AUDIT_ADMIN_USER_IDS` (every chain and
  * the stream), plus owners and admins of an org (#26) for that org's chain.
- * Tokens also need the `audit:read` scope and must not be bound to a repo.
+ * Tokens also need the `audit:read` scope and must not be bound to a repo;
+ * agent tokens (#57) never read the audit log.
  */
 export const auditRoutes = new Hono<AppEnv>();
 
@@ -26,8 +27,9 @@ export async function canReadAudit(
   orgSlug?: string,
 ): Promise<boolean> {
   if (
-    principal.kind === 'token' &&
-    (principal.repoId !== null || !principal.scopes.includes('audit:read'))
+    principal.kind === 'agent' ||
+    (principal.kind === 'token' &&
+      (principal.repoId !== null || !principal.scopes.includes('audit:read')))
   ) {
     return false;
   }

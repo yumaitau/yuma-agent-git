@@ -9,7 +9,7 @@ import {
   type Perm,
   type RepoWithCreator,
 } from './rbac';
-import type { Principal } from './principal';
+import { boundRepos, hasScope, type Principal } from './principal';
 
 /**
  * Route guards — real RBAC (issue #14). Placeholders are gone; every guarded
@@ -166,14 +166,14 @@ export async function loadWholeRepo(
   )(c, slug);
   if (!loaded.ok) return loaded;
   const principal = principalOf(c);
-  if (principal?.kind === 'token') {
-    if (principal.repoId && principal.repoId !== loaded.repo.id)
+  if (principal !== null && principal.kind !== 'user') {
+    if (!(boundRepos(principal) ?? [loaded.repo.id]).includes(loaded.repo.id))
       return {
         ok: false,
         response: apiError(c, 404, 'repo_not_found', 'Repository not found'),
       };
     const scope = permission === 'read' ? 'repo:read' : 'repo:write';
-    if (!principal.scopes.includes(scope))
+    if (!hasScope(principal, scope))
       return {
         ok: false,
         response: apiError(c, 403, 'insufficient_scope', `Token requires ${scope}`),
@@ -251,3 +251,13 @@ export function visibleChangeset<T extends { changed_files: { path: string }[] }
 }
 
 export type { RepoRecord };
+
+/**
+ * Fine-grained agent scopes (#57) gate agent tokens only; sessions and API
+ * tokens keep their repo-level checks. Call after the repo guard.
+ */
+export function requireAgentScope(c: Context, scope: string): Response | null {
+  const principal = principalOf(c);
+  if (principal?.kind !== 'agent' || hasScope(principal, scope)) return null;
+  return apiError(c, 403, 'insufficient_scope', `Agent token requires ${scope}`);
+}

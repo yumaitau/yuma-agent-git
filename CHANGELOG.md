@@ -38,6 +38,12 @@ All notable changes to this project are documented here. The format follows
   rate-limit bucket, pre-receive checks (protected default branch, path rules,
   file size, unsafe paths) and one ref compare-and-swap per update. Pushed
   commits keep their SHAs. See `docs/git-http.md`.
+- Agent identities (#57): agents owned by a user or org, delegated through an
+  RFC 8693 token exchange (`POST /oauth/token`) to tokens that last 15 minutes by
+  default and one hour at most, bound to named repos and fine-grained scopes. An
+  agent gets the intersection of its grant and the person's role, never moves the
+  default branch, owns `refs/agents/<agent-id>/`, and its changesets record the
+  agent, the person and the task. Disabling an agent revokes its tokens at once.
 - Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
 - Dashboard theme in the Yuma IT brand.
 
