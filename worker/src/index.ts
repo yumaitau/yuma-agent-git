@@ -44,6 +44,15 @@ export default {
 
   /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs and dependency matches, sync OSV advisories hourly, send notification digests. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    // A restore target (#70) runs only the restore until RESTORE_BACKUP_ID is
+    // removed: other jobs would act on a half-restored database (a push mirror
+    // could delete branches the forge has not restored yet).
+    if (env.RESTORE_BACKUP_ID) {
+      await restoreTick(env).catch((err: unknown) =>
+        console.warn('Restore will be retried by the next sweep', err),
+      );
+      return;
+    }
     await flushMetrics(env);
     await expireAgentRefs(env);
     await run(env, 'DELETE FROM agent_tokens WHERE expires_at < ?', [Date.now()]);
@@ -62,12 +71,9 @@ export default {
     await dispatchApprovals(env).catch(() =>
       console.warn('Environment approval dispatch will be retried by the next sweep'),
     );
-    // Backups (#70): take and expire scheduled backups, or run a restore.
+    // Backups (#70): take and expire scheduled backups.
     await backupTick(env).catch((err: unknown) =>
       console.warn('Backup will be retried by the next sweep', err),
-    );
-    await restoreTick(env).catch((err: unknown) =>
-      console.warn('Restore will be retried by the next sweep', err),
     );
     // Notification digests (#44) once each user's Australia/Sydney digest hour passes.
     await sendDigests(env).catch((err: unknown) =>
@@ -136,6 +142,8 @@ export default {
   },
 
   async queue(batch: MessageBatch, env: Env): Promise<void> {
+    // Nothing acts on a half-restored database; messages wait for the restore.
+    if (env.RESTORE_BACKUP_ID) return batch.retryAll({ delaySeconds: 600 });
     switch (batch.queue) {
       case 'ci-runs':
         return ciQueue(batch as MessageBatch<{ run_id: string }>, env);

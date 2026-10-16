@@ -16,6 +16,7 @@ import {
 } from '../src/backup/backup';
 import { commitShas } from '../src/git/upload-pack';
 import { readPack } from '../src/git/pack-reader';
+import worker from '../src/index';
 
 const testEnv = env as unknown as TestEnv;
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i + 7)));
@@ -272,6 +273,40 @@ describe('backups (#70)', () => {
     expect(
       (await testEnv.BACKUPS!.list({ prefix: `backups/${after[0]!.id}/` })).objects,
     ).toEqual([]);
+  });
+
+  it('runs only the restore while RESTORE_BACKUP_ID is set', async () => {
+    const now = Date.now();
+    await run(
+      testEnv,
+      `INSERT INTO mirrors (id, repo_id, direction, remote_url, auth, interval_s, force,
+         origin, created_by, created_at, updated_at)
+       VALUES ('m1', ?, 'push', 'https://github.com/acme/app.git', 'github_app', 60, 1,
+         'https://x', ?, ?, ?)`,
+      [repoId, owner.userId, now, now],
+    );
+    const sent: unknown[] = [];
+    const restoring = new Proxy(withEnv({ RESTORE_BACKUP_ID: 'missing' }), {
+      get: (t, k, r) =>
+        k === 'MIRROR_QUEUE'
+          ? { sendBatch: async (messages: unknown[]) => void sent.push(...messages) }
+          : Reflect.get(t, k, r),
+    });
+    await worker.scheduled({} as ScheduledController, restoring);
+    expect(sent).toEqual([]);
+    const batch = {
+      queue: 'mirror-sync',
+      messages: [],
+      retried: false,
+      retryAll() {
+        this.retried = true;
+      },
+      ackAll() {
+        throw new Error('acked during a restore');
+      },
+    };
+    await worker.queue(batch as unknown as MessageBatch, restoring);
+    expect(batch.retried).toBe(true);
   });
 
   it('lets only backup admins list and start backups', async () => {

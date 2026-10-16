@@ -100,7 +100,9 @@ to start while the target database holds any repo or user.
    GitHub App and OAuth credentials): restored rows hold data encrypted or
    signed under them. Deploy.
 5. The cron restores 20 parts a minute, then checks every object in the
-   manifest against the new `OBJECTS` bucket. Watch
+   manifest against the new `OBJECTS` bucket. While `RESTORE_BACKUP_ID` is
+   set the cron runs nothing else (no mirror syncs, webhook redeliveries or
+   digests) and queue consumers retry their messages later. Watch
    `SELECT id, status, row_count, object_count, error, started_at, finished_at
 FROM backups WHERE kind = 'restore'`. `done` with no `error` is a clean
    restore; otherwise `error` says how many rows were skipped and how many
