@@ -24,6 +24,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const hasGit = spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
 const enabled = Boolean((process.env.CI || process.env.YAG_GIT_SMOKE) && hasGit);
+// Git LFS (#35) runs where git-lfs is installed (GitHub's runners have it)
+const hasLfs = enabled && spawnSync('git', ['lfs', 'version']).status === 0;
 
 const workerDir = resolve(import.meta.dirname, '../../worker');
 const port = 18_700 + Math.floor(Math.random() * 1000);
@@ -103,6 +105,9 @@ describe.runIf(enabled)('git smart HTTP against wrangler dev (CI smoke)', () => 
         '--persist-to',
         persist,
         '--show-interactive-dev-session=false',
+        // signs Git LFS transfer actions
+        '--var',
+        'CACHE_SIGNING_KEY:smoke-signing-key',
       ]),
       {
         cwd: workerDir,
@@ -226,6 +231,52 @@ describe.runIf(enabled)('git smart HTTP against wrangler dev (CI smoke)', () => 
       git(src, 'rev-parse', 'leak'),
     );
   }, 60_000);
+
+  it('exports a Git bundle that clones with the same commit SHAs (#70)', async () => {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/v1/repos/ada/smoke/export/bundle`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    expect(res.status).toBe(200);
+    const file = join(dir, 'smoke.bundle');
+    await writeFile(file, Buffer.from(await res.arrayBuffer()));
+    const src = join(dir, 'src');
+    git(src, 'bundle', 'verify', '-q', file);
+    const heads = (out: string): string[] =>
+      out
+        .split('\n')
+        .map((l) => l.trim().split(/\s+/).join(' '))
+        .filter(Boolean)
+        .sort();
+    expect(heads(git(src, 'bundle', 'list-heads', file))).toEqual(
+      heads(git(src, 'ls-remote', 'origin')),
+    );
+    const restored = join(dir, 'restored');
+    git(dir, 'clone', '-q', file, restored);
+    expect(git(restored, 'rev-parse', 'HEAD')).toBe(git(src, 'rev-parse', 'origin/main'));
+    git(restored, 'fsck', '--strict');
+  }, 60_000);
+
+  it.runIf(hasLfs)(
+    'pushes and pulls Git LFS objects (#35)',
+    async () => {
+      const src = join(dir, 'src');
+      git(dir, 'lfs', 'install');
+      git(src, 'checkout', '-qb', 'assets', 'main');
+      git(src, 'lfs', 'track', '*.bin');
+      const bytes = randomBytes(300_000);
+      await writeFile(join(src, 'model.bin'), bytes);
+      git(src, 'add', '.gitattributes', 'model.bin');
+      git(src, 'commit', '-qm', 'add a large binary');
+      git(src, 'push', '-q', 'origin', 'assets');
+      const clone = join(dir, 'lfs-clone');
+      git(dir, 'clone', '-q', '--branch', 'assets', remote, clone);
+      expect(await readFile(join(clone, 'model.bin'))).toEqual(bytes);
+      git(clone, 'lfs', 'fsck');
+      expect(git(clone, 'lfs', 'locks')).toBe('');
+    },
+    120_000,
+  );
 
   it('tells protocol v0 clients to use protocol v2', () => {
     const res = run(
