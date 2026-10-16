@@ -26,6 +26,7 @@ const REF_RULES: Record<Exclude<Target, 'push'>, [string, string][]> = {
     ['non_fast_forward', 'Block force pushes'],
     ['update', 'Require a pull request'],
     ['required_status_checks', 'Require CI to pass'],
+    ['required_review_thread_resolution', 'Require review threads resolved'],
   ],
   tag: [
     ['deletion', 'Block deletion'],
@@ -56,6 +57,8 @@ export function describeRule(rule: Ruleset['rules'][number]): string {
       return `${String(rule.required_approvals)} approval(s)`;
     case 'required_status_checks':
       return 'CI must pass';
+    case 'required_review_thread_resolution':
+      return 'all threads resolved';
     case 'max_file_size':
       return `files up to ${Number(rule.max_bytes) / MB} MB`;
     case 'file_path_restriction':

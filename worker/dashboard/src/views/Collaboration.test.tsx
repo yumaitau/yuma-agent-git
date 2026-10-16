@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CiView, PullView } from './Collaboration';
+import { parseUnified } from '../DiffView';
 
 const overview = {
   can_admin: true,
@@ -99,23 +100,27 @@ it('disables merging and shows the current revision requirements', async () => {
           ? { files: [], texts: [] }
           : path.includes('/ci/pipelines')
             ? { runs: [] }
-            : {
-                pull: {
-                  id: 1,
-                  title: 'Fix build',
-                  body: '',
-                  state: 'open',
-                  base_cs: 'a'.repeat(64),
-                  head_cs: 'b'.repeat(64),
-                  base_ref: 'main',
-                  revision: 1,
-                },
-                reviews: [],
-                gate: {
-                  mergeable: false,
-                  reasons: ['One teammate must approve this revision.'],
-                },
-              },
+            : path.endsWith('/threads')
+              ? { threads: [], names: {} }
+              : path.endsWith('/reviewers')
+                ? { review_requests: [], names: {} }
+                : {
+                    pull: {
+                      id: 1,
+                      title: 'Fix build',
+                      body: '',
+                      state: 'open',
+                      base_cs: 'a'.repeat(64),
+                      head_cs: 'b'.repeat(64),
+                      base_ref: 'main',
+                      revision: 1,
+                    },
+                    reviews: [],
+                    gate: {
+                      mergeable: false,
+                      reasons: ['One teammate must approve this revision.'],
+                    },
+                  },
       ),
     ),
   );
@@ -242,4 +247,127 @@ it('retries a run through its retry endpoint and shows deploy jobs waiting for a
   await screen.findByText(/waiting for environment approval/);
   const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST');
   expect(post![0]).toMatch(/\/ci\/runs\/r1\/retry$/);
+});
+
+it('numbers diff lines on both sides', () => {
+  const lines = parseUnified('@@ -4,2 +4,3 @@\n a\n-b\n+B\n+c\n');
+  expect(lines.map((l) => l.anchor && `${l.anchor.side}:${l.anchor.line}`)).toEqual([
+    undefined,
+    'head:4',
+    'base:5',
+    'head:5',
+    'head:6',
+    undefined,
+  ]);
+});
+
+it('shows inline review threads and starts, resolves and applies them', async () => {
+  const pull = {
+    id: 1,
+    number: 1,
+    title: 'Fix build',
+    body: '',
+    state: 'open',
+    base_cs: 'a'.repeat(64),
+    head_cs: 'b'.repeat(64),
+    base_ref: 'main',
+    revision: 2,
+  };
+  const thread = {
+    id: 7,
+    pull_id: 1,
+    path: 'src/a.ts',
+    side: 'head',
+    start_line: 2,
+    end_line: 2,
+    revision: 2,
+    anchor_cs: pull.head_cs,
+    original_head_cs: pull.head_cs,
+    outdated: false,
+    author: 'user:u2',
+    resolved_by: null,
+    resolved_at: null,
+    created_at: Date.now(),
+    snippet: 'two\n',
+    comments: [
+      {
+        id: 70,
+        thread_id: 7,
+        author: 'user:u2',
+        body: 'Rename\n```suggestion\nTWO\n```',
+        suggestion_patch: 'TWO',
+        review_id: null,
+        created_at: Date.now(),
+      },
+    ],
+  };
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method && init.method !== 'GET') return Response.json({ thread });
+    if (path.includes('/diff'))
+      return Response.json({
+        from: pull.base_cs,
+        to: pull.head_cs,
+        merge_base: pull.base_cs,
+        truncated: false,
+        files: [{ path: 'src/a.ts', kind: 'mod', side: 'to' }],
+        texts: [
+          { path: 'src/a.ts', unified: '@@ -1,3 +1,3 @@\n one\n-2\n+two\n three\n' },
+        ],
+      });
+    if (path.includes('/ci/pipelines')) return Response.json({ runs: [] });
+    if (path.endsWith('/threads'))
+      return Response.json({ threads: [thread], names: { 'user:u2': 'grace' } });
+    if (path.endsWith('/reviewers'))
+      return Response.json({
+        review_requests: [{ principal: 'user:u2', state: 'pending' }],
+        names: { 'user:u2': 'grace' },
+      });
+    return Response.json({ pull, reviews: [], gate: { mergeable: false, reasons: [] } });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  mount(<PullView />, 'pulls/:id');
+  // once inline under line 2, once in the thread list
+  await waitFor(() =>
+    expect(screen.getAllByLabelText('Thread on src/a.ts line 2')).toHaveLength(2),
+  );
+  expect(screen.getByText('1 unresolved')).toBeTruthy();
+  expect(screen.getAllByText('grace').length).toBeGreaterThan(0);
+
+  fireEvent.click(screen.getByLabelText('Comment on line 3'));
+  fireEvent.change(screen.getByLabelText('Comment on line 3', { selector: 'textarea' }), {
+    target: { value: 'Why?' },
+  });
+  fireEvent.click(screen.getByText('Add comment'));
+  const isPost = (path: string) => (call: [string, RequestInit?]) =>
+    String(call[0]).endsWith(path) && call[1]?.method === 'POST';
+  await waitFor(() => expect(fetcher.mock.calls.some(isPost('/threads'))).toBe(true));
+  const posted = fetcher.mock.calls.find(isPost('/threads'));
+  expect(JSON.parse(posted![1]!.body as string)).toEqual({
+    path: 'src/a.ts',
+    side: 'head',
+    line: 3,
+    body: 'Why?',
+    head_cs: pull.head_cs,
+    revision: 2,
+  });
+
+  fireEvent.click((await screen.findAllByText('Apply suggestion'))[0]!);
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(isPost('/suggestions/apply'))).toBe(true),
+  );
+  const applied = fetcher.mock.calls.find(isPost('/suggestions/apply'));
+  expect(JSON.parse(applied![1]!.body as string)).toEqual({
+    comment_ids: [70],
+    head_cs: pull.head_cs,
+    revision: 2,
+  });
+  fireEvent.click((await screen.findAllByText('Resolve'))[0]!);
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.some(
+        ([p, init]) =>
+          String(p).endsWith('/threads/7/resolution') && init?.method === 'PUT',
+      ),
+    ).toBe(true),
+  );
 });

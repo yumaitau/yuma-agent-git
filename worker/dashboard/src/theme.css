@@ -599,6 +599,34 @@ pre.code {
   color: var(--faint);
   background: var(--bg-soft);
 }
+/* line numbers become comment buttons on pull request diffs (#39) */
+.diff-line button.ln {
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--border-soft);
+  border-radius: 0;
+  font: inherit;
+}
+.diff-line button.ln:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+.diff-line button.ln:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.review-thread {
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  margin: 6px 12px;
+  padding: 8px 12px;
+  background: var(--panel);
+  font-family: var(--sans);
+  font-size: 13px;
+  white-space: normal;
+}
+.review-thread pre {
+  margin: 4px 0;
+}
 
 /* --------------------------------------------------------------- tree */
 

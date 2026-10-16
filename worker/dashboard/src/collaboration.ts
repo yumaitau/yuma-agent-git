@@ -6,8 +6,21 @@ import type {
   PipelineRun,
   Pull,
   Review,
+  ReviewComment,
+  ReviewRequest,
+  ReviewThread,
 } from '../../shared/collaboration';
-export type { CiPolicy, CiRun, PipelineJob, PipelineRun, Pull, Review };
+export type {
+  CiPolicy,
+  CiRun,
+  PipelineJob,
+  PipelineRun,
+  Pull,
+  Review,
+  ReviewComment,
+  ReviewRequest,
+  ReviewThread,
+};
 export interface CiOverview {
   can_admin: boolean;
   can_write: boolean;
