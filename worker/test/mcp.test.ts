@@ -305,6 +305,7 @@ describe('tool catalogue (#56)', () => {
       'issue_create',
       'ci_run',
       'ci_logs',
+      'pipeline_artifacts',
     ]) {
       expect(mcpTools().has(name), name).toBe(true);
     }
