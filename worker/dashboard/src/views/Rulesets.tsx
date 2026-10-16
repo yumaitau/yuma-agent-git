@@ -28,6 +28,7 @@ const REF_RULES: Record<Exclude<Target, 'push'>, [string, string][]> = {
     ['required_status_checks', 'Require CI to pass'],
     ['required_review_thread_resolution', 'Require review threads resolved'],
     ['require_code_owner_review', 'Require code owner review'],
+    ['security_alerts', 'Block new high-severity security alerts'],
     ['merge_queue', 'Require the merge queue'],
     ['required_signatures', 'Require verified commit signatures'],
     ['required_provenance', 'Require signed provenance from a pull request'],
@@ -73,6 +74,8 @@ export function describeRule(rule: Ruleset['rules'][number]): string {
       return 'agent review passed';
     case 'human_approvals_by_risk':
       return `people approve by risk (${String(rule.low ?? 0)}/${String(rule.medium ?? 1)}/${String(rule.high ?? 2)})`;
+    case 'security_alerts':
+      return `no new ${String(rule.severity ?? 'high')}+ security alerts`;
     case 'merge_queue':
       return `merge queue (${String(rule.mode ?? 'strict')}, ${String(rule.max_batch ?? 5)} per group)`;
     case 'required_signatures':

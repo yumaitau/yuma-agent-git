@@ -14,9 +14,14 @@ export interface CiPolicy {
   secrets: string[];
   /**
    * `id_token: 'write'` lets the job request OIDC tokens; `packages: 'write'`
-   * signs it in to the forge's package registry (#53).
+   * signs it in to the forge's package registry (#53); `security_events:
+   * 'write'` lets it upload SARIF for its own changeset (#67).
    */
-  permissions: { id_token: 'none' | 'write'; packages?: 'none' | 'write' };
+  permissions: {
+    id_token: 'none' | 'write';
+    packages?: 'none' | 'write';
+    security_events?: 'none' | 'write';
+  };
   /** AWS web identity: the runner writes a token file and sets AWS_* variables. */
   aws: { role_arn: string; region: string; session_name?: string } | null;
 }

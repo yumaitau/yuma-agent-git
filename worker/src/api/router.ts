@@ -40,6 +40,8 @@ import { searchRoutes } from './search';
 import { secretsRoutes } from './secrets';
 import { secretScanningRoutes } from './secret-scanning';
 import { usageRoutes } from './usage';
+import { codeScanningRoutes } from './code-scanning';
+import { dependencyRoutes } from './dependencies';
 import { workRoutes } from './work';
 
 /** `/api/v1` router. Routes are mounted as their issues land. */
@@ -61,6 +63,8 @@ apiRouter.route('/', searchRoutes);
 apiRouter.route('/', mirrorsRoutes);
 apiRouter.route('/', secretsRoutes);
 apiRouter.route('/', secretScanningRoutes);
+apiRouter.route('/', codeScanningRoutes);
+apiRouter.route('/', dependencyRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);
 apiRouter.route('/', ancestryRoutes);

@@ -167,6 +167,7 @@ const PUBLIC = new Set([
   'POST /ci/oidc/token',
   // signed provenance (#58): public keys, verified offline by anyone
   'GET /.well-known/yag-provenance-keys',
+  'POST /ci/code-scanning/sarif', // CI request token; the job's own repo (#67)
   // self-hosted runners (#48): a one-time registration token in the body,
   // then the runner's own credential (test/ci-runners.test.ts)
   'POST /runner/v1/register',

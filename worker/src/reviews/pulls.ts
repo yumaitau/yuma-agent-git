@@ -38,6 +38,7 @@ import { enforceSecretScan } from '../security/secrets/scan';
 import { pullCodeowners } from './codeowners';
 import { agentReviewFacts } from './agentLoop';
 import { humanApprovals, pullRisk, sensitivePaths } from './risk';
+import { newSecurityAlerts } from '../security/pull-security';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
   authorKey,
@@ -262,6 +263,10 @@ async function checkMerge(
         pull.head_cs,
       )
     : undefined;
+  // new security alerts (#67), only when some ruleset asks for them
+  const security = rules.some((rule) => rule.type === 'security_alerts')
+    ? await newSecurityAlerts(env, pull)
+    : null;
   const facts = (m: MergeMethod): EvalInput => ({
     repo,
     actor: evalActor,
@@ -287,6 +292,7 @@ async function checkMerge(
           : {}),
         ...(risk ? { risk } : {}),
         ...(agentReview ? { agentReview } : {}),
+        ...(security ? { securityAlerts: security } : {}),
       },
     },
   });

@@ -50,6 +50,8 @@ export const AGENT_SCOPES = [
   'issues:write',
   // package registry (#53): push images and npm packages (pull is contents:read)
   'packages:write',
+  // code scanning (#67): upload SARIF
+  'security_events:write',
 ] as const;
 export type AgentScope = (typeof AGENT_SCOPES)[number];
 const DEFAULT_SCOPES: AgentScope[] = [

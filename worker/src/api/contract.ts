@@ -56,6 +56,14 @@ import {
 import { fetchObjectsSchema } from './objects';
 import { createChangesetSchema } from './changesets';
 import { alertListQuery, updateAlertSchema } from './secret-scanning';
+import {
+  dependencyAlertQuery,
+  dependencyListQuery,
+  loadAdvisoriesSchema,
+  updateDependencyAlert,
+} from './dependencies';
+import { codeScanningAlertQuery, updateCodeScanningAlert } from './code-scanning';
+import { uploadSarifSchema } from '../security/code-scanning';
 import { queueListQuery } from './mergeQueue';
 import { reviewerInput, verdictInput } from '../reviews/agentLoop';
 import {
@@ -927,6 +935,36 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: updateAlertSchema,
   },
   'POST /api/v1/repos/:repo/secret-scanning/scans': { id: 'startSecretScan' },
+  'GET /api/v1/repos/:repo/dependencies': {
+    id: 'listDependencies',
+    query: dependencyListQuery,
+  },
+  'GET /api/v1/repos/:repo/dependency-alerts': {
+    id: 'listDependencyAlerts',
+    query: dependencyAlertQuery,
+  },
+  'PATCH /api/v1/repos/:repo/dependency-alerts/:id': {
+    id: 'updateDependencyAlert',
+    body: updateDependencyAlert,
+  },
+  'POST /api/v1/repos/:repo/dependency-alerts/:id/work': {
+    id: 'createDependencyUpdateWork',
+  },
+  'POST /api/v1/admin/advisories': { id: 'loadAdvisories', body: loadAdvisoriesSchema },
+  'POST /api/v1/repos/:repo/code-scanning/sarif': {
+    id: 'uploadSarif',
+    body: uploadSarifSchema,
+  },
+  'POST /ci/code-scanning/sarif': { id: 'uploadCiSarif', body: uploadSarifSchema },
+  'GET /api/v1/repos/:repo/code-scanning/alerts': {
+    id: 'listCodeScanningAlerts',
+    query: codeScanningAlertQuery,
+  },
+  'PATCH /api/v1/repos/:repo/code-scanning/alerts/:id': {
+    id: 'updateCodeScanningAlert',
+    body: updateCodeScanningAlert,
+  },
+  'GET /api/v1/repos/:repo/pulls/:id/security': { id: 'getPullSecurity' },
   'GET /api/v1/repos/:repo/variables': {
     id: 'listRepoVariables',
     query: environmentQuery,

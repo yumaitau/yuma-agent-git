@@ -23,6 +23,8 @@ import { mirrorQueue, scheduleMirrors } from './mirrors/sync';
 import type { MirrorMessage } from './mirrors/queue';
 import { backupTick, restoreTick } from './backup/backup';
 import { recordStorageUsage } from './usage/record';
+import { sweepDependencies } from './security/deps/graph';
+import { syncAdvisories } from './security/deps/osv';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -38,7 +40,7 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs and dependency matches, sync OSV advisories hourly. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
@@ -77,6 +79,14 @@ export default {
     if (new Date().getUTCMinutes() === 0)
       await recordStorageUsage(env).catch((err: unknown) =>
         console.warn('Storage usage will be retried next hour', err),
+      );
+    // Dependency alerts (#67): match moved default branches, then refresh advisories hourly.
+    await sweepDependencies(env).catch((err: unknown) =>
+      console.warn('Dependency matching will be retried by the next sweep', err),
+    );
+    if (new Date().getUTCMinutes() === 0)
+      await syncAdvisories(env).catch((err: unknown) =>
+        console.warn('OSV advisory sync will be retried next hour', err),
       );
     const expired = await q<{ id: string; log_key: string }>(
       env,

@@ -87,6 +87,7 @@ export function SecretScanningView(): ReactElement {
       <RepoNav active="Security" />
       <div className="row between">
         <h1>Secret scanning</h1>
+        <Link to={`/r/${slug}/security-alerts`}>Dependency and code scanning alerts</Link>
         <button
           onClick={() =>
             void act(

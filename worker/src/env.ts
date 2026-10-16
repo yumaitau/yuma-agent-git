@@ -69,6 +69,10 @@ export interface Env {
   AGENTS_ADMIN_USER_IDS?: string;
   /** Comma-separated user ids allowed to set per-org CI capacity (#52). */
   CI_ADMIN_USER_IDS?: string;
+  /** Dependency alerts (issue #67): user ids that may load OSV advisory snapshots. */
+  SECURITY_ADMIN_USER_IDS?: string;
+  /** "off" stops the hourly OSV advisory sync (issue #67). */
+  OSV_SYNC?: string;
   /** Queue `forge-events` (issue #75): domain events and webhook delivery retries. */
   EVENTS_QUEUE?: Queue;
   /** Queue `mirror-sync` (issues #36, #73): pull and push mirror syncs. */

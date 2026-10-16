@@ -159,7 +159,22 @@ Each job opts in to credentials on its own ([details](ci-oidc-aws.md)):
 - `permissions: { packages: write }`: a login for the forge's package registry
   in `YAG_REGISTRY`, `YAG_REGISTRY_USERNAME` and `YAG_REGISTRY_PASSWORD`, for
   `helm push`, `docker push` or `npm publish` to the job's own repository
-  (docs/registry.md). The two permissions combine.
+  (docs/registry.md). The permissions combine.
+- `permissions: { security_events: write }`: upload SARIF 2.1.0 from any
+  scanner (Trivy, CodeQL, Semgrep, Checkov) as code scanning alerts for the
+  job's own changeset and ref. The job gets `YAG_CODE_SCANNING_URL` and
+  `YAG_CODE_SCANNING_TOKEN`; send the log gzip compressed then base64 encoded:
+
+  ```sh
+  printf '{"sarif":"%s"}' "$(gzip -c trivy.sarif | base64 | tr -d '\n')" |
+    curl -fsS -H "authorization: Bearer $YAG_CODE_SCANNING_TOKEN" \
+      -H 'content-type: application/json' --data @- "$YAG_CODE_SCANNING_URL"
+  ```
+
+  Add `"category"` to keep two scans of one tool apart. A ruleset rule
+  `{ type: security_alerts, severity: high }` then blocks merging a pull
+  request that adds alerts at or above that severity.
+
 - `aws: { role_arn, region, session_name? }` (needs `id_token: write`): an AWS
   web identity token file and `AWS_*` variables, so the AWS CLI, Helm and
   kubectl in the runner image assume the role without keys.

@@ -15,6 +15,11 @@ import {
   secretScanMessage,
   type SecretScanMessage,
 } from '../security/secrets/history';
+import {
+  dependencyMessage,
+  isDependencyMessage,
+  type DependencyMessage,
+} from '../security/deps/graph';
 
 /**
  * `derived-data` queue consumer (architecture §1.5): computes deferred kinds
@@ -34,6 +39,11 @@ export async function derivedQueue(
     // secret scanning history scans (#66) share this queue
     if (isSecretScanMessage(message.body)) {
       await secretScanMessage(env, message as unknown as Message<SecretScanMessage>);
+      continue;
+    }
+    // dependency alert matching (#67) shares it too
+    if (isDependencyMessage(message.body)) {
+      await dependencyMessage(env, message as unknown as Message<DependencyMessage>);
       continue;
     }
     const { repo_id: repoId, kind, cs_id: csId, compaction } = message.body;

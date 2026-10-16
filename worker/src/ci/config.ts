@@ -48,8 +48,10 @@ export const accessFields = {
     .object({
       id_token: z.enum(['none', 'write']).default('none'),
       packages: z.enum(['none', 'write']).default('none'),
+      // code scanning (#67): upload SARIF with the run's request token
+      security_events: z.enum(['none', 'write']).default('none'),
     })
-    .default({ id_token: 'none', packages: 'none' }),
+    .default({ id_token: 'none', packages: 'none', security_events: 'none' }),
   aws: z
     .object({
       role_arn: z.string().regex(/^arn:aws[a-z-]*:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/),

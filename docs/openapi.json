@@ -553,6 +553,138 @@
         }
       }
     },
+    "/api/v1/admin/advisories": {
+      "post": {
+        "operationId": "loadAdvisories",
+        "summary": "Load OSV advisory entries (an offline snapshot); security admins only",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "advisories": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string", "minLength": 1, "maxLength": 100 },
+                        "modified": { "type": "string", "minLength": 1, "maxLength": 64 },
+                        "withdrawn": { "type": "string", "maxLength": 64 },
+                        "summary": { "type": "string" },
+                        "details": { "type": "string" },
+                        "aliases": {
+                          "maxItems": 100,
+                          "type": "array",
+                          "items": { "type": "string", "maxLength": 100 }
+                        },
+                        "severity": {
+                          "maxItems": 10,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": { "type": "string" },
+                              "score": { "type": "string", "maxLength": 200 }
+                            },
+                            "required": ["type", "score"],
+                            "additionalProperties": {}
+                          }
+                        },
+                        "database_specific": {
+                          "type": "object",
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": {}
+                        },
+                        "references": {
+                          "maxItems": 500,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": { "type": "string" },
+                              "url": { "type": "string", "maxLength": 2000 }
+                            },
+                            "required": ["type", "url"],
+                            "additionalProperties": {}
+                          }
+                        },
+                        "affected": {
+                          "maxItems": 500,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "package": {
+                                "type": "object",
+                                "properties": {
+                                  "ecosystem": { "type": "string" },
+                                  "name": { "type": "string", "maxLength": 500 }
+                                },
+                                "required": ["ecosystem", "name"],
+                                "additionalProperties": {}
+                              },
+                              "ranges": {
+                                "maxItems": 50,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": { "type": "string" },
+                                    "events": {
+                                      "maxItems": 500,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "introduced": { "type": "string" },
+                                          "fixed": { "type": "string" },
+                                          "last_affected": { "type": "string" },
+                                          "limit": { "type": "string" }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "required": ["type", "events"]
+                                }
+                              },
+                              "versions": {
+                                "maxItems": 20000,
+                                "type": "array",
+                                "items": { "type": "string", "maxLength": 200 }
+                              }
+                            },
+                            "required": ["package"],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": ["id", "modified"],
+                      "additionalProperties": {}
+                    }
+                  }
+                },
+                "required": ["advisories"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/admin/agents/pause": {
       "get": {
         "operationId": "getInstanceAgentPause",
@@ -743,7 +875,8 @@
                         "queue:claim",
                         "queue:approve",
                         "issues:write",
-                        "packages:write"
+                        "packages:write",
+                        "security_events:write"
                       ]
                     }
                   },
@@ -997,7 +1130,8 @@
                         "queue:claim",
                         "queue:approve",
                         "issues:write",
-                        "packages:write"
+                        "packages:write",
+                        "security_events:write"
                       ]
                     }
                   },
@@ -1009,7 +1143,7 @@
                       "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                       "events": {
                         "minItems": 1,
-                        "maxItems": 15,
+                        "maxItems": 17,
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -1023,6 +1157,8 @@
                             "ci_run",
                             "work_item",
                             "secret_scanning_alert",
+                            "dependency_alert",
+                            "code_scanning_alert",
                             "merge_group",
                             "release",
                             "package",
@@ -1276,7 +1412,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 15,
+                    "maxItems": 17,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -1290,6 +1426,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
+                        "dependency_alert",
+                        "code_scanning_alert",
                         "merge_group",
                         "release",
                         "package",
@@ -2305,7 +2443,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 15,
+                    "maxItems": 17,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -2319,6 +2457,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
+                        "dependency_alert",
+                        "code_scanning_alert",
                         "merge_group",
                         "release",
                         "package",
@@ -5322,7 +5462,11 @@
                     }
                   },
                   "permissions": {
-                    "default": { "id_token": "none", "packages": "none" },
+                    "default": {
+                      "id_token": "none",
+                      "packages": "none",
+                      "security_events": "none"
+                    },
                     "type": "object",
                     "properties": {
                       "id_token": {
@@ -5331,6 +5475,11 @@
                         "enum": ["none", "write"]
                       },
                       "packages": {
+                        "default": "none",
+                        "type": "string",
+                        "enum": ["none", "write"]
+                      },
+                      "security_events": {
                         "default": "none",
                         "type": "string",
                         "enum": ["none", "write"]
@@ -5901,6 +6050,175 @@
         }
       }
     },
+    "/api/v1/repos/{owner}/{repo}/code-scanning/alerts": {
+      "get": {
+        "operationId": "listCodeScanningAlerts",
+        "summary": "Code scanning alerts on a ref (`?ref=&state=&severity=&tool=&cursor=`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 255 }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "fixed", "dismissed"] }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+          },
+          {
+            "name": "tool",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 100 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/code-scanning/alerts/{id}": {
+      "patch": {
+        "operationId": "updateCodeScanningAlert",
+        "summary": "Dismiss (with a reason) or reopen a code scanning alert; people only",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": { "type": "string", "const": "dismissed" },
+                      "reason": {
+                        "type": "string",
+                        "enum": ["false_positive", "wont_fix", "used_in_tests"]
+                      }
+                    },
+                    "required": ["state", "reason"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": { "state": { "type": "string", "const": "open" } },
+                    "required": ["state"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/code-scanning/sarif": {
+      "post": {
+        "operationId": "uploadSarif",
+        "summary": "Upload SARIF 2.1.0 (gzip, base64) for a commit and ref; agents need `security_events:write`",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit_sha": {
+                    "type": "string",
+                    "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                  },
+                  "ref": { "type": "string", "minLength": 1, "maxLength": 255 },
+                  "sarif": { "type": "string", "minLength": 1, "maxLength": 20971520 },
+                  "category": { "type": "string", "maxLength": 255 },
+                  "tool_name": { "type": "string", "minLength": 1, "maxLength": 100 }
+                },
+                "required": ["sarif"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/v1/repos/{owner}/{repo}/codeowners": {
       "get": {
         "operationId": "getCodeowners",
@@ -5991,6 +6309,198 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/dependencies": {
+      "get": {
+        "operationId": "listDependencies",
+        "summary": "Packages the default branch lockfiles pin (`?ecosystem=&cursor=`)",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "read (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "ecosystem",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 20 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/dependency-alerts": {
+      "get": {
+        "operationId": "listDependencyAlerts",
+        "summary": "Dependency alerts from OSV advisories (`?state=&severity=&cursor=`), with attribution",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["open", "fixed", "dismissed"] }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["critical", "high", "medium", "low", "unknown"]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/dependency-alerts/{id}": {
+      "patch": {
+        "operationId": "updateDependencyAlert",
+        "summary": "Dismiss (with a reason) or reopen a dependency alert; people only",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": { "type": "string", "const": "dismissed" },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "fix_started",
+                          "inaccurate",
+                          "no_bandwidth",
+                          "not_used",
+                          "tolerable_risk"
+                        ]
+                      }
+                    },
+                    "required": ["state", "reason"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": { "state": { "type": "string", "const": "open" } },
+                    "required": ["state"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/dependency-alerts/{id}/work": {
+      "post": {
+        "operationId": "createDependencyUpdateWork",
+        "summary": "File an update work item (issue) for the fixed version, for an agent to pick up",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_write",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
           "2XX": {
             "description": "Success",
@@ -6799,7 +7309,7 @@
                   "secret": { "type": "string", "minLength": 16, "maxLength": 256 },
                   "events": {
                     "minItems": 1,
-                    "maxItems": 15,
+                    "maxItems": 17,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -6813,6 +7323,8 @@
                         "ci_run",
                         "work_item",
                         "secret_scanning_alert",
+                        "dependency_alert",
+                        "code_scanning_alert",
                         "merge_group",
                         "release",
                         "package",
@@ -9432,6 +9944,38 @@
             }
           }
         },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v1/repos/{owner}/{repo}/pulls/{id}/security": {
+      "get": {
+        "operationId": "getPullSecurity",
+        "summary": "Code scanning findings and vulnerable dependencies a pull request adds",
+        "security": [{ "session": [] }, { "bearer": [] }],
+        "x-yag-permission": "write (whole repo)",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "owner",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
           "2XX": {
             "description": "Success",
@@ -13002,6 +13546,41 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           }
+        }
+      }
+    },
+    "/ci/code-scanning/sarif": {
+      "post": {
+        "operationId": "uploadCiSarif",
+        "summary": "Upload SARIF from a running CI job with `permissions.security_events: write` (the job's changeset and ref)",
+        "security": [{ "ciJobBearer": [] }],
+        "x-yag-permission": "running job with `security_events: write`",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit_sha": {
+                    "type": "string",
+                    "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+                  },
+                  "ref": { "type": "string", "minLength": 1, "maxLength": 255 },
+                  "sarif": { "type": "string", "minLength": 1, "maxLength": 20971520 },
+                  "category": { "type": "string", "maxLength": 255 },
+                  "tool_name": { "type": "string", "minLength": 1, "maxLength": 100 }
+                },
+                "required": ["sarif"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
         }
       }
     },

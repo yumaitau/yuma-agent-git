@@ -11,6 +11,7 @@ import type { Change } from '../core/commit';
 import { statBlob } from '../core/blobs';
 import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
 import type { Risk } from '../../shared/work';
+import { atLeast, SEVERITIES } from '../security/deps/osv';
 
 /**
  * Rulesets (issue #41): named rules on branches, tags and pushes, owned by a
@@ -56,6 +57,11 @@ const branchRuleSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('required_review_thread_resolution') }),
   // an owner of each changed file (CODEOWNERS, #40) approved the revision
   z.object({ type: z.literal('require_code_owner_review') }),
+  // no new code scanning or dependency alerts at or above `severity` (#67)
+  z.object({
+    type: z.literal('security_alerts'),
+    severity: z.enum(SEVERITIES).default('high'),
+  }),
   // updates land only through the merge queue (#43), which this rule configures
   z.object({
     type: z.literal('merge_queue'),
@@ -358,6 +364,11 @@ export interface RefFacts {
      * changed file. Absent when no ruleset gates on risk.
      */
     risk?: { level: Risk; humanApprovals: number; codeOwnerApproved: boolean };
+    /**
+     * Code scanning and dependency alerts (#67) the pull request adds over
+     * its target. Absent when no ruleset asks for them.
+     */
+    securityAlerts?: readonly { severity: string; title: string }[];
   };
   /** The merge queue (#43) makes this move. */
   queue?: boolean;
@@ -506,6 +517,18 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
       )
         return 'A code owner must approve this high risk change.';
       return null;
+    }
+    case 'security_alerts': {
+      const hits = (ref.merge?.securityAlerts ?? []).filter((a) =>
+        atLeast(a.severity, rule.severity),
+      );
+      if (hits.length === 0) return null;
+      const shown = hits
+        .slice(0, 3)
+        .map((a) => a.title)
+        .join(', ');
+      const more = hits.length > 3 ? ` and ${hits.length - 3} more` : '';
+      return `${hits.length} new security alert${hits.length === 1 ? '' : 's'} at ${rule.severity} severity or above: ${shown}${more}.`;
     }
     case 'merge_queue':
       return ref.kind === 'update' && !ref.queue

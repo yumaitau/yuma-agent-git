@@ -93,6 +93,7 @@ export async function prepareJob(
     policy.secrets.length > 0 ||
     policy.permissions.id_token === 'write' ||
     policy.permissions.packages === 'write' ||
+    policy.permissions.security_events === 'write' ||
     policy.environment !== null;
   const context = parseContext(job.context);
   const repo = await getRepo(env, job.repo_id);
@@ -195,6 +196,22 @@ export async function prepareJob(
         YAG_REGISTRY_PASSWORD: request,
       });
       notes.push(`registry ${host}`);
+    }
+  }
+  if (policy.permissions.security_events === 'write') {
+    // code scanning (#67): the request token uploads SARIF for this run's changeset
+    if (!context.origin)
+      notes.push('code scanning upload needs a run started from the forge');
+    else {
+      if (request === null) {
+        request = await createRequestToken(env, job.id, deadline);
+        access.mask.push(request);
+      }
+      Object.assign(access.env, {
+        YAG_CODE_SCANNING_URL: `${context.origin}/ci/code-scanning/sarif`,
+        YAG_CODE_SCANNING_TOKEN: request,
+      });
+      notes.push('code scanning upload');
     }
   }
   access.summary = notes.length ? `Job access: ${notes.join('; ')}.` : '';

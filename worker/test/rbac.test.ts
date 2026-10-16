@@ -762,6 +762,50 @@ describe('route sweep — the authz contract future routes must extend', () => {
         path: '/api/v1/repos/acme/sweep/secret-scanning/scans',
         expect: { anon: 401, stranger: 404, creator: 202 },
       },
+      // dependency alerts and code scanning (#67)
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/dependencies',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/dependency-alerts',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/v1/repos/acme/sweep/dependency-alerts/1',
+        body: { state: 'open' },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such alert
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/dependency-alerts/1/work',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such alert
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/code-scanning/alerts',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'PATCH',
+        path: '/api/v1/repos/acme/sweep/code-scanning/alerts/1',
+        body: { state: 'open' },
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such alert
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/code-scanning/sarif',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 400 }, // guarded; empty body
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/pulls/1/security',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such pull request
+      },
       {
         method: 'PUT',
         path: '/api/v1/repos/acme/sweep',

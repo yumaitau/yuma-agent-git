@@ -46,6 +46,8 @@ const EVENTS = [
   'ci_run',
   'work_item',
   'secret_scanning_alert',
+  'dependency_alert',
+  'code_scanning_alert',
   'merge_group',
   'release',
   'package',
