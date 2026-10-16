@@ -1,4 +1,12 @@
-import { expect, test, type Browser, type BrowserContext } from '@playwright/test';
+import { createRequire } from 'node:module';
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
+import type { AxeResults, RunOptions } from 'axe-core';
 
 /**
  * The golden path (issue #80): file an issue, open a pull request that closes
@@ -8,6 +16,30 @@ import { expect, test, type Browser, type BrowserContext } from '@playwright/tes
 
 const slug = `ada/golden-${Date.now().toString(36)}`;
 const b64 = (text: string): string => Buffer.from(text).toString('base64');
+
+const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
+
+/**
+ * Colour contrast needs real layout, so it is checked here rather than in
+ * jsdom, in both the light and the dark theme.
+ */
+async function expectContrast(page: Page): Promise<void> {
+  await page.addScriptTag({ path: axePath });
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    const failing = await page.evaluate(async () => {
+      const axe = (
+        window as unknown as {
+          axe: { run: (context: Document, options: RunOptions) => Promise<AxeResults> };
+        }
+      ).axe;
+      const result = await axe.run(document, { runOnly: ['color-contrast'] });
+      return result.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' ')));
+    });
+    expect(failing, colorScheme).toEqual([]);
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+}
 
 async function signedIn(browser: Browser, session: string): Promise<BrowserContext> {
   const baseURL = test.info().project.use.baseURL!;
@@ -82,6 +114,7 @@ test('issue to merged pull request', async ({ browser }) => {
   await review.getByLabel('Review comment').fill('Looks good');
   await review.getByRole('button', { name: 'Approve' }).click();
   await expect(review.getByText('Looks good').first()).toBeVisible();
+  await expectContrast(review);
 
   // Ada sees the thread, merges, and the issue closes
   await page.reload();
@@ -92,6 +125,7 @@ test('issue to merged pull request', async ({ browser }) => {
   await expect(page.getByText(/^merged/)).toBeVisible();
   await page.goto(`/r/${slug}/issues/1`);
   await expect(page.getByText(/^Closed/)).toBeVisible();
+  await expectContrast(page);
 
   await ada.close();
   await grace.close();
