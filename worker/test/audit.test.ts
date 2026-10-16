@@ -518,6 +518,7 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{.+}/pulls/:id/update': 'pull.update',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/review': 'pull.review',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/merge': 'pull.merge',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/update-branch': 'pull.update_branch',
   'PUT /api/v1/repos/:repo{.+}/ci': 'ci.settings.update',
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',

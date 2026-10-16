@@ -2,12 +2,23 @@ import { ApiError, apiFetch } from './api';
 import type {
   CiPolicy,
   CiRun,
+  MergeConflict,
+  MergeMethod,
   PipelineJob,
   PipelineRun,
   Pull,
   Review,
 } from '../../shared/collaboration';
-export type { CiPolicy, CiRun, PipelineJob, PipelineRun, Pull, Review };
+export type {
+  CiPolicy,
+  CiRun,
+  MergeConflict,
+  MergeMethod,
+  PipelineJob,
+  PipelineRun,
+  Pull,
+  Review,
+};
 export interface CiOverview {
   can_admin: boolean;
   can_write: boolean;
@@ -23,7 +34,21 @@ export interface CiOverview {
 export interface PullDetail {
   pull: Pull;
   reviews: Review[];
-  gate: { mergeable: boolean; reasons: string[] };
+  gate: {
+    mergeable: boolean;
+    reasons: string[];
+    /** Methods the repo and rulesets allow, and the one to offer first (#42). */
+    methods: MergeMethod[];
+    method: MergeMethod;
+  };
+}
+/** `GET …/pulls/:id/conflicts` (#42). */
+export interface PullConflicts {
+  mergeable: boolean;
+  target_cs: string;
+  head_cs: string;
+  merge_base: string | null;
+  conflicts: MergeConflict[];
 }
 export interface Detection {
   empty: boolean;

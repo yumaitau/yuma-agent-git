@@ -8,10 +8,12 @@ import { commitChanges } from '../../src/core/commit';
 import { computeChangesetId, getChangeset } from '../../src/core/changesets';
 import {
   ancestorDistance,
+  dagMergeBases,
   isAncestor,
   isAncestorDag,
   mergeBase,
 } from '../../src/core/ancestry';
+import { merge3, threeWay } from '../../src/core/merge';
 import { CHANGED_PATHS, getDerived, type ChangedPaths } from '../../src/core/derived';
 import { computeBlame } from '../../src/core/derived/blame';
 import { diffRevisions } from '../../src/core/diff';
@@ -413,6 +415,84 @@ async function runPrefix(
         () =>
           `(#${a}, #${b})\n  expected ${expected.join(' ')}\n  actual   ${actual.join(' ')}`,
       );
+    }
+
+    // 8. merges (#42): DAG merge bases are the brute-force best common
+    //    ancestors, and with one base the merged tree is the union of the
+    //    non-conflicting changes. A path one side changed takes that side; a
+    //    path both changed differently is a conflict or the diff3 merge of
+    //    both contents; nothing else conflicts.
+    for (let k = 0; k < 20; k++) {
+      const [a, b] = [rng.int(n), rng.int(n)];
+      const bases = oracle.mergeBases(a, b);
+      const walk = await dagMergeBases(dbEnv, repo.id, at(a), at(b));
+      const pair = `(#${a}, #${b})`;
+      check(
+        sameList([...walk.bases].sort(), bases.map(at).sort()),
+        'mergeBases',
+        () =>
+          `${pair} = ${walk.bases.map(name).join(',')}, expected #${bases.join(',#')}`,
+      );
+      const onlyB = [...oracle.dagAncestors(b)].filter(
+        (x) => !oracle.dagAncestors(a).has(x),
+      );
+      check(
+        sameList(walk.onlyB.map((cs) => cs.id).sort(), onlyB.map(at).sort()),
+        'mergeBases a..b',
+        () => `${pair} a..b = ${walk.onlyB.map((cs) => name(cs.id)).join(',')}`,
+      );
+      if (bases.length > 1) continue;
+      const [ours, theirs] = await Promise.all([
+        getChangeset(dbEnv, repo.id, at(a)),
+        getChangeset(dbEnv, repo.id, at(b)),
+      ]);
+      const merged = await threeWay(dbEnv, repo.id, ours!, theirs!, { store: false });
+      const B = bases.length === 0 ? new Map<string, string>() : oracle.files[bases[0]!]!;
+      const O = oracle.files[a]!;
+      const T = oracle.files[b]!;
+      const conflicted = new Set(merged.conflicts.map((c) => c.path));
+      const result = new Map<string, string>();
+      for (const [path, content] of O) result.set(path, await contentHash(content));
+      for (const c of merged.changes) {
+        if (c.op === 'del') result.delete(c.path);
+        else if ('blob_sha256' in c) result.set(c.path, c.blob_sha256);
+      }
+      for (const path of new Set([...B.keys(), ...O.keys(), ...T.keys()])) {
+        const [bx, ox, tx] = [B.get(path), O.get(path), T.get(path)];
+        const both = ox !== tx && bx !== ox && bx !== tx;
+        if (conflicted.has(path)) {
+          check(
+            both,
+            'merge conflicts',
+            () => `${pair} ${path} conflicts but one side kept it`,
+          );
+          continue;
+        }
+        let expected: string | undefined;
+        if (!both) expected = bx === ox ? tx : ox;
+        else {
+          check(
+            ox !== undefined && tx !== undefined,
+            'merge conflicts',
+            () => `${pair} ${path}: modify/delete merged without a conflict`,
+          );
+          const text = merge3(bx ?? '', ox ?? '', tx ?? '');
+          check(
+            text.hunks.length === 0,
+            'merge union',
+            () => `${pair} ${path} unreported hunks`,
+          );
+          expected = text.text;
+        }
+        if (merged.conflicts.length > 0) continue;
+        const actual = result.get(path);
+        check(
+          actual === (expected === undefined ? undefined : await contentHash(expected)),
+          'merge union',
+          () =>
+            `${pair} ${path}: merged ${actual?.slice(0, 8)}, expected ${JSON.stringify(expected)}`,
+        );
+      }
     }
   } catch (err) {
     if (err instanceof InvariantFailure) return err;

@@ -56,6 +56,8 @@ export function describeRule(rule: Ruleset['rules'][number]): string {
       return `${String(rule.required_approvals)} approval(s)`;
     case 'required_status_checks':
       return 'CI must pass';
+    case 'merge_methods':
+      return `merge by ${(rule.allowed as string[]).join(' or ')}`;
     case 'max_file_size':
       return `files up to ${Number(rule.max_bytes) / MB} MB`;
     case 'file_path_restriction':
@@ -146,6 +148,7 @@ function NewRuleset({
   const [refs, setRefs] = useState('~DEFAULT_BRANCH');
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [approvals, setApprovals] = useState('0');
+  const [methods, setMethods] = useState('');
   const [maxMb, setMaxMb] = useState('');
   const [paths, setPaths] = useState('');
   const [extensions, setExtensions] = useState('');
@@ -169,6 +172,9 @@ function NewRuleset({
               .map(([type]) => ({ type })),
             ...(target === 'branch' && Number(approvals) > 0
               ? [{ type: 'pull_request', required_approvals: Number(approvals) }]
+              : []),
+            ...(target === 'branch' && methods
+              ? [{ type: 'merge_methods', allowed: list(methods) }]
               : []),
           ];
     try {
@@ -195,6 +201,7 @@ function NewRuleset({
     refs,
     checked,
     approvals,
+    methods,
     maxMb,
     paths,
     extensions,
@@ -286,6 +293,16 @@ function NewRuleset({
                   max={10}
                   value={approvals}
                   onChange={(e) => setApprovals(e.target.value)}
+                />
+              </Field>
+            )}
+            {target === 'branch' && (
+              <Field label="Allowed merge methods (blank for any)">
+                <input
+                  type="text"
+                  placeholder="merge, squash, rebase"
+                  value={methods}
+                  onChange={(e) => setMethods(e.target.value)}
                 />
               </Field>
             )}

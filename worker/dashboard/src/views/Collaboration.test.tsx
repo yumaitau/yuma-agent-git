@@ -90,42 +90,129 @@ it('shows budget admission failures when starting checks', async () => {
   );
 });
 
+const pullDetail = (gate: Record<string, unknown>) => ({
+  pull: {
+    id: 1,
+    title: 'Fix build',
+    body: '',
+    state: 'open',
+    base_cs: 'a'.repeat(64),
+    head_cs: 'b'.repeat(64),
+    base_ref: 'main',
+    revision: 1,
+  },
+  reviews: [],
+  gate: { methods: ['merge', 'squash', 'rebase'], method: 'merge', ...gate },
+});
+const clean = {
+  mergeable: true,
+  target_cs: 'a'.repeat(64),
+  head_cs: 'b'.repeat(64),
+  merge_base: 'a'.repeat(64),
+  conflicts: [],
+};
+function pullFetch(detail: unknown, conflicts: unknown = clean) {
+  return vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method === 'POST') return Response.json({ pull: {} });
+    return Response.json(
+      path.includes('/diff')
+        ? { files: [], texts: [] }
+        : path.includes('/ci/pipelines')
+          ? { runs: [] }
+          : path.endsWith('/conflicts')
+            ? conflicts
+            : detail,
+    );
+  });
+}
+
 it('disables merging and shows the current revision requirements', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (path: string) =>
-      Response.json(
-        path.includes('/diff')
-          ? { files: [], texts: [] }
-          : path.includes('/ci/pipelines')
-            ? { runs: [] }
-            : {
-                pull: {
-                  id: 1,
-                  title: 'Fix build',
-                  body: '',
-                  state: 'open',
-                  base_cs: 'a'.repeat(64),
-                  head_cs: 'b'.repeat(64),
-                  base_ref: 'main',
-                  revision: 1,
-                },
-                reviews: [],
-                gate: {
-                  mergeable: false,
-                  reasons: ['One teammate must approve this revision.'],
-                },
-              },
-      ),
+    pullFetch(
+      pullDetail({
+        mergeable: false,
+        reasons: ['One teammate must approve this revision.'],
+      }),
     ),
   );
   mount(<PullView />, 'pulls/:id');
   expect(
     await screen.findByText('One teammate must approve this revision.'),
   ).toBeTruthy();
-  expect((screen.getByText('Merge pull request') as HTMLButtonElement).disabled).toBe(
-    true,
+  expect(
+    (
+      screen.getByText('Create a merge commit', {
+        selector: 'button',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it('merges with the picked method', async () => {
+  const fetcher = pullFetch(
+    pullDetail({
+      mergeable: true,
+      reasons: [],
+      methods: ['squash', 'rebase'],
+      method: 'squash',
+    }),
   );
+  vi.stubGlobal('fetch', fetcher);
+  mount(<PullView />, 'pulls/:id');
+  const picker = await screen.findByLabelText('Merge method');
+  expect((picker as HTMLSelectElement).value).toBe('squash');
+  fireEvent.change(picker, { target: { value: 'rebase' } });
+  const button = screen.getByText('Rebase and merge', { selector: 'button' });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(fetcher.mock.calls.some(([path]) => path.endsWith('/merge'))).toBe(true),
+  );
+  const sent = fetcher.mock.calls.find(([path]) => path.endsWith('/merge'));
+  expect(JSON.parse(sent![1]!.body as string)).toMatchObject({
+    method: 'rebase',
+    head_cs: 'b'.repeat(64),
+    revision: 1,
+  });
+});
+
+it('shows conflicting paths and hunks and blocks the merge', async () => {
+  vi.stubGlobal(
+    'fetch',
+    pullFetch(pullDetail({ mergeable: true, reasons: [] }), {
+      ...clean,
+      mergeable: false,
+      target_cs: 'c'.repeat(64),
+      conflicts: [
+        {
+          path: 'src/app.ts',
+          kind: 'content',
+          hunks: [
+            {
+              base: { start: 3, lines: ['const a = 1;\n'] },
+              ours: { start: 3, lines: ['const a = 2;\n'] },
+              theirs: { start: 3, lines: ['const a = 3;\n'] },
+            },
+          ],
+        },
+        { path: 'old.txt', kind: 'modify_delete' },
+      ],
+    }),
+  );
+  mount(<PullView />, 'pulls/:id');
+  expect(await screen.findByText('Conflicts with main')).toBeTruthy();
+  expect(screen.getByText('src/app.ts')).toBeTruthy();
+  expect(screen.getByText('changed on one side, deleted on the other')).toBeTruthy();
+  expect(screen.getByText('const a = 3;')).toBeTruthy();
+  expect(
+    (
+      screen.getByText('Create a merge commit', {
+        selector: 'button',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect((screen.getByText('Update branch') as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('draws the pipeline job graph by stage and shows line-numbered spec errors', async () => {

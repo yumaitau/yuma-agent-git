@@ -5,6 +5,7 @@ import { can, pathDecider, restrictingDecision, type PathDecider } from '../auth
 import { getRepo } from '../db/repos';
 import { enforcePushRules } from '../policy/rulesets';
 import { commitChanges } from '../core/commit';
+import { mergeCommit } from '../core/merge';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { getBlob } from '../core/blobs';
 import { getTree, resolvePath } from '../core/trees';
@@ -425,7 +426,7 @@ export const tools: Tool[] = [
   {
     name: 'land',
     description:
-      'CAS-move the default branch to head_cs. Stale → merge (parents [head_cs, main_head]) and retry; any other refusal is final; success triggers post-merge checks.',
+      'CAS-move the default branch to head_cs. When main moved, the server merges it in and retries; overlapping edits return merge_conflict with the conflicts (commit a resolution with parents [main_head], then land again); any other refusal is final; success triggers post-merge checks.',
     input_schema: z.object({}),
     async execute(env, ctx) {
       const repo = await getRepo(env, ctx.repo_id);
@@ -446,32 +447,62 @@ export const tools: Tool[] = [
         };
       }
       const branch = repo.default_branch;
-      const current = await readRefHead(env, ctx.repo_id, branch);
-      try {
-        await moveRefViaDO(env, ctx.repo_id, branch, {
-          from: current,
-          to: ctx.head_cs,
-          actor: ctx.principal,
-          via: 'agent.land',
-        });
-      } catch (err) {
-        // only losing the race to another land is retryable (merge, then land
-        // again) — a protected branch would otherwise loop until the budget dies
-        if (!(err instanceof ConflictError)) {
-          const code = err instanceof ApiError ? err.code : 'internal_error';
-          // a ruleset refusal names the ruleset in its message
-          const message = err instanceof ApiError ? { message: err.message } : {};
-          return {
-            landed: false,
-            reason: code,
-            ...message,
-            final: true,
-            head_cs: ctx.head_cs,
-          };
+      let current = await readRefHead(env, ctx.repo_id, branch);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await moveRefViaDO(env, ctx.repo_id, branch, {
+            from: current,
+            to: ctx.head_cs,
+            actor: ctx.principal,
+            via: 'agent.land',
+          });
+          break;
+        } catch (err) {
+          // only losing the race to another land is retryable (merge, then land
+          // again) — a protected branch would otherwise loop until the budget dies
+          if (!(err instanceof ConflictError)) {
+            const code = err instanceof ApiError ? err.code : 'internal_error';
+            // a ruleset refusal names the ruleset in its message
+            const message = err instanceof ApiError ? { message: err.message } : {};
+            return {
+              landed: false,
+              reason: code,
+              ...message,
+              final: true,
+              head_cs: ctx.head_cs,
+            };
+          }
+          // stale or not a fast-forward: someone else landed, so merge their
+          // work in on the server (#42) and land again
+          const head = await readRefHead(env, ctx.repo_id, branch);
+          const ours = await getChangeset(env, ctx.repo_id, ctx.head_cs);
+          const theirs = head ? await getChangeset(env, ctx.repo_id, head) : null;
+          if (!ours || !theirs || attempt >= 3)
+            return {
+              landed: false,
+              reason: 'stale',
+              main_head: head,
+              head_cs: ctx.head_cs,
+            };
+          try {
+            const merged = await mergeCommit(env, ctx.repo_id, ours, theirs, {
+              author: { agent: ctx.task_id },
+              message: `Merge ${branch} into agent work\n`,
+            });
+            ctx.head_cs = merged.id;
+            current = theirs.id;
+          } catch (mergeErr) {
+            if (!(mergeErr instanceof ApiError) || mergeErr.code !== 'merge_conflict')
+              throw mergeErr;
+            return {
+              landed: false,
+              reason: 'merge_conflict',
+              ...mergeErr.details,
+              main_head: theirs.id,
+              head_cs: ctx.head_cs,
+            };
+          }
         }
-        // stale or not a fast-forward: someone else landed — merge and retry
-        const head = await readRefHead(env, ctx.repo_id, branch);
-        return { landed: false, reason: 'stale', main_head: head, head_cs: ctx.head_cs };
       }
       await appendAudit(env, {
         action: 'ref.move',

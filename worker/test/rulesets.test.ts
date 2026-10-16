@@ -217,7 +217,7 @@ describe('the evaluator', () => {
         ref: {
           ...input.ref,
           fastForward: true,
-          merge: { approvals: 0, checksPassed: false },
+          merge: { approvals: 0, checksPassed: false, method: 'merge' },
         },
       }).evaluated,
     ).toEqual([]);
@@ -495,7 +495,12 @@ describe('enforcement', () => {
     expect(
       (await api(`/repos/team/app/pulls/${pull.id}/merge`, 'POST', merge)).status,
     ).toBe(200);
-    expect((await getRef(dbEnv, repoId, 'main'))?.head).toBe(head);
+    const [merged] = await q<{ parents: string }>(
+      dbEnv,
+      'SELECT parents FROM changesets WHERE id = ?',
+      [(await getRef(dbEnv, repoId, 'main'))?.head],
+    );
+    expect(JSON.parse(merged?.parents ?? '[]')).toEqual([base, head]);
     const events = await q<{ actor_id: string; target: string }>(
       dbEnv,
       "SELECT actor_id, target FROM audit_events WHERE action = 'ruleset.bypass'",

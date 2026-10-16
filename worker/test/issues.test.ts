@@ -511,7 +511,13 @@ describe('cross-references', () => {
       repo.id,
     ]);
     expect((await approveAndMerge(pull)).status).toBe(200);
-    expect((await getRef(testEnv, repo.id, 'main'))?.head).toBe(head);
+    const tip = (await getRef(testEnv, repo.id, 'main'))?.head;
+    const [merged] = await q<{ parents: string }>(
+      testEnv,
+      'SELECT parents FROM changesets WHERE id = ?',
+      [tip],
+    );
+    expect(JSON.parse(merged?.parents ?? '[]')).toEqual([base, head]);
     expect((await detail(issue.number)).issue.state).toBe('open');
   });
 

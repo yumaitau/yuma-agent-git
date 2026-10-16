@@ -11,6 +11,7 @@ import {
 } from '../auth/scim';
 import { createAgentSchema, exchangeSchema, patchAgentSchema } from '../auth/agents';
 import { rulesetInputSchema } from '../policy/rulesets';
+import { mergePullSchema, updateBranchSchema } from '../reviews/pulls';
 import { assertionSchema, registrationSchema } from '../auth/webauthn';
 import { codeSchema } from '../auth/totp';
 import { connectSchema } from '../bridge/github';
@@ -97,7 +98,6 @@ const reviewPullSchema = z.object({
   decision: z.enum(['comment', 'approve', 'request_changes']),
   body: z.string().max(20000),
 });
-const mergePullSchema = z.object({ head_cs: z.string(), revision: z.int() });
 
 const ancestryQuery = z.object({ a: rev, b: rev });
 const scimListQuery = {
@@ -467,7 +467,12 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   },
   'POST /api/v1/repos/:repo/pulls': { id: 'createPull', body: createPull },
   'GET /api/v1/repos/:repo/pulls/:id': { id: 'getPull' },
+  'GET /api/v1/repos/:repo/pulls/:id/conflicts': { id: 'getPullConflicts' },
   'POST /api/v1/repos/:repo/pulls/:id/merge': { id: 'mergePull', body: mergePullSchema },
+  'POST /api/v1/repos/:repo/pulls/:id/update-branch': {
+    id: 'updatePullBranch',
+    body: updateBranchSchema,
+  },
   'POST /api/v1/repos/:repo/pulls/:id/review': {
     id: 'reviewPull',
     body: reviewPullSchema,

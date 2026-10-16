@@ -100,6 +100,39 @@ export const GIT_HISTORY: FixtureCommit[] = [
 /** `git rev-parse HEAD` after `git fast-import` of the full-mode stream. */
 export const GIT_HISTORY_HEAD_SHA1 = '58c5b438bce151fe9235c85530ae589569e1114c';
 
+/**
+ * `git merge --no-ff feature` inputs (issue #42): main and feature edit
+ * different lines of `a.txt`, feature adds `docs/c.txt` and deletes `b.txt`.
+ * Every commit is by Ada at a fixed time, `+0000`, so the server-side merge
+ * commit and real Git's must have the same SHA-1 (`MERGE_FIXTURE_SHA1`).
+ */
+export const MERGE_FIXTURE = {
+  author: { name: 'Ada', email: 'ada@example.com' },
+  base: {
+    at: 1_700_000_000_000,
+    message: 'base\n',
+    files: { 'a.txt': 'one\ntwo\nthree\n', 'b.txt': 'b\n' } as Record<string, string>,
+  },
+  main: {
+    at: 1_700_000_100_000,
+    message: 'main edit\n',
+    files: { 'a.txt': 'ONE\ntwo\nthree\n', 'b.txt': 'b\n' } as Record<string, string>,
+  },
+  feature: {
+    at: 1_700_000_200_000,
+    message: 'feature edit\n',
+    files: { 'a.txt': 'one\ntwo\nTHREE\n', 'docs/c.txt': 'c\n' } as Record<
+      string,
+      string
+    >,
+  },
+  merge: { at: 1_700_000_300_000, message: "Merge branch 'feature'\n" },
+  merged: { 'a.txt': 'ONE\ntwo\nTHREE\n', 'docs/c.txt': 'c\n' } as Record<string, string>,
+};
+
+/** `git rev-parse HEAD` after the merge above (checked by the CLI Git smoke). */
+export const MERGE_FIXTURE_SHA1 = '7d592cd1e8038b31f248e9085c925d4cd27aeb96';
+
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');

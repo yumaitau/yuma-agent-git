@@ -12,6 +12,7 @@ import { commitChanges } from '../core/commit';
 import { moveRefViaDO, validateBranchName } from '../core/refs';
 import { boundRepos, hasScope, type AppEnv } from '../auth/principal';
 import { recordAudit } from '../audit/record';
+import { MERGE_METHODS, type MergeMethod } from '../../shared/collaboration';
 
 /**
  * Repo index + creation (issue #14: creators are admins; issue #20's
@@ -115,6 +116,9 @@ reposRoutes.get('/api/v1/repos/:owner/:name', async (c) => {
 export const updateRepoSchema = z.object({
   default_branch: z.string().min(1).max(255).optional(),
   refs_mode: z.enum(['scion', 'git']).optional(),
+  /** Pull request merge methods (#42); rulesets can narrow them per branch. */
+  merge_methods: z.array(z.enum(MERGE_METHODS)).min(1).optional(),
+  default_merge_method: z.enum(MERGE_METHODS).optional(),
 });
 
 // Repo settings (issue #33): the default branch is what HEAD points at, so it
@@ -147,17 +151,32 @@ reposRoutes.put('/api/v1/repos/:owner/:name', async (c) => {
         return apiError(c, 400, 'ref_not_found', `no branch ${branch}`);
       }
     }
-    await run(c.env, 'UPDATE repos SET default_branch = ?, refs_mode = ? WHERE id = ?', [
-      branch,
-      mode,
-      repo.id,
-    ]);
-    await recordAudit(c, {
-      action: 'repo.settings.update',
-      repo,
-      target: { default_branch: branch, refs_mode: mode },
-    });
-    return c.json({ repo: { ...repo, default_branch: branch, refs_mode: mode } }, 200, {
+    const methods = [
+      ...new Set(parsed.data.merge_methods ?? repo.merge_methods ?? MERGE_METHODS),
+    ];
+    const preferred = parsed.data.default_merge_method ?? repo.default_merge_method;
+    const defaultMethod = preferred && methods.includes(preferred) ? preferred : null;
+    if (parsed.data.default_merge_method !== undefined && defaultMethod === null) {
+      return apiError(
+        c,
+        400,
+        'invalid_request',
+        'the default merge method must be one of the allowed methods',
+      );
+    }
+    const settings = {
+      default_branch: branch,
+      refs_mode: mode,
+      merge_methods: methods,
+      default_merge_method: defaultMethod ?? (methods[0] as MergeMethod),
+    };
+    await run(
+      c.env,
+      'UPDATE repos SET default_branch = ?, refs_mode = ?, merge_methods = ?, default_merge_method = ? WHERE id = ?',
+      [branch, mode, JSON.stringify(methods), settings.default_merge_method, repo.id],
+    );
+    await recordAudit(c, { action: 'repo.settings.update', repo, target: settings });
+    return c.json({ repo: { ...repo, ...settings } }, 200, {
       'cache-control': 'private, no-store',
     });
   } catch (err) {

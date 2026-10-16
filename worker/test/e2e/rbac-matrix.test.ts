@@ -162,6 +162,8 @@ const EXEMPT: Record<string, string> = {
   'POST /api/v1/repos/:repo{.+}/pulls/:id/update': 'collaboration.test.ts',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/review': 'collaboration.test.ts',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/merge': 'collaboration.test.ts',
+  'GET /api/v1/repos/:repo{.+}/pulls/:id/conflicts': 'merge.test.ts',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/update-branch': 'rebase.test.ts',
   'GET /api/v1/repos/:repo{.+}/ci': 'collaboration.test.ts',
   'GET /api/v1/repos/:repo{.+}/ci/detect': 'collaboration.test.ts',
   'PUT /api/v1/repos/:repo{.+}/ci': 'collaboration.test.ts',

@@ -1783,6 +1783,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/conflicts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Would it merge into the current target? Conflicting paths and hunks */
+    get: operations['getPullConflicts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/pulls/{id}/merge': {
     parameters: {
       query?: never;
@@ -1792,7 +1809,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Merge a pull request */
+    /** Merge a pull request (merge commit, squash or rebase) */
     post: operations['mergePull'];
     delete?: never;
     options?: never;
@@ -1828,6 +1845,23 @@ export interface paths {
     put?: never;
     /** Edit title/body/state or move the head */
     post: operations['updatePull'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/update-branch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Bring the target into the pull request (merge or rebase) */
+    post: operations['updatePullBranch'];
     delete?: never;
     options?: never;
     head?: never;
@@ -4071,6 +4105,9 @@ export interface operations {
           default_branch?: string;
           /** @enum {string} */
           refs_mode?: 'scion' | 'git';
+          merge_methods?: ('merge' | 'squash' | 'rebase')[];
+          /** @enum {string} */
+          default_merge_method?: 'merge' | 'squash' | 'rebase';
         };
       };
     };
@@ -6332,6 +6369,32 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getPullConflicts: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   mergePull: {
     parameters: {
       query?: never;
@@ -6348,6 +6411,11 @@ export interface operations {
         'application/json': {
           head_cs: string;
           revision: number;
+          /** @enum {string} */
+          method?: 'merge' | 'squash' | 'rebase';
+          commit_title?: string;
+          commit_message?: string;
+          bypass_reason?: string;
         };
       };
     };
@@ -6420,6 +6488,44 @@ export interface operations {
           /** @enum {string} */
           state?: 'draft' | 'open' | 'closed';
           head_cs?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updatePullBranch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          head_cs: string;
+          revision: number;
+          /**
+           * @default merge
+           * @enum {string}
+           */
+          method?: 'merge' | 'rebase';
         };
       };
     };

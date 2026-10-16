@@ -13,6 +13,8 @@ import type { GitSignature } from './objects';
  */
 
 export const AGENT_EMAIL_DOMAIN = 'agents.yuma-agent-git';
+/** Users in commits the server makes for them (merges, #42): `login@users.yuma-agent-git`. */
+export const USER_EMAIL_DOMAIN = 'users.yuma-agent-git';
 
 export interface GitIdentity {
   name: string;
