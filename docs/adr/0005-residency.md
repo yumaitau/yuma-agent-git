@@ -30,8 +30,8 @@ What Cloudflare offers, checked against its public docs on 17 October 2026:
   the US and the EU.
   ([region support](https://developers.cloudflare.com/data-localization/region-support/))
 - **D1.** Jurisdictions are `eu`, `us` and `fedramp` only. `oc` (Oceania) is a
-  location hint, best effort, set at creation with `wrangler d1 create
---location=oc`; a jurisdiction cannot be added later.
+  location hint, best effort, set at creation with the `--location=oc` flag
+  of `wrangler d1 create`; a jurisdiction cannot be added later.
   ([D1 data location](https://developers.cloudflare.com/d1/configuration/data-location/))
 - **R2.** Same jurisdictions (`eu`, `us`, `fedramp`). `oc` is a best effort
   hint, applied only when a bucket name is first created; jurisdictions cannot
