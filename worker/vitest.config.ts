@@ -36,6 +36,9 @@ export default defineConfig({
         serviceBindings: {
           AI: async () => new Response('{}'),
         },
+        // A second metadata shard (issue #78), local to tests only: production
+        // declares no shard bindings until an operator creates one (ADR 0006).
+        d1Databases: { DB_SHARD_1: 'test-shard-1' },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations({ migrationsDir: 'migrations' }),
           GITHUB_CLIENT_ID: 'test-client-id',

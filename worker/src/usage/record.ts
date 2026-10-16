@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import { q, q1 } from '../db/client';
 import { getRepo } from '../db/repos';
+import { onShard, orgPart, shardForOrg, shardParts } from '../db/router';
 import { ulid } from '../core/ids';
 import { appendAudit } from '../audit/record';
 import { emitEvent } from '../webhooks/events';
@@ -94,42 +95,54 @@ export async function recordUsage(
   if (events.length === 0) return [];
   const now = Date.now();
   const out: { id: string; usd_micros: number | null }[] = [];
-  const statements = events.map((event) => {
+  // each org's events go to its shard (issue #78); one batch per database
+  const shards = new Map<string, D1Database>();
+  const batches = new Map<D1Database, D1PreparedStatement[]>();
+  for (const event of events) {
+    const org = orgOf(event.repo);
+    let db = shards.get(org ?? '');
+    if (!db) {
+      db = await shardForOrg(env, org, 'write');
+      shards.set(org ?? '', db);
+    }
     const id = event.id ?? ulid();
     const at = event.at ?? now;
     const { usd, version } = priced(event, at);
     out.push({ id, usd_micros: usd });
-    return env.DB.prepare(
-      `INSERT INTO usage_events (id, org_id, repo_id, agent_id, task_id, run_id, ticket, pull_id,
+    const statement = db
+      .prepare(
+        `INSERT INTO usage_events (id, org_id, repo_id, agent_id, task_id, run_id, ticket, pull_id,
          kind, source, model, billing, input_tokens, output_tokens, cached_tokens, quantity,
          usd_micros, price_version, correction_of, reported_by, at, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
-    ).bind(
-      id,
-      orgOf(event.repo),
-      event.repo?.id ?? null,
-      event.agent_id ?? null,
-      event.task_id ?? null,
-      event.run_id ?? null,
-      event.ticket ?? null,
-      event.pull_id ?? null,
-      event.kind,
-      event.source,
-      event.model ?? null,
-      event.billing ?? 'metered',
-      event.input_tokens ?? 0,
-      event.output_tokens ?? 0,
-      event.cached_tokens ?? 0,
-      event.quantity ?? 0,
-      usd,
-      version,
-      event.correction_of ?? null,
-      event.reported_by ?? null,
-      at,
-      now,
-    );
-  });
-  await env.DB.batch(statements);
+      )
+      .bind(
+        id,
+        orgOf(event.repo),
+        event.repo?.id ?? null,
+        event.agent_id ?? null,
+        event.task_id ?? null,
+        event.run_id ?? null,
+        event.ticket ?? null,
+        event.pull_id ?? null,
+        event.kind,
+        event.source,
+        event.model ?? null,
+        event.billing ?? 'metered',
+        event.input_tokens ?? 0,
+        event.output_tokens ?? 0,
+        event.cached_tokens ?? 0,
+        event.quantity ?? 0,
+        usd,
+        version,
+        event.correction_of ?? null,
+        event.reported_by ?? null,
+        at,
+        now,
+      );
+    batches.set(db, [...(batches.get(db) ?? []), statement]);
+  }
+  for (const [db, statements] of batches) await db.batch(statements);
   const groups = new Map<string, { repo: UsageEvent['repo']; agents: Set<string> }>();
   for (const event of events) {
     const key = event.repo?.id ?? '';
@@ -281,12 +294,21 @@ export async function budgetUsed(
     budget.metric === 'tokens'
       ? 'SUM(input_tokens + output_tokens + cached_tokens)'
       : 'SUM(usd_micros)';
-  const row = await q1<{ used: number | null }>(
-    env,
-    `SELECT ${sum} AS used FROM usage_daily WHERE ${column} = ? AND day >= ?`,
-    [budget.scope_id, periodStart(budget.period, now)],
-  );
-  return row?.used ?? 0;
+  // an org's usage is on its shard; an agent's may span every shard
+  const parts =
+    budget.scope === 'org'
+      ? [await orgPart(env, budget.scope_id)]
+      : await shardParts(env);
+  let used = 0;
+  for (const part of parts) {
+    const row = await q1<{ used: number | null }>(
+      onShard(env, part.db),
+      `SELECT ${sum} AS used FROM usage_daily WHERE ${column} = ? AND day >= ? AND ${part.where}`,
+      [budget.scope_id, periodStart(budget.period, now), ...part.params],
+    );
+    used += row?.used ?? 0;
+  }
+  return used;
 }
 
 /** The audit chain of a budget: its org's slug, or none for a personal agent. */

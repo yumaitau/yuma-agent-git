@@ -12,6 +12,7 @@ import { sweepArtifacts } from './ci/artifacts';
 import { sweepCaches } from './ci/cache';
 import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
+import { advanceShardMoves } from './db/router';
 import { flushMetrics } from './observability/metrics';
 import { expireAgentRefs } from './core/refs';
 import { dispatchApprovals } from './ci/environments';
@@ -92,6 +93,10 @@ export default {
       await recordStorageUsage(env).catch((err: unknown) =>
         console.warn('Storage usage will be retried next hour', err),
       );
+    // Metadata shards (#78): online moves between databases, a few pages a tick.
+    await advanceShardMoves(env).catch((err: unknown) =>
+      console.warn('Shard moves will continue next tick', err),
+    );
     // Dependency alerts (#67): match moved default branches, then refresh advisories hourly.
     await sweepDependencies(env).catch((err: unknown) =>
       console.warn('Dependency matching will be retried by the next sweep', err),

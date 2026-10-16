@@ -4,13 +4,16 @@ import type { AppEnv } from '../auth/principal';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { canDelegate, getAgent } from '../auth/agents';
 import { canManageOwner, parseBody, requireOrgSso, sessionUser } from '../auth/owners';
+import type { Env } from '../env';
 import { q, q1, type RepoRecord } from '../db/client';
+import { onShard, orgPart, shardForOrg, shardParts, type ShardPart } from '../db/router';
 import { ApiError } from '../core/errors';
 import { ulid } from '../core/ids';
 import { recordAudit } from '../audit/record';
 import {
   budgetRowSchema,
   budgetUsed,
+  orgOf,
   periodStart,
   priced,
   recordUsage,
@@ -212,6 +215,7 @@ async function correctionOf(
   usage: UsageEvent,
 ): Promise<UsageEvent | Response> {
   const principal = c.get('principal')!;
+  const shard = onShard(c.env, await shardForOrg(c.env, orgOf(repo)));
   const original = await q1<{
     agent_id: string | null;
     kind: UsageEvent['kind'];
@@ -221,7 +225,7 @@ async function correctionOf(
     correction_of: string | null;
     at: number;
   }>(
-    c.env,
+    shard,
     `SELECT agent_id, kind, model, billing, reported_by, correction_of, at FROM usage_events
       WHERE id = ? AND repo_id = ?`,
     [id, repo.id],
@@ -266,7 +270,7 @@ async function correctionOf(
   const left = await q1<
     Record<'input' | 'output' | 'cached' | 'quantity' | 'usd', number>
   >(
-    c.env,
+    shard,
     `SELECT SUM(input_tokens) AS input, SUM(output_tokens) AS output,
        SUM(cached_tokens) AS cached, SUM(quantity) AS quantity,
        COALESCE(SUM(usd_micros), 0) AS usd
@@ -290,7 +294,12 @@ async function correctionOf(
   return correction;
 }
 
-type Scope = { column: 'repo_id' | 'org_id' | 'agent_id'; id: string };
+/** `org` names the shard; an agent's usage is read from every shard. */
+type Scope = {
+  column: 'repo_id' | 'org_id' | 'agent_id';
+  id: string;
+  org: string | null;
+};
 
 interface Row {
   key: string;
@@ -344,6 +353,37 @@ function range(query: z.infer<typeof usageReportQuery>): { from: string; to: str
 
 const zero = (n: number | null | undefined): number => n ?? 0;
 
+/**
+ * One usage query on each shard part, rows with the same key added up, then
+ * ordered and cut to 1000 again when more than one database answered.
+ */
+async function across<R extends object>(
+  env: Env,
+  parts: ShardPart[],
+  sql: (where: string) => string,
+  params: unknown[],
+  keyOf: (row: R) => string,
+  order?: (a: R, b: R) => number,
+): Promise<R[]> {
+  const merged = new Map<string, Record<string, unknown>>();
+  for (const part of parts) {
+    for (const row of await q<R>(onShard(env, part.db), sql(part.where), [
+      ...params,
+      ...part.params,
+    ])) {
+      const prev = merged.get(keyOf(row));
+      if (!prev) {
+        merged.set(keyOf(row), { ...(row as Record<string, unknown>) });
+        continue;
+      }
+      for (const [k, v] of Object.entries(row as Record<string, unknown>))
+        if (typeof v === 'number') prev[k] = Number(prev[k] ?? 0) + v;
+    }
+  }
+  const rows = [...merged.values()] as R[];
+  return parts.length > 1 && order ? rows.sort(order).slice(0, 1000) : rows;
+}
+
 async function report(
   c: Context<AppEnv>,
   scope: Scope,
@@ -353,26 +393,46 @@ async function report(
   const { from, to } = range(query);
   const fromMs = Date.parse(from);
   const toMs = Date.parse(to) + DAY_MS;
-  const totals = await q1<Omit<Row, 'key'>>(
+  // usage lives on the org's shard; an agent's may span every shard (#78)
+  const parts =
+    scope.column === 'agent_id'
+      ? await shardParts(c.env)
+      : [await orgPart(c.env, scope.org)];
+  const [totals] = await across<Omit<Row, 'key'>>(
     c.env,
-    `SELECT ${DAILY_SUMS} FROM usage_daily WHERE ${scope.column} = ? AND day BETWEEN ? AND ?`,
+    parts,
+    (where) =>
+      `SELECT ${DAILY_SUMS} FROM usage_daily
+        WHERE ${scope.column} = ? AND day BETWEEN ? AND ? AND ${where}`,
     [scope.id, from, to],
+    () => '',
   );
   const raw = RAW_KEY[query.group_by];
   const rows = raw
-    ? await q<Row & { repo_id: string | null }>(
+    ? await across<Row & { repo_id: string | null }>(
         c.env,
-        `SELECT repo_id, CAST(${raw} AS TEXT) AS key, ${RAW_SUMS} FROM usage_events
-          WHERE ${scope.column} = ? AND at >= ? AND at < ? AND ${raw} IS NOT NULL
+        parts,
+        (
+          where,
+        ) => `SELECT repo_id, CAST(${raw} AS TEXT) AS key, ${RAW_SUMS} FROM usage_events
+          WHERE ${scope.column} = ? AND at >= ? AND at < ? AND ${raw} IS NOT NULL AND ${where}
           GROUP BY repo_id, ${raw} ORDER BY usd_micros DESC, key LIMIT 1000`,
         [scope.id, fromMs, toMs],
+        (r) => `${r.repo_id}\n${r.key}`,
+        (a, b) =>
+          b.usd_micros - a.usd_micros || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
       )
-    : await q<Row & { repo_id?: string }>(
+    : await across<Row & { repo_id?: string }>(
         c.env,
-        `SELECT ${DAILY_KEY[query.group_by]} AS key, ${DAILY_SUMS} FROM usage_daily
-          WHERE ${scope.column} = ? AND day BETWEEN ? AND ?
+        parts,
+        (
+          where,
+        ) => `SELECT ${DAILY_KEY[query.group_by]} AS key, ${DAILY_SUMS} FROM usage_daily
+          WHERE ${scope.column} = ? AND day BETWEEN ? AND ? AND ${where}
           GROUP BY key ORDER BY key LIMIT 1000`,
         [scope.id, from, to],
+        (r) => r.key,
+        (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
       );
   // names for ids: repo slugs, agent names, pull numbers and titles
   const repoIds = [
@@ -444,18 +504,26 @@ async function report(
   });
   // cost per merged pull request: everything recorded against pull requests
   // merged in the range, over how many there were
-  const merged = await q1<{ n: number; usd: number; tokens: number }>(
-    c.env,
-    `WITH merged AS (SELECT id FROM pull_requests
-        WHERE ${pulls.where} AND merged_at >= ? AND merged_at < ?)
-     SELECT (SELECT COUNT(*) FROM merged) AS n,
-       (SELECT COALESCE(SUM(usd_micros), 0) FROM usage_events
-         WHERE pull_id IN (SELECT id FROM merged)) AS usd,
-       (SELECT COALESCE(SUM(input_tokens + output_tokens + cached_tokens), 0)
-          FROM usage_events WHERE pull_id IN (SELECT id FROM merged)) AS tokens`,
-    [...pulls.params, fromMs, toMs],
-  );
-  const n = merged?.n ?? 0;
+  const mergedIds = (
+    await q<{ id: number }>(
+      c.env,
+      `SELECT id FROM pull_requests WHERE ${pulls.where} AND merged_at >= ? AND merged_at < ?`,
+      [...pulls.params, fromMs, toMs],
+    )
+  ).map((p) => p.id);
+  const n = mergedIds.length;
+  const [merged] =
+    n === 0
+      ? [{ usd: 0, tokens: 0 }]
+      : await across<{ usd: number; tokens: number }>(
+          c.env,
+          parts,
+          (where) => `SELECT COALESCE(SUM(usd_micros), 0) AS usd,
+              COALESCE(SUM(input_tokens + output_tokens + cached_tokens), 0) AS tokens
+              FROM usage_events WHERE pull_id IN (SELECT value FROM json_each(?)) AND ${where}`,
+          [JSON.stringify(mergedIds)],
+          () => '',
+        );
   if (query.format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
     c.header('content-disposition', `attachment; filename="usage-${from}-${to}.csv"`);
@@ -519,7 +587,7 @@ usageRoutes.get('/repos/:repo{.+}/usage', async (c) => {
     if (!loaded.ok) return loaded.response;
     return await report(
       c,
-      { column: 'repo_id', id: loaded.repo.id },
+      { column: 'repo_id', id: loaded.repo.id, org: orgOf(loaded.repo) },
       { where: 'repo_id = ?', params: [loaded.repo.id] },
     );
   } catch (err) {
@@ -536,7 +604,7 @@ usageRoutes.get('/orgs/:org/usage', async (c) => {
     await requireOrgSso(c, org.id);
     return await report(
       c,
-      { column: 'org_id', id: org.id },
+      { column: 'org_id', id: org.id, org: org.id },
       {
         where:
           "repo_id IN (SELECT id FROM repos WHERE owner_kind = 'org' AND owner_id = ?)",
@@ -557,7 +625,7 @@ usageRoutes.get('/agents/:id/usage', async (c) => {
     if (agent.owner_kind === 'org') await requireOrgSso(c, agent.owner_id);
     return await report(
       c,
-      { column: 'agent_id', id: agent.id },
+      { column: 'agent_id', id: agent.id, org: null },
       { where: 'author_agent_id = ?', params: [agent.id] },
     );
   } catch (err) {

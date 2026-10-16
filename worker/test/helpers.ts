@@ -100,6 +100,7 @@ const WIPE_ORDER = [
   'team_members',
   'teams',
   'org_sso',
+  'shard_directory',
   'org_members',
   'orgs',
   'work_events',

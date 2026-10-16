@@ -4,6 +4,8 @@
 export interface Env {
   /** D1 — metadata (changesets, refs, derived data, auth, RBAC, agent tasks, import jobs). */
   DB: D1Database;
+  /** Metadata shards (issue #78, ADR 0006), named by `shard_directory`; see db/router.ts. */
+  [shard: `DB_SHARD_${number}`]: D1Database | undefined;
   /** R2 — content-addressed object store (blobs + trees). */
   OBJECTS: R2Bucket;
   /**
