@@ -8,6 +8,7 @@ import { sha256Hex } from '../core/hashing';
 import { ulid } from '../core/ids';
 import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import type { AppEnv, Principal } from './principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * Machine/agent API tokens (issue #12): `yag_` + 40 hex chars, SHA-256 at
@@ -16,7 +17,14 @@ import type { AppEnv, Principal } from './principal';
  */
 
 export const TOKEN_PREFIX = 'yag_';
-export const TOKEN_SCOPES = ['repo:read', 'repo:write', 'agent:run'] as const;
+export const TOKEN_SCOPES = [
+  'repo:read',
+  'repo:write',
+  'agent:run',
+  'audit:read',
+] as const;
+/** Scopes a token gets when none are requested; `audit:read` is opt-in. */
+const DEFAULT_SCOPES = ['repo:read', 'repo:write', 'agent:run'];
 
 const tokenRowSchema = z.object({
   id: z.string(),
@@ -58,7 +66,7 @@ export async function createApiToken(
   },
 ): Promise<{ id: string; raw: string; metadata: ApiTokenMetadata }> {
   const now = opts.now ?? Date.now();
-  const scopes = (opts.scopes ?? [...TOKEN_SCOPES]).filter((s) =>
+  const scopes = (opts.scopes ?? DEFAULT_SCOPES).filter((s) =>
     (TOKEN_SCOPES as readonly string[]).includes(s),
   );
   if (scopes.length === 0) {
@@ -206,6 +214,16 @@ tokensRoutes.post('/api/v1/tokens', async (c) => {
       repoId: parsed.data.repo_id,
       expiresAt: parsed.data.expires_at,
     });
+    await recordAudit(c, {
+      action: 'token.create',
+      target: {
+        token_id: created.id,
+        label: created.metadata.label,
+        scopes: created.metadata.scopes,
+        repo_id: created.metadata.repo_id,
+        expires_at: created.metadata.expires_at,
+      },
+    });
     // raw token is returned exactly once — never retrievable again
     return c.json({ ...created.metadata, token: created.raw }, 201);
   } catch (err) {
@@ -233,6 +251,10 @@ tokensRoutes.delete('/api/v1/tokens/:id', async (c) => {
     if (!removed) {
       return apiError(c, 404, 'token_not_found', `no token ${c.req.param('id')}`);
     }
+    await recordAudit(c, {
+      action: 'token.revoke',
+      target: { token_id: c.req.param('id') },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

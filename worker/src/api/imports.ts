@@ -4,6 +4,7 @@ import type { Env } from '../env';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { getImportJob, startImport } from '../bridge/import';
 import { loadReadableRepo, loadWritableRepo } from '../auth/guards';
+import { recordAudit } from '../audit/record';
 
 /**
  * Import job routes (issue #15), mounted under /api/v1:
@@ -28,6 +29,15 @@ importRoutes.post('/repos/:repo{.+}/import', async (c) => {
       return apiError(c, 400, 'invalid_request', 'invalid import request');
     }
     const started = await startImport(c.env, loaded.repo.id, parsed.data);
+    await recordAudit(c, {
+      action: 'repo.import',
+      repo: loaded.repo,
+      target: {
+        job_id: started.job_id,
+        source: parsed.data.source,
+        mode: parsed.data.mode ?? null,
+      },
+    });
     return c.json({ job_id: started.job_id, status: 'queued' }, 202);
   } catch (err) {
     return errorResponse(c, err);

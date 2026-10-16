@@ -9,13 +9,13 @@ import {
   parseUserRow,
   q,
   q1,
-  run,
 } from '../db/client';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { loadAdminRepo } from '../auth/guards';
 import { parsePathRuleInput } from '../auth/rbac';
 import { readMetrics } from '../observability/metrics';
 import { can } from '../auth/rbac';
+import { recordAudit } from '../audit/record';
 
 /**
  * Repo administration (issue #14): members and directory-level path rules.
@@ -90,13 +90,22 @@ adminRoutes.put('/api/v1/repos/:repo{.+}/members', async (c) => {
       }
       userId = parseUserRow(row).id;
     }
-    await run(
-      c.env,
-      `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role})
-       VALUES (?, ?, ?)
-       ON CONFLICT (${C.repoMembers.repoId}, ${C.repoMembers.userId})
-       DO UPDATE SET ${C.repoMembers.role} = excluded.${C.repoMembers.role}`,
-      [loaded.repo.id, userId, parsed.data.role],
+    // the change and its audit event commit in one D1 batch
+    await recordAudit(
+      c,
+      {
+        action: 'member.set',
+        repo: loaded.repo,
+        target: { user_id: userId, role: parsed.data.role },
+      },
+      [
+        c.env.DB.prepare(
+          `INSERT INTO ${T.repoMembers} (${C.repoMembers.repoId}, ${C.repoMembers.userId}, ${C.repoMembers.role})
+           VALUES (?, ?, ?)
+           ON CONFLICT (${C.repoMembers.repoId}, ${C.repoMembers.userId})
+           DO UPDATE SET ${C.repoMembers.role} = excluded.${C.repoMembers.role}`,
+        ).bind(loaded.repo.id, userId, parsed.data.role),
+      ],
     );
     return c.json({ ok: true, user_id: userId, role: parsed.data.role });
   } catch (err) {
@@ -110,10 +119,18 @@ adminRoutes.delete('/api/v1/repos/:repo{.+}/members/:userId', async (c) => {
     if (noSession) return noSession;
     const loaded = await loadAdminRepo(c, c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
-    await run(
-      c.env,
-      `DELETE FROM ${T.repoMembers} WHERE ${C.repoMembers.repoId} = ? AND ${C.repoMembers.userId} = ?`,
-      [loaded.repo.id, c.req.param('userId')],
+    await recordAudit(
+      c,
+      {
+        action: 'member.remove',
+        repo: loaded.repo,
+        target: { user_id: c.req.param('userId') },
+      },
+      [
+        c.env.DB.prepare(
+          `DELETE FROM ${T.repoMembers} WHERE ${C.repoMembers.repoId} = ? AND ${C.repoMembers.userId} = ?`,
+        ).bind(loaded.repo.id, c.req.param('userId')),
+      ],
     );
     return c.json({ ok: true });
   } catch (err) {
@@ -203,6 +220,11 @@ adminRoutes.post('/api/v1/repos/:repo{.+}/path-rules', async (c) => {
       ],
     );
     const id = (inserted as { id: number }).id;
+    await recordAudit(c, {
+      action: 'path_rule.create',
+      repo: loaded.repo,
+      target: { rule_id: id, ...rule },
+    });
     return c.json({ ok: true, id, rule }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -223,9 +245,26 @@ adminRoutes.delete('/api/v1/repos/:repo{.+}/path-rules/:id', async (c) => {
     if (!existing) {
       return apiError(c, 404, 'rule_not_found', `no path rule ${c.req.param('id')}`);
     }
-    await run(c.env, `DELETE FROM ${T.pathRules} WHERE ${C.pathRules.id} = ?`, [
-      c.req.param('id'),
-    ]);
+    const removed = parsePathRuleRow(existing);
+    await recordAudit(
+      c,
+      {
+        action: 'path_rule.delete',
+        repo: loaded.repo,
+        target: {
+          rule_id: removed.id,
+          path_prefix: removed.path_prefix,
+          effect: removed.effect,
+          principal: removed.principal,
+          perms: removed.perms,
+        },
+      },
+      [
+        c.env.DB.prepare(`DELETE FROM ${T.pathRules} WHERE ${C.pathRules.id} = ?`).bind(
+          c.req.param('id'),
+        ),
+      ],
+    );
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

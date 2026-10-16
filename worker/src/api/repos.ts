@@ -9,6 +9,7 @@ import { decide } from '../auth/rbac';
 import { commitChanges } from '../core/commit';
 import { moveRefViaDO, validateRefName } from '../core/refs';
 import type { AppEnv } from '../auth/principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * Repo index + creation (issue #14: creators are admins; issue #20's
@@ -49,6 +50,15 @@ reposRoutes.post('/api/v1/repos', async (c) => {
       visibility: parsed.data.visibility,
       defaultBranch: parsed.data.default_branch,
       createdBy: user.id,
+    });
+    await recordAudit(c, {
+      action: 'repo.create',
+      repo,
+      target: {
+        slug: repo.slug,
+        visibility: repo.visibility,
+        default_branch: repo.default_branch,
+      },
     });
     return c.json({ repo }, 201);
   } catch (err) {
@@ -97,6 +107,11 @@ reposRoutes.post('/api/v1/repos/:owner/:name/initialize', async (c) => {
       changes: [{ path: 'README.md', op: 'add', content_b64: btoa(`# ${repo.slug}\n`) }],
     });
     await moveRefViaDO(c.env, repo.id, name, { from: null, to: result.changeset.id });
+    await recordAudit(c, {
+      action: 'repo.initialize',
+      repo,
+      target: { ref: name, from: null, to: result.changeset.id },
+    });
     return c.json({ changeset: result.changeset }, 201);
   } catch (err) {
     return errorResponse(c, err);

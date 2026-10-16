@@ -16,6 +16,7 @@ import {
 } from '../auth/guards';
 import type { AgentState } from '../agents/runtime';
 import { r2 } from '../observability/phase';
+import { recordAudit } from '../audit/record';
 
 /**
  * Agent task lifecycle API (issue #17) — mounted under /api/v1:
@@ -89,6 +90,11 @@ agentsRoutes.post('/repos/:repo{.+}/agents/tasks', async (c) => {
         now,
       ],
     );
+    await recordAudit(c, {
+      action: 'agent.task.create',
+      repo: loaded.repo,
+      target: { task_id: taskId, kind: parsed.data.kind, base_cs: base.id },
+    });
     await c.env.AGENT_QUEUE.send({ task_id: taskId });
     return c.json({ task_id: taskId, status: 'queued' }, 202);
   } catch (err) {
@@ -194,6 +200,7 @@ agentsRoutes.post('/agents/superfans', async (c) => {
         body: JSON.stringify(parsed.data),
       }),
     );
+    await recordAudit(c, { action: 'agent.superfan.start', target: parsed.data });
     return c.json(await res.json(), 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -213,6 +220,11 @@ agentsRoutes.post('/agents/tasks/:id/cancel', async (c) => {
     if (!loaded.ok) return loaded.response;
 
     await stubFor(c.env, task.id).cancel();
+    await recordAudit(c, {
+      action: 'agent.task.cancel',
+      repo: loaded.repo,
+      target: { task_id: task.id },
+    });
     return c.json({ ok: true, status: 'cancelled' });
   } catch (err) {
     return errorResponse(c, err);

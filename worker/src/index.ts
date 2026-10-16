@@ -6,6 +6,7 @@ import { derivedQueue } from './queues/derived';
 import { importQueue } from './queues/import';
 import { agentJobsQueue } from './queues/agentJobs';
 import { ciQueue } from './ci/runs';
+import { auditStreamQueue, kickAuditStream } from './audit/stream';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
 
@@ -25,6 +26,7 @@ export default {
   /** Cron (`* * * * *`): flush per-invocation counters into component_metrics. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
+    await kickAuditStream(env);
     const expired = await q<{ id: string; log_key: string }>(
       env,
       'SELECT id, log_key FROM ci_runs WHERE log_key IS NOT NULL AND finished_at < ? LIMIT 50',
@@ -73,6 +75,8 @@ export default {
         return importQueue(batch as MessageBatch<GitImportMessage>, env);
       case 'agent-jobs':
         return agentJobsQueue(batch as MessageBatch<{ task_id: string }>, env);
+      case 'audit-stream':
+        return auditStreamQueue(batch, env);
       default:
         console.error(`queue: unknown queue ${batch.queue}, acking`);
         batch.ackAll();

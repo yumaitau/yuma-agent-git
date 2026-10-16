@@ -16,6 +16,7 @@ import {
   upsertUser,
 } from './session';
 import type { AppEnv } from './principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * GitHub OAuth web flow (issue #12) — entirely on the Worker.
@@ -147,6 +148,11 @@ authRoutes.get('/auth/github/callback', async (c) => {
     });
 
     const session = await createSession(c.env, user.id);
+    await recordAudit(c, {
+      action: 'auth.login',
+      actor: { kind: 'user', id: user.id },
+      target: { user_id: user.id, login: user.login, method: 'github' },
+    });
     const secure = baseUrl(c.req.url).startsWith('https://') ? '; Secure' : '';
     return new Response(null, {
       status: 302,
@@ -164,6 +170,9 @@ authRoutes.post('/auth/logout', async (c) => {
   try {
     const token = sessionTokenFrom(c.req.header('cookie'));
     if (token) await revokeSessionToken(c.env, token);
+    const user = c.get('user');
+    if (user)
+      await recordAudit(c, { action: 'auth.logout', target: { user_id: user.id } });
     return c.json({ ok: true }, 200, {
       'set-cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
     });

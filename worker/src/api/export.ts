@@ -8,6 +8,7 @@ import { tarEntry, tarEnd } from '../bridge/tar';
 import { startExportToGithub } from '../bridge/exportPush';
 import { resolveRevision } from '../core/read';
 import { loadReadableRepo, loadWritableRepo } from '../auth/guards';
+import { recordAudit } from '../audit/record';
 
 /**
  * Export routes (issue #16) — the off-ramp:
@@ -146,6 +147,11 @@ exportRoutes.post('/repos/:repo{.+}/export/github', async (c) => {
     if (!loaded.ok) return loaded.response;
     const body = await readJsonBody(c);
     const started = await startExportToGithub(c.env, loaded.repo.id, body ?? {});
+    await recordAudit(c, {
+      action: 'repo.export',
+      repo: loaded.repo,
+      target: { job_id: started.job_id, destination: 'github' },
+    });
     return c.json({ job_id: started.job_id, status: 'queued' }, 202);
   } catch (err) {
     return errorResponse(c, err);

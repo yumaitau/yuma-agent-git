@@ -15,6 +15,7 @@ import { getDerived } from '../core/derived';
 import { ulid } from '../core/ids';
 import { C, T } from '../db/schema';
 import { run } from '../db/client';
+import { actorOf, appendAudit } from '../audit/record';
 import { charge, type TaskBudget } from './budget';
 
 /**
@@ -375,6 +376,17 @@ export const tools: Tool[] = [
         const head = await readRefHead(env, ctx.repo_id, 'main');
         void err;
         return { landed: false, reason: 'stale', main_head: head, head_cs: ctx.head_cs };
+      }
+      if (repo) {
+        await appendAudit(env, {
+          action: 'ref.move',
+          repo,
+          actor:
+            ctx.task_id === 'mcp'
+              ? actorOf(ctx.principal)
+              : { kind: 'agent', id: ctx.task_id, onBehalfOf: ctx.principal?.userId },
+          target: { ref: 'main', from: current, to: ctx.head_cs, via: 'agent.land' },
+        });
       }
       // post-merge, pre-deploy checks — the no-merge-queue model (§2.3)
       const checkId = ulid();

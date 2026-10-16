@@ -5,6 +5,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 import { getChangeset } from '../core/changesets';
 import { listRefs, getRef, moveRefViaDO, validateRefName } from '../core/refs';
 import { loadReadableRepo as loadReadable, loadWritableRepo } from '../auth/guards';
+import { recordAudit } from '../audit/record';
 
 /**
  * Ref routes (architecture §1.4) — refs are discouraged global state; moves
@@ -88,6 +89,16 @@ refsRoutes.put('/repos/:repo{.+}/refs/:name{.+}', async (c) => {
     }
 
     const result = await moveRefViaDO(c.env, repo.id, name, parsed.data);
+    await recordAudit(c, {
+      action: 'ref.move',
+      repo,
+      target: {
+        ref: name,
+        from: result.from,
+        to: result.to,
+        force: parsed.data.force ?? false,
+      },
+    });
     return c.json(result, 200, { 'cache-control': NO_STORE });
   } catch (err) {
     return errorResponse(c, err);

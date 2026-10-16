@@ -21,6 +21,7 @@ import {
   type CiRun,
 } from '../ci/config';
 import { enqueueRun } from '../ci/runs';
+import { recordAudit } from '../audit/record';
 
 export const collaborationRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -98,6 +99,11 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
       )
       .run();
     const pull = await getPull(c.env, loaded.repo.id, result.meta.last_row_id);
+    await recordAudit(c, {
+      action: 'pull.create',
+      repo: loaded.repo,
+      target: { pull_id: pull.id, base_ref: pull.base_ref, head_cs: pull.head_cs },
+    });
     const ci = await autoCheck(c.env, pull, c.get('principal')!.userId);
     return c.json({ pull, ci }, 201);
   } catch (err) {
@@ -143,6 +149,18 @@ for (const action of ['update', 'review', 'merge'] as const) {
           body,
         }),
       });
+      if (response.ok) {
+        const decision = (body as { decision?: unknown } | null)?.decision;
+        await recordAudit(c, {
+          action: `pull.${action}`,
+          repo: loaded.repo,
+          target: {
+            pull_id: pull.id,
+            base_ref: pull.base_ref,
+            ...(action === 'review' && typeof decision === 'string' ? { decision } : {}),
+          },
+        });
+      }
       if (response.ok && action === 'update') {
         const data = (await response.json()) as { pull: Pull };
         const ci =
@@ -253,6 +271,18 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
       body: JSON.stringify({ repo_id: loaded.repo.id, config }),
     });
     if (!saved.ok) return new Response(saved.body, saved);
+    // commands are left out: build scripts may carry inline credentials
+    await recordAudit(c, {
+      action: 'ci.settings.update',
+      repo: loaded.repo,
+      target: {
+        preset: config.preset,
+        required_approvals: config.required_approvals,
+        require_checks: config.require_checks,
+        protect_default: config.protect_default,
+        image: config.image,
+      },
+    });
     return c.json({ config, max_run_usd: reservation(config) / 1e6 });
   } catch (err) {
     return errorResponse(c, err);
@@ -278,18 +308,19 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
       loaded.repo.id,
       input.head ?? `ref:${loaded.repo.default_branch}`,
     );
-    return c.json(
-      {
-        run: await enqueueRun(
-          c.env,
-          loaded.repo.id,
-          cs.id,
-          c.get('principal')!.userId,
-          input.publish,
-        ),
-      },
-      202,
+    const job = await enqueueRun(
+      c.env,
+      loaded.repo.id,
+      cs.id,
+      c.get('principal')!.userId,
+      input.publish,
     );
+    await recordAudit(c, {
+      action: 'ci.run.create',
+      repo: loaded.repo,
+      target: { run_id: job.id, head_cs: cs.id, publish: input.publish },
+    });
+    return c.json({ run: job }, 202);
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -357,6 +388,11 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
           'The runner is unavailable and cancellation could not be confirmed.',
         );
     }
+    await recordAudit(c, {
+      action: 'ci.run.cancel',
+      repo: loaded.repo,
+      target: { run_id: job.id },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
