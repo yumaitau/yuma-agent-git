@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { QueryParams, RequestBody } from '@yuma/agent-git-sdk';
 
 export class ApiError extends Error {
   constructor(
@@ -155,22 +156,15 @@ export class YagApi {
     return (await res.json()) as T;
   }
 
-  async createPull(input: {
-    title: string;
-    body: string;
-    head_cs: string;
-    draft: boolean;
-  }): Promise<{ pull: { id: number } }> {
+  async createPull(input: RequestBody<'createPull'>): Promise<{ pull: { id: number } }> {
     return this.json('/pulls', { method: 'POST', body: JSON.stringify(input) });
   }
   async runCI(
     head?: string,
     publish = false,
   ): Promise<{ run: { id: string; state: string } }> {
-    return this.json('/ci/runs', {
-      method: 'POST',
-      body: JSON.stringify({ head, publish }),
-    });
+    const body: RequestBody<'createCiRun'> = { head, publish };
+    return this.json('/ci/runs', { method: 'POST', body: JSON.stringify(body) });
   }
   async ciStatus(): Promise<{
     enabled: boolean;
@@ -184,11 +178,7 @@ export class YagApi {
     );
   }
 
-  async fetchObjects(body: {
-    trees?: string[];
-    blobs?: string[];
-    blob_encoding?: 'zstd' | 'identity';
-  }): Promise<FetchObjectsResult> {
+  async fetchObjects(body: RequestBody<'fetchObjects'>): Promise<FetchObjectsResult> {
     return fetchObjectsResultSchema.parse(
       await this.json('/fetch-objects', { method: 'POST', body: JSON.stringify(body) }),
     );
@@ -206,12 +196,9 @@ export class YagApi {
     });
   }
 
-  async createChangeset(body: {
-    first_parent: string | null;
-    message: string;
-    author: { name: string; email: string } | { agent: string };
-    changes: unknown[];
-  }): Promise<z.infer<typeof commitResultSchema>> {
+  async createChangeset(
+    body: RequestBody<'createChangeset'>,
+  ): Promise<z.infer<typeof commitResultSchema>> {
     return commitResultSchema.parse(
       await this.json('/changesets', { method: 'POST', body: JSON.stringify(body) }),
     );
@@ -228,7 +215,7 @@ export class YagApi {
 
   async moveRef(
     name: string,
-    body: { from: string | null; to: string; force?: boolean },
+    body: RequestBody<'moveRef'>,
   ): Promise<{ ok: boolean; from: string | null; to: string }> {
     return (await this.json(`/refs/${name}`, {
       method: 'PUT',
@@ -244,11 +231,9 @@ export class YagApi {
     );
   }
 
-  async history(opts: {
-    cs?: string;
-    path?: string;
-    limit?: number;
-  }): Promise<z.infer<typeof historyResultSchema>> {
+  async history(
+    opts: QueryParams<'getHistory'>,
+  ): Promise<z.infer<typeof historyResultSchema>> {
     const params = new URLSearchParams();
     if (opts.cs) params.set('cs', opts.cs);
     if (opts.path) params.set('path', opts.path);

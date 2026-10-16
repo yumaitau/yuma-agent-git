@@ -129,7 +129,7 @@ async function loadTotp(
   return row ? totpRowSchema.parse(row) : null;
 }
 
-const codeSchema = z.object({ code: z.string().min(1).max(12) });
+export const codeSchema = z.object({ code: z.string().min(1).max(12) });
 
 // ---------------------------------------------------------------------------
 // Routes (session only)

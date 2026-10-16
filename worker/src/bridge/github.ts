@@ -291,7 +291,7 @@ githubRoutes.get('/auth/github/install-callback', (c) => {
   return c.json({ ok: true, state: c.req.query('state') ?? null });
 });
 
-const connectSchema = z.object({
+export const connectSchema = z.object({
   installation_id: z.number().int(),
   github_repo_id: z.number().int(),
 });

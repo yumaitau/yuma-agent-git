@@ -68,24 +68,27 @@ const baseRoleSchema = z.enum(['none', 'read', 'write', 'admin']);
 const orgRoleSchema = z.enum(['owner', 'admin', 'member', 'billing']);
 const repoRoleSchema = z.enum(['admin', 'write', 'read']);
 
-const createOrgSchema = z.object({
+export const createOrgSchema = z.object({
   slug: slugSchema,
   display_name: z.string().min(1).max(100).optional(),
   base_role: baseRoleSchema.optional(),
   members_can_create_repos: z.boolean().optional(),
 });
-const patchOrgSchema = z.object({
+export const patchOrgSchema = z.object({
   display_name: z.string().min(1).max(100).optional(),
   base_role: baseRoleSchema.optional(),
   members_can_create_repos: z.boolean().optional(),
 });
-const userRefSchema = z.object({
+export const userRefSchema = z.object({
   user_id: z.string().min(1).optional(),
   user_login: z.string().min(1).optional(),
 });
-const putMemberSchema = userRefSchema.extend({ role: orgRoleSchema });
-const createTeamSchema = z.object({ slug: slugSchema, parent: slugSchema.optional() });
-const grantSchema = z.object({ repo: z.string().min(3), role: repoRoleSchema });
+export const putMemberSchema = userRefSchema.extend({ role: orgRoleSchema });
+export const createTeamSchema = z.object({
+  slug: slugSchema,
+  parent: slugSchema.optional(),
+});
+export const grantSchema = z.object({ repo: z.string().min(3), role: repoRoleSchema });
 
 function parse<S extends z.ZodType>(schema: S, value: unknown): z.infer<S> {
   const parsed = schema.safeParse(value);

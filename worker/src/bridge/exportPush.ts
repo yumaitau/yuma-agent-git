@@ -47,7 +47,7 @@ export interface ExportCursor {
   github_sha: string | null; // latest GitHub commit sha written so far
 }
 
-const exportRequestSchema = z.object({
+export const exportRequestSchema = z.object({
   target_branch: z.string().min(1).default('yag-sync'),
   head: z.string().optional(),
 });

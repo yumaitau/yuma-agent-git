@@ -34,14 +34,14 @@ export const refsRoutes = new Hono<AppEnv>();
 const NO_STORE = 'private, no-store';
 const REPO = ':repo{[^/]+/[^/]+}';
 
-const moveRefSchema = z.object({
+export const moveRefSchema = z.object({
   from: z.string().min(1).nullable(),
   to: z.string().min(1),
   force: z.boolean().optional(),
 });
 
 /** A `message` makes an annotated tag; a signature needs one to sign. */
-const createTagSchema = z
+export const createTagSchema = z
   .object({
     name: z.string().min(1).max(245),
     target: z.string().min(1),

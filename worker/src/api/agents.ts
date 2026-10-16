@@ -42,7 +42,7 @@ function stubFor(env: Env, taskId: string): AgentStub {
   return env.AGENT.get(env.AGENT.idFromName(taskId)) as unknown as AgentStub;
 }
 
-const createTaskSchema = z
+export const createTaskSchema = z
   .object({
     kind: z.enum(['freeform', 'fix_issue', 'post_merge_check', 'superfan']),
     prompt: z.string().min(1).max(65536),
@@ -186,7 +186,7 @@ agentsRoutes.get('/agents/tasks/:id/transcript', async (c) => {
   }
 });
 
-const superfanSchema = z.object({
+export const superfanSchema = z.object({
   component: z.enum(SUPERFAN_COMPONENTS),
   interval_min: z.number().int().positive().max(1440),
 });

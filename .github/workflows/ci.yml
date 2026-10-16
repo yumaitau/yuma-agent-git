@@ -28,7 +28,10 @@ jobs:
         run: npm run lint --workspaces --if-present
 
       - name: Typecheck
-        run: npm run typecheck -w worker
+        run: |
+          npm run typecheck -w worker
+          npm run typecheck -w yag
+          npm run typecheck -w @yuma/agent-git-sdk
 
       - name: Build dashboard
         run: npm run build -w worker
@@ -44,10 +47,16 @@ jobs:
         env:
           YAG_GIT_SMOKE: '1'
 
-      - name: API reference matches router
+      - name: SDK tests
+        run: npm test -w @yuma/agent-git-sdk
+
+      - name: API reference, OpenAPI document and SDK match the router
         run: |
-          npm run docs:api -w worker
-          git diff --exit-code docs/api.md
+          npm run docs:openapi
+          git diff --exit-code docs/api.md docs/openapi.json sdk/src/schema.ts
+
+      - name: OpenAPI lint
+        run: npx -y @redocly/cli@2.57.0 lint docs/openapi.json
 
       - name: Commit-graph fuzzer (5 seeds)
         working-directory: worker

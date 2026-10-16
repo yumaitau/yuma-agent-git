@@ -259,7 +259,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-116 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+117 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                              | Auth                    | Permission                                                  | Rate bucket  | Purpose                                                                       |
 | ------ | ------------------------------------------------- | ----------------------- | ----------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------- |
@@ -281,6 +281,7 @@ Without a configured signing key, tokens fail closed.
 | POST   | `/api/v1/me/totp`                                 | session                 | —                                                           | api_write    | Start authenticator app enrolment                                             |
 | DELETE | `/api/v1/me/totp`                                 | session                 | —                                                           | api_write    | Remove the authenticator app (recent MFA)                                     |
 | POST   | `/api/v1/me/totp/confirm`                         | session                 | —                                                           | api_write    | Confirm authenticator enrolment with a code                                   |
+| GET    | `/api/v1/openapi.json`                            | any                     | —                                                           | api_read     | This API as an OpenAPI 3.1 document                                           |
 | GET    | `/api/v1/orgs`                                    | session                 | —                                                           | api_read     | Orgs the caller belongs to                                                    |
 | POST   | `/api/v1/orgs`                                    | session                 | —                                                           | api_write    | Create an org (caller becomes owner)                                          |
 | GET    | `/api/v1/orgs/:org`                               | session                 | org member                                                  | api_read     | One org and the caller role                                                   |

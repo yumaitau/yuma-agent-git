@@ -32,7 +32,7 @@ export const objectsRoutes = new Hono<{ Bindings: Env }>();
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 const NO_STORE = 'private, no-store';
 
-const fetchObjectsSchema = z.object({
+export const fetchObjectsSchema = z.object({
   // bounds are enforced by the route (413 fetch_too_large), not the schema
   trees: z.array(z.string().regex(/^[0-9a-f]{64}$/)).optional(),
   blobs: z.array(z.string().regex(/^[0-9a-f]{64}$/)).optional(),

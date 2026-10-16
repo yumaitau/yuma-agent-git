@@ -185,7 +185,7 @@ scimRoutes.get('/scim/v2/Users/:id', async (c) => {
   }
 });
 
-const createUserSchema = z
+export const createUserSchema = z
   .object({
     userName: z.string().trim().min(1).max(256),
     active: z.boolean().optional(),
@@ -237,7 +237,7 @@ scimRoutes.post('/scim/v2/Users', async (c) => {
   }
 });
 
-const patchSchema = z
+export const patchSchema = z
   .object({
     Operations: z
       .array(
@@ -336,6 +336,10 @@ const scimTokenRowSchema = z.object({
   last_used_at: z.number().nullable(),
 });
 
+export const createScimTokenSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+});
+
 scimRoutes.post('/api/v1/scim/tokens', async (c) => {
   try {
     const user = c.get('user');
@@ -345,9 +349,7 @@ scimRoutes.post('/api/v1/scim/tokens', async (c) => {
     }
     const mfa = await requireRecentMfa(c, { strict: true });
     if (mfa) return mfa;
-    const parsed = z
-      .object({ label: z.string().trim().min(1).max(120) })
-      .safeParse(await readJsonBody(c));
+    const parsed = createScimTokenSchema.safeParse(await readJsonBody(c));
     if (!parsed.success) return apiError(c, 400, 'invalid_request', 'label is required');
     const now = Date.now();
     const raw = `${SCIM_TOKEN_PREFIX}${randomHex(32)}`;

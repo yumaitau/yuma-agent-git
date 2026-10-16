@@ -1,5 +1,5 @@
 /**
- * API reference generator (issue #22).
+ * API reference generator (issues #22, #28).
  *
  * Discovers every route from the real Hono app instead of parsing source text:
  * `src/app.ts` is bundled in memory with esbuild (no `cloudflare:` imports, so
@@ -17,12 +17,31 @@
  * exist a skeleton is written. Output is sorted and prettier-formatted, so a
  * second run is a no-op.
  *
- * Usage: npm run docs:api -w worker
+ * The same route walk writes docs/openapi.json (OpenAPI 3.1): operation ids,
+ * query parameters and request bodies come from `src/api/contract.ts` (the zod
+ * schemas the handlers parse with), auth and permission from `classify()`.
+ * Any warning (a route without a contract entry, an undeclared query key or
+ * body) makes the run exit non-zero so CI catches it.
+ *
+ * Usage: npm run docs:api -w worker (or `npm run docs:openapi` at the root)
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { build } from 'esbuild';
 import * as prettier from 'prettier';
+
+interface ZodLike {
+  safeParse(value: unknown): { success: boolean };
+}
+
+interface RouteContract {
+  id: string;
+  query?: ZodLike & { shape: Record<string, ZodLike> };
+  body?: ZodLike;
+  rawBody?: string;
+}
+
+type JsonObject = Record<string, unknown>;
 
 interface HonoRoute {
   method: string;
@@ -35,6 +54,11 @@ interface WorkerModule {
   bucketFor: (method: string, path: string) => string | null;
   BUCKETS: Record<string, number>;
   TOKEN_SCOPES: readonly string[];
+  API_CONTRACT: Record<string, RouteContract>;
+  apiErrorSchema: ZodLike;
+  displayPath: (path: string) => string;
+  openApiPath: (path: string) => string;
+  jsonSchema: (schema: ZodLike) => JsonObject;
 }
 
 interface Row {
@@ -44,10 +68,17 @@ interface Row {
   perm: string;
   bucket: string;
   purpose: string;
+  /** Hono path as registered (regex params included). */
+  rawPath: string;
+  /** Handler returns JSON / redirects / the error envelope (from its source). */
+  json: boolean;
+  redirect: boolean;
+  envelope: boolean;
 }
 
 const workerDir = dirname(import.meta.dirname);
 const docPath = join(workerDir, '..', 'docs', 'api.md');
+const openapiPath = join(workerDir, '..', 'docs', 'openapi.json');
 
 /** One-line purposes, keyed by `METHOD display-path`. New routes show up as gaps. */
 const PURPOSES: Record<string, string> = {
@@ -59,6 +90,7 @@ const PURPOSES: Record<string, string> = {
   'POST /auth/logout': 'Revoke the session and clear the cookie',
   'POST /webhooks/github': 'GitHub App webhook receiver',
   'GET /api/v1': 'API root: `{ok, service, api: "v1"}`',
+  'GET /api/v1/openapi.json': 'This API as an OpenAPI 3.1 document',
   'GET /api/v1/admin/metrics': 'Operational metrics (`?component=&window=`)',
   'GET /api/v1/agents/tasks/:id': 'Agent task row plus live agent state',
   'POST /api/v1/agents/tasks/:id/cancel': 'Cancel an agent task',
@@ -178,16 +210,9 @@ const PURPOSES: Record<string, string> = {
 
 const METHOD_ORDER = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 
-/** `:repo{.+}` → `:repo` — the regex is a router detail, not part of the contract. */
-function displayPath(path: string): string {
-  return path.replace(/:repo\{[^}]*\.git\}/, ':repo.git').replace(/\{[^}]*\}/g, '');
-}
-
-/** A concrete path for `bucketFor()` (which only looks at path shape). */
+/** A concrete display path for `bucketFor()` (which only looks at path shape). */
 function samplePath(path: string): string {
-  return displayPath(path)
-    .replace(/:repo\b/g, 'owner/name')
-    .replace(/:\w+/g, 'x');
+  return path.replace(/:repo\b/g, 'owner/name').replace(/:\w+/g, 'x');
 }
 
 /**
@@ -264,6 +289,7 @@ async function loadWorker(): Promise<WorkerModule> {
         "export { app } from './src/app';",
         "export { bucketFor, BUCKETS } from './src/middleware/ratelimit';",
         "export { TOKEN_SCOPES } from './src/auth/tokens';",
+        "export { API_CONTRACT, apiErrorSchema, displayPath, openApiPath, jsonSchema } from './src/api/contract';",
       ].join('\n'),
       resolveDir: workerDir,
       loader: 'ts',
@@ -285,26 +311,52 @@ function collectRows(mod: WorkerModule): { rows: Row[]; warnings: string[] } {
   const rows: Row[] = [];
   for (const route of mod.app.routes) {
     if (route.method === 'ALL') continue; // middleware
-    const path = displayPath(route.path);
+    const path = mod.displayPath(route.path);
     const key = `${route.method} ${path}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const { auth, perm } = classify(path, route.handler.toString());
+    const src = route.handler.toString();
+    const { auth, perm } = classify(path, src);
     if (perm === null) warnings.push(`no RBAC guard recognised: ${key}`);
     const purpose = PURPOSES[key];
     if (purpose === undefined) warnings.push(`no purpose text: ${key}`);
+    const contract = mod.API_CONTRACT[key];
+    if (contract === undefined) warnings.push(`no contract entry: ${key}`);
+    else {
+      for (const [, name] of src.matchAll(/\.req\.query\("([^"]+)"\)/g)) {
+        if (!contract.query?.shape[name as string]) {
+          warnings.push(`query parameter not in contract: ${key} ?${name}`);
+        }
+      }
+      const readsBody =
+        /readJsonBody\(|\.req\.(json|arrayBuffer|text)\(|\.req\.raw\.body/;
+      if (readsBody.test(src) && !contract.body && !contract.rawBody) {
+        warnings.push(`request body not in contract: ${key}`);
+      }
+    }
     rows.push({
       method: route.method,
       path,
       auth,
       perm: perm ?? '**unclassified**',
-      bucket: mod.bucketFor(route.method, samplePath(route.path)) ?? 'exempt',
+      bucket: mod.bucketFor(route.method, samplePath(path)) ?? 'exempt',
       purpose: purpose ?? '**undocumented**',
+      rawPath: route.path,
+      json: /\bc\.json\(/.test(src),
+      redirect: /\bc\.redirect\(/.test(src),
+      envelope: path.startsWith('/api/') || /\b(apiError|errorResponse)\(/.test(src),
     });
   }
   for (const key of Object.keys(PURPOSES)) {
     if (!seen.has(key))
       warnings.push(`purpose for a route that no longer exists: ${key}`);
+  }
+  const ids = new Set<string>();
+  for (const [key, { id }] of Object.entries(mod.API_CONTRACT)) {
+    if (!seen.has(key))
+      warnings.push(`contract for a route that no longer exists: ${key}`);
+    if (ids.has(id)) warnings.push(`duplicate operation id: ${id}`);
+    ids.add(id);
   }
   rows.sort(
     (a, b) =>
@@ -337,6 +389,131 @@ function regions(mod: WorkerModule, rows: Row[]): Record<string, string> {
         .map(([bucket, limit]) => [`\`${bucket}\``, String(limit)]),
     ),
     scopes: mod.TOKEN_SCOPES.map((scope) => `- \`${scope}\``).join('\n'),
+  };
+}
+
+/** `classify()` auth label → OpenAPI security requirement. */
+const SECURITY: Record<string, Record<string, string[]>[]> = {
+  any: [{ session: [] }, { bearer: [] }],
+  session: [{ session: [] }],
+  token: [{ bearer: [] }],
+  none: [],
+  HMAC: [{ githubSignature: [] }],
+  'SCIM token': [{ scimBearer: [] }],
+  'token (Basic or Bearer)': [{ gitBasic: [] }, { bearer: [] }],
+};
+
+function operation(mod: WorkerModule, row: Row, path: string): JsonObject {
+  const contract = mod.API_CONTRACT[`${row.method} ${row.path}`];
+  const parameters: JsonObject[] = [...path.matchAll(/\{(\w+)\}/g)].map(([, name]) => ({
+    name,
+    in: 'path',
+    required: true,
+    schema: { type: 'string' },
+  }));
+  for (const [name, field] of Object.entries(contract?.query?.shape ?? {})) {
+    parameters.push({
+      name,
+      in: 'query',
+      required: !field.safeParse(undefined).success,
+      schema: mod.jsonSchema(field),
+    });
+  }
+
+  const responses: JsonObject = {};
+  if (row.json || !row.redirect) {
+    responses['2XX'] = row.json
+      ? { description: 'Success', content: { 'application/json': { schema: {} } } }
+      : { description: 'Success' };
+  }
+  if (row.redirect) responses['302'] = { description: 'Redirect' };
+  if (row.envelope) {
+    responses['4XX'] = { $ref: '#/components/responses/Error' };
+    responses['5XX'] = { $ref: '#/components/responses/Error' };
+  }
+
+  const security = SECURITY[row.auth];
+  if (security === undefined) throw new Error(`no security scheme for auth ${row.auth}`);
+  let requestBody: JsonObject | undefined;
+  if (contract?.body) {
+    requestBody = {
+      required: true,
+      content: { 'application/json': { schema: mod.jsonSchema(contract.body) } },
+    };
+  } else if (contract?.rawBody) {
+    requestBody = { required: true, content: { [contract.rawBody]: { schema: {} } } };
+  }
+  return {
+    operationId: contract?.id ?? `${row.method} ${row.path}`,
+    summary: row.purpose,
+    security,
+    'x-yag-permission': row.perm,
+    'x-yag-rate-bucket': row.bucket,
+    ...(parameters.length > 0 ? { parameters } : {}),
+    ...(requestBody ? { requestBody } : {}),
+    responses,
+  };
+}
+
+function openapi(mod: WorkerModule, rows: Row[]): JsonObject {
+  const paths: Record<string, JsonObject> = {};
+  for (const row of rows) {
+    const path = mod.openApiPath(row.rawPath);
+    paths[path] = {
+      ...paths[path],
+      [row.method.toLowerCase()]: operation(mod, row, path),
+    };
+  }
+  return {
+    openapi: '3.1.0',
+    info: {
+      title: 'yuma-agent-git API',
+      version: '1',
+      description:
+        'Generated by `npm run docs:openapi` from the Hono router and `worker/src/api/contract.ts`. Do not edit by hand. Versioning and deprecation: docs/api-versioning.md. Access rules and rate limits: docs/api.md.',
+    },
+    servers: [{ url: '/', description: 'The deployment serving this document' }],
+    paths,
+    components: {
+      securitySchemes: {
+        session: {
+          type: 'apiKey',
+          in: 'cookie',
+          name: 'yag_session',
+          description: 'Browser session from sign-in',
+        },
+        bearer: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'API token (`yag_…`) created in the dashboard Settings',
+        },
+        gitBasic: {
+          type: 'http',
+          scheme: 'basic',
+          description: 'Git clients: any username, an API token as the password',
+        },
+        scimBearer: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'SCIM token from `POST /api/v1/scim/tokens`',
+        },
+        githubSignature: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Hub-Signature-256',
+          description: 'HMAC SHA-256 of the body with the GitHub App webhook secret',
+        },
+      },
+      schemas: { Error: mod.jsonSchema(mod.apiErrorSchema) },
+      responses: {
+        Error: {
+          description: 'Error envelope with a stable `code`',
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/Error' } },
+          },
+        },
+      },
+    },
   };
 }
 
@@ -389,7 +566,22 @@ async function main(): Promise<void> {
   console.log(
     `docs/api.md: ${rows.length} routes${next === doc ? ' (unchanged)' : ' (updated)'}`,
   );
+
+  const spec = await prettier.format(JSON.stringify(openapi(mod, rows)), {
+    ...(await prettier.resolveConfig(openapiPath)),
+    parser: 'json',
+  });
+  let previous = '';
+  try {
+    previous = await readFile(openapiPath, 'utf8');
+  } catch {
+    // first run
+  }
+  if (spec !== previous) await writeFile(openapiPath, spec, 'utf8');
+  console.log(`docs/openapi.json: ${spec === previous ? 'unchanged' : 'updated'}`);
+
   for (const warning of warnings) console.warn(`warning: ${warning}`);
+  if (warnings.length > 0) process.exitCode = 1;
 }
 
 await main();

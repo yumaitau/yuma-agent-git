@@ -47,7 +47,7 @@ export type ImportMessage =
       after: string;
     };
 
-const importRequestSchema = z.object({
+export const importRequestSchema = z.object({
   source: z.string().regex(/^github:[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/),
   mode: z.enum(['snapshot', 'full_history']).default('snapshot'),
   ref: z.string().min(1).default('main'),

@@ -41,7 +41,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
     );
   return parsed.data;
 }
-const createPull = z.object({
+export const createPull = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().max(20000).default(''),
   head_cs: z.string().regex(/^[a-f0-9]{64}$/),
@@ -288,15 +288,13 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
     return errorResponse(c, err);
   }
 });
+export const createRunSchema = z.object({
+  head: z.string().min(1).optional(),
+  publish: z.boolean().default(false),
+});
 collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
   try {
-    const input = parse(
-      z.object({
-        head: z.string().min(1).optional(),
-        publish: z.boolean().default(false),
-      }),
-      await readJsonBody(c),
-    );
+    const input = parse(createRunSchema, await readJsonBody(c));
     const loaded = await loadWholeRepo(
       c,
       input.publish ? 'admin' : 'write',

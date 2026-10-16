@@ -20,7 +20,7 @@ import { newBudget, remaining } from './budget';
  */
 export const mcpRoutes = new Hono<AppEnv>();
 
-const rpcSchema = z.object({
+export const rpcSchema = z.object({
   jsonrpc: z.literal('2.0').optional(),
   method: z.enum(['initialize', 'tools/list', 'tools/call']),
   params: z.unknown().optional(),

@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { RequestBody } from '@yuma/agent-git-sdk';
 import { ApiError, type YagApi } from './api.js';
 import { loadState, saveState, type YagState } from './config.js';
 import { sha256Hex } from './checkout.js';
@@ -92,7 +93,7 @@ export async function commit(opts: {
   const state = await loadState(opts.dir);
   const st = await status(opts.dir, state);
 
-  const changes: unknown[] = [];
+  const changes: RequestBody<'createChangeset'>['changes'] = [];
   const entries = new Map(state.entries.map((entry) => [entry.path, entry]));
   for (const path of st.deleted) {
     changes.push({ path, op: 'del' });
