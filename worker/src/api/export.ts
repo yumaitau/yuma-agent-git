@@ -9,12 +9,20 @@ import { startExportToGithub } from '../bridge/exportPush';
 import { resolveRevision } from '../core/read';
 import { loadWholeRepo } from '../auth/guards';
 import { recordAudit } from '../audit/record';
+import { bundleStream } from '../git/bundle';
+import { GitProtocolError } from '../git/pktline';
+import { commitShas, gitRefName } from '../git/upload-pack';
+import { q } from '../db/client';
+import { listRefs } from '../db/repos';
+import type { RepoRecord } from '../db/client';
 
 /**
  * Export routes (issue #16) — the off-ramp:
  *   GET  /api/v1/repos/:repo/export/tarball?cs=…
  *   GET  /api/v1/repos/:repo/export/fast-import?head=…&mode=snapshot|full|ranged&from=…
  *   POST /api/v1/repos/:repo/export/github  {target_branch, head?}
+ *   GET  /api/v1/repos/:repo/export/bundle     Git bundle of every branch and tag (#70)
+ *   GET  /api/v1/repos/:repo/export/metadata   issues, pull requests, reviews… as JSON (#70)
  *
  * Every export carries every path, so all three need whole-repository access
  * (path-restricted callers get 403 `whole_repository_required`).
@@ -158,5 +166,119 @@ exportRoutes.post('/repos/:repo{.+}/export/github', async (c) => {
     return c.json({ job_id: started.job_id, status: 'queued' }, 202);
   } catch (err) {
     return errorResponse(c, err);
+  }
+});
+
+/** Rows of a repository's collaboration data, keyed by table (#70). */
+const REPO_TABLES: [table: string, where: string][] = [
+  ['tags', 'repo_id = ?1'],
+  ['labels', 'repo_id = ?1'],
+  ['milestones', 'repo_id = ?1'],
+  ['issues', 'repo_id = ?1'],
+  ['issue_comments', 'issue_id IN (SELECT id FROM issues WHERE repo_id = ?1)'],
+  ['issue_labels', 'issue_id IN (SELECT id FROM issues WHERE repo_id = ?1)'],
+  ['issue_assignees', 'issue_id IN (SELECT id FROM issues WHERE repo_id = ?1)'],
+  ['issue_events', 'issue_id IN (SELECT id FROM issues WHERE repo_id = ?1)'],
+  ['issue_links', 'parent_id IN (SELECT id FROM issues WHERE repo_id = ?1)'],
+  ['pull_requests', 'repo_id = ?1'],
+  ['pull_reviews', 'pull_id IN (SELECT id FROM pull_requests WHERE repo_id = ?1)'],
+  ['review_requests', 'pull_id IN (SELECT id FROM pull_requests WHERE repo_id = ?1)'],
+  ['review_threads', 'pull_id IN (SELECT id FROM pull_requests WHERE repo_id = ?1)'],
+  [
+    'review_comments',
+    'thread_id IN (SELECT t.id FROM review_threads t JOIN pull_requests p ON p.id = t.pull_id WHERE p.repo_id = ?1)',
+  ],
+  ['releases', 'repo_id = ?1'],
+  ['release_assets', 'repo_id = ?1'],
+  ['lfs_objects', 'repo_id = ?1'],
+  ['lfs_locks', 'repo_id = ?1'],
+];
+const PEOPLE = ['author_id', 'created_by', 'owner_id', 'uploaded_by', 'author'];
+
+export async function repoMetadata(
+  env: Env,
+  repo: RepoRecord,
+): Promise<Record<string, unknown>> {
+  const tables: Record<string, Record<string, unknown>[]> = {};
+  const people = new Set<string>();
+  for (const [table, where] of REPO_TABLES) {
+    const rows = await q<Record<string, unknown>>(
+      env,
+      `SELECT * FROM ${table} WHERE ${where}`,
+      [repo.id],
+    );
+    tables[table] = rows;
+    for (const row of rows)
+      for (const col of PEOPLE) if (typeof row[col] === 'string') people.add(row[col]);
+  }
+  const users = await q<{ id: string; login: string }>(
+    env,
+    'SELECT id, login FROM users WHERE id IN (SELECT value FROM json_each(?))',
+    [JSON.stringify([...people])],
+  );
+  const refs = await listRefs(env, repo.id);
+  const shas = await commitShas(
+    env,
+    repo.id,
+    refs.map((r) => r.head),
+  );
+  return {
+    format: 'yag-repo-export/1',
+    exported_at: new Date().toISOString(),
+    repository: repo,
+    refs: refs.map((r) => ({
+      name: gitRefName(r.name),
+      changeset: r.head,
+      sha1: shas.get(r.head) ?? null,
+    })),
+    users: Object.fromEntries(users.map((u) => [u.id, u.login])),
+    tables,
+  };
+}
+
+/** Git IDs still being computed: the client retries. */
+function retryLater(c: Parameters<typeof apiError>[0], err: unknown): Response | null {
+  return err instanceof GitProtocolError
+    ? apiError(c, 503, 'export_not_ready', err.message)
+    : null;
+}
+
+exportRoutes.get('/repos/:repo{.+}/export/bundle', async (c) => {
+  try {
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const stream = await bundleStream(c.env, loaded.repo);
+    if (!stream)
+      return apiError(c, 409, 'empty_repository', 'the repository has no branches yet');
+    await recordAudit(c, {
+      action: 'repo.export',
+      repo: loaded.repo,
+      target: { destination: 'bundle' },
+    });
+    return new Response(stream, {
+      headers: {
+        'content-type': 'application/x-git-bundle',
+        'content-disposition': `attachment; filename="${loaded.repo.slug.replace(/\//g, '-')}.bundle"`,
+        'cache-control': 'private, no-store',
+      },
+    });
+  } catch (err) {
+    return retryLater(c, err) ?? errorResponse(c, err);
+  }
+});
+
+exportRoutes.get('/repos/:repo{.+}/export/metadata', async (c) => {
+  try {
+    const loaded = await loadWholeRepo(c, 'read', c.req.param('repo'));
+    if (!loaded.ok) return loaded.response;
+    const body = await repoMetadata(c.env, loaded.repo);
+    await recordAudit(c, {
+      action: 'repo.export',
+      repo: loaded.repo,
+      target: { destination: 'metadata' },
+    });
+    return c.json(body, 200, { 'cache-control': 'private, no-store' });
+  } catch (err) {
+    return retryLater(c, err) ?? errorResponse(c, err);
   }
 });

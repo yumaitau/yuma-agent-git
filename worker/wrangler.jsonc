@@ -47,6 +47,9 @@
       "binding": "OBJECTS",
       "bucket_name": "yag-objects",
     },
+    // Backups (issue #70), local only: production binds a bucket in a
+    // separate account once one exists (docs/operations/backup-dr.md).
+    { "binding": "BACKUPS", "bucket_name": "yag-backups" },
   ],
   "queues": {
     "producers": [

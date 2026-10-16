@@ -28,6 +28,7 @@ export type AuditAction =
   | 'lfs.lock'
   | 'lfs.unlock'
   | 'lfs.object.delete'
+  | 'backup.create'
   | 'member.set'
   | 'member.remove'
   | 'path_rule.create'

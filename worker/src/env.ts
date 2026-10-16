@@ -6,6 +6,20 @@ export interface Env {
   DB: D1Database;
   /** R2 — content-addressed object store (blobs + trees). */
   OBJECTS: R2Bucket;
+  /**
+   * Backups (issue #70): a separate bucket, ideally in another account. Unset
+   * disables scheduled backups (docs/operations/backup-dr.md).
+   */
+  BACKUPS?: R2Bucket;
+  /** AES-256-GCM key for backup parts, base64 of 32 bytes; secret, kept out of D1 and R2. */
+  BACKUP_ENCRYPTION_KEY?: string;
+  /** Minutes between scheduled backups (default 15) and days kept (default 30). */
+  BACKUP_INTERVAL_MINUTES?: string;
+  BACKUP_RETENTION_DAYS?: string;
+  /** Comma-separated user ids allowed to list and start backups. */
+  BACKUP_ADMIN_USER_IDS?: string;
+  /** Set only in a fresh environment: the backup id the cron restores. */
+  RESTORE_BACKUP_ID?: string;
   /** Queue `derived-data` — deferred derived-data computation. */
   DERIVED_QUEUE: Queue;
   /** Queue `agent-jobs` — agent task dispatch. */

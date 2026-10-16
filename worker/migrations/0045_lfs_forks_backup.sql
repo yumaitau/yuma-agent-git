@@ -18,17 +18,18 @@ CREATE TABLE lfs_locks (
   UNIQUE (repo_id, path)
 );
 
--- Scheduled backups (issue #70): D1 rows and R2 manifests copied to the
--- backup bucket under `backups/<id>/`, one step per cron tick.
+-- Backups (issue #70): D1 rows and R2 manifests copied to the backup bucket
+-- under `backups/<id>/`, a few pages per cron tick (backup/backup.ts). A
+-- `restore` row tracks a restore into a fresh environment.
 CREATE TABLE backups (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK (status IN ('running','done','failed','expired')),
-  trigger TEXT NOT NULL CHECK (trigger IN ('schedule','manual')),
+  kind TEXT NOT NULL CHECK (kind IN ('schedule','manual','restore')),
   created_by TEXT,
-  cursor TEXT NOT NULL,                -- JSON: phase, table, rowid, R2 cursor
-  rows INTEGER NOT NULL DEFAULT 0,
-  objects INTEGER NOT NULL DEFAULT 0,
-  bytes INTEGER NOT NULL DEFAULT 0,
+  cursor TEXT NOT NULL,                -- JSON: phase, table, page, R2 cursor
+  row_count INTEGER NOT NULL DEFAULT 0,
+  object_count INTEGER NOT NULL DEFAULT 0,
+  byte_count INTEGER NOT NULL DEFAULT 0,
   error TEXT,
   started_at INTEGER NOT NULL,
   finished_at INTEGER
