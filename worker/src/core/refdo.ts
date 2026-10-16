@@ -7,7 +7,7 @@ import { mutatePullLocked } from '../reviews/pulls';
 import { settings, parsePolicy } from '../ci/config';
 import { run } from '../db/client';
 import { getRepo } from '../db/repos';
-import { validateRefName } from './refs';
+import { TAG_PREFIX, validateRefName } from './refs';
 
 const moveSchema = z.object({
   repo_id: z.string().min(1),
@@ -159,6 +159,14 @@ export class RefLockDO {
       }
       await setRef(this.env, repoId, name, to);
       return ok(null, to);
+    }
+
+    // Tags never move without force, as `git push` treats them.
+    if (name.startsWith(TAG_PREFIX) && !force && to !== current.head) {
+      return fail(409, 'tag_exists', `tag ${name} already exists`, {
+        expected: from,
+        actual: current.head,
+      });
     }
 
     const config = await settings(this.env, repoId);

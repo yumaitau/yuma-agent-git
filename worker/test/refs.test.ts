@@ -6,7 +6,12 @@ import type { TestEnv } from './helpers';
 import { createRepo, getRef, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import type { Changeset } from '../src/core/changesets';
-import { moveRefViaDO, readRefHead, validateRefName } from '../src/core/refs';
+import {
+  moveRefViaDO,
+  readRefHead,
+  validateBranchName,
+  validateRefName,
+} from '../src/core/refs';
 import { ConflictError, RequestValidationError } from '../src/core/errors';
 
 const testEnv = env as unknown as TestEnv;
@@ -189,26 +194,76 @@ describe('ref compare-and-swap (RefLockDO)', () => {
     ).rejects.toMatchObject({ code: 'ref_stale', details: { expected: null } });
   });
 
-  it('only allows main and release/* refs (refs are discouraged)', async () => {
-    expect(validateRefName('main')).toBe('main');
-    expect(validateRefName('release/1.2')).toBe('release/1.2');
-    expect(validateRefName('release/2026.10-rc.1')).toBe('release/2026.10-rc.1');
+  it('scion mode only allows main, release/* and agent refs', async () => {
+    expect(validateRefName('main', 'scion')).toBe('main');
+    expect(validateRefName('release/1.2', 'scion')).toBe('release/1.2');
+    expect(validateRefName('release/2026.10-rc.1', 'scion')).toBe('release/2026.10-rc.1');
+    expect(validateRefName('refs/agents/a1/task', 'scion')).toBe('refs/agents/a1/task');
     for (const bad of [
       'feature/x',
       'Main',
       'release/',
       'release/A',
       'refs/heads/main',
+      'refs/tags/v1',
       '',
-      'x'.repeat(65),
     ]) {
-      expect(() => validateRefName(bad)).toThrow(RequestValidationError);
+      expect(() => validateRefName(bad, 'scion')).toThrow(RequestValidationError);
     }
     try {
-      validateRefName('feature/x');
+      validateRefName('feature/x', 'scion');
     } catch (err) {
       expect(err).toMatchObject({ code: 'invalid_ref_name' });
     }
+  });
+
+  it('git mode follows check-ref-format', () => {
+    for (const good of [
+      'main',
+      'feature/foo-bar',
+      'user/justin/fix',
+      'v1.2.3',
+      'Main',
+      'release/A',
+      'refs/tags/v1.2.3',
+      'refs/agents/01ABC/task-7',
+    ]) {
+      expect(validateRefName(good)).toBe(good);
+    }
+    for (const bad of [
+      '',
+      '@',
+      'HEAD',
+      '-x',
+      'a b',
+      'a~1',
+      'a^',
+      'a:b',
+      'a?',
+      'a*',
+      'a[1',
+      'a\\b',
+      'a\x01b',
+      'a\x7fb',
+      'a..b',
+      'a@{1}',
+      'a//b',
+      '/a',
+      'a/',
+      'a.',
+      '.hidden',
+      'x/.y',
+      'x.lock',
+      'x.lock/y',
+      'refs/heads/main',
+      'refs/tags/',
+      'refs/agents/a1',
+      'refs/agents/a.b/task',
+      'x'.repeat(256),
+    ]) {
+      expect(() => validateRefName(bad), bad).toThrow(RequestValidationError);
+    }
+    expect(() => validateBranchName('refs/tags/v1')).toThrow(RequestValidationError);
   });
 
   it('force bypasses staleness — pinned response semantics', async () => {
@@ -375,7 +430,7 @@ describe('ref routes', () => {
     });
     expect(unknownRepo.status).toBe(404);
 
-    const badName = await putRef('acme/validate', 'feature/x', {
+    const badName = await putRef('acme/validate', 'feature..x', {
       from: null,
       to: cs0.id,
     });

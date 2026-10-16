@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { C, T } from '../db/schema';
-import { parseRepoRow, q } from '../db/client';
+import { parseRepoRow, q, run } from '../db/client';
 import { apiError, errorResponse, readJsonBody } from './errors';
-import { createRepo, getRepoBySlug, listRefs } from '../db/repos';
+import { createRepo, getRef, getRepoBySlug, listRefs, listRefsPage } from '../db/repos';
 import { loadAdminRepo, loadReadableRepo } from '../auth/guards';
 import { decide } from '../auth/rbac';
 import { commitChanges } from '../core/commit';
-import { moveRefViaDO, validateRefName } from '../core/refs';
+import { moveRefViaDO, validateBranchName } from '../core/refs';
 import type { AppEnv } from '../auth/principal';
 
 /**
@@ -43,7 +43,7 @@ reposRoutes.post('/api/v1/repos', async (c) => {
     if (await getRepoBySlug(c.env, parsed.data.slug)) {
       return apiError(c, 409, 'repo_exists', `repo ${parsed.data.slug} already exists`);
     }
-    validateRefName(parsed.data.default_branch ?? 'main');
+    validateBranchName(parsed.data.default_branch ?? 'main');
     const repo = await createRepo(c.env, {
       slug: parsed.data.slug,
       visibility: parsed.data.visibility,
@@ -72,6 +72,54 @@ reposRoutes.get('/api/v1/repos/:owner/:name', async (c) => {
   }
 });
 
+const updateRepoSchema = z.object({
+  default_branch: z.string().min(1).max(255).optional(),
+  refs_mode: z.enum(['scion', 'git']).optional(),
+});
+
+// Repo settings (issue #33): the default branch is what HEAD points at, so it
+// must name an existing branch once the repo has any refs.
+reposRoutes.put('/api/v1/repos/:owner/:name', async (c) => {
+  try {
+    const loaded = await loadAdminRepo(
+      c,
+      `${c.req.param('owner')}/${c.req.param('name')}`,
+    );
+    if (!loaded.ok) return loaded.response;
+    const repo = loaded.repo;
+    const parsed = updateRepoSchema.safeParse(await readJsonBody(c));
+    if (!parsed.success) {
+      return apiError(c, 400, 'invalid_request', 'invalid repo update', {
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+    }
+    const mode = parsed.data.refs_mode ?? repo.refs_mode ?? 'scion';
+    const branch = parsed.data.default_branch ?? repo.default_branch;
+    if (parsed.data.default_branch !== undefined) {
+      validateBranchName(branch, mode);
+      const empty =
+        (await listRefsPage(c.env, repo.id, { prefix: '', after: '', limit: 1 }))
+          .length === 0;
+      if (!empty && !(await getRef(c.env, repo.id, branch))) {
+        return apiError(c, 400, 'ref_not_found', `no branch ${branch}`);
+      }
+    }
+    await run(c.env, 'UPDATE repos SET default_branch = ?, refs_mode = ? WHERE id = ?', [
+      branch,
+      mode,
+      repo.id,
+    ]);
+    return c.json({ repo: { ...repo, default_branch: branch, refs_mode: mode } }, 200, {
+      'cache-control': 'private, no-store',
+    });
+  } catch (err) {
+    return errorResponse(c, err);
+  }
+});
+
 // Native bootstrap: deterministic content allows retry after an interrupted write.
 // Ref CAS prevents concurrent requests from replacing a branch that already exists.
 reposRoutes.post('/api/v1/repos/:owner/:name/initialize', async (c) => {
@@ -82,7 +130,7 @@ reposRoutes.post('/api/v1/repos/:owner/:name/initialize', async (c) => {
     );
     if (!loaded.ok) return loaded.response;
     const repo = loaded.repo;
-    const name = validateRefName(repo.default_branch);
+    const name = validateBranchName(repo.default_branch, repo.refs_mode ?? 'scion');
     const access = await decide(c.env, repo, c.get('principal'), 'write', 'README.md');
     if (!access.allowed)
       return apiError(c, 403, 'forbidden', 'README write access required');

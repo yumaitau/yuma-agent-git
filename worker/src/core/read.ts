@@ -10,8 +10,8 @@ const CS_ID_RE = /^[0-9a-f]{64}$/;
  * Resolve a revision string to a changeset, or null when unresolvable.
  *
  * Accepted forms: a changeset id, `ref:<name>`, or a bare ref name (`main`,
- * `release/1.2`). Refs are discouraged global state (architecture §1.4) —
- * everything else is a changeset id.
+ * `feature/x`, a tag such as `v1.2.3`). Refs are discouraged global state
+ * (architecture §1.4) — everything else is a changeset id.
  */
 export async function lookupRev(
   env: Env,
@@ -32,7 +32,10 @@ async function lookupRef(
   repoId: string,
   name: string,
 ): Promise<Changeset | null> {
-  const ref = await getRef(env, repoId, name);
+  // a bare tag name (`v1.2.3`) resolves like Git's refs/tags/ lookup
+  const ref =
+    (await getRef(env, repoId, name)) ??
+    (name.startsWith('refs/') ? null : await getRef(env, repoId, `refs/tags/${name}`));
   if (!ref) return null;
   return getChangeset(env, repoId, ref.head);
 }

@@ -36,14 +36,16 @@ export async function createRepo(
     default_branch: input.defaultBranch ?? 'main',
     created_at: now,
     visibility: input.visibility ?? 'private',
+    // new repos take Git ref rules; the migration default keeps pilots on 'scion'
+    refs_mode: 'git' as const,
   };
   await run(
     env,
     `INSERT INTO ${T.repos}
        (${C.repos.id}, ${C.repos.slug}, ${C.repos.githubInstallationId},
         ${C.repos.githubRepoId}, ${C.repos.defaultBranch}, ${C.repos.createdAt},
-        ${C.repos.visibility}, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ${C.repos.visibility}, created_by, refs_mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.slug,
@@ -53,6 +55,7 @@ export async function createRepo(
       row.created_at,
       row.visibility,
       row.created_by,
+      row.refs_mode,
     ],
   );
   return parseRepoRow(row);
@@ -113,6 +116,44 @@ export async function listRefs(env: Env, repoId: string): Promise<RefRecord[]> {
     env,
     `SELECT * FROM ${T.refs} WHERE ${C.refs.repoId} = ? ORDER BY ${C.refs.name}`,
     [repoId],
+  );
+  return rows.map(parseRefRow);
+}
+
+/**
+ * One page of refs, keyset-paginated on name: the `(repo_id, name)` primary
+ * key serves both the prefix range and the cursor. Agent work refs stay
+ * hidden unless the prefix asks for `refs/agents/` (as Git's `ls-refs` does).
+ */
+export async function listRefsPage(
+  env: Env,
+  repoId: string,
+  opts: { prefix: string; after: string; limit: number },
+): Promise<RefRecord[]> {
+  const { prefix } = opts;
+  // smallest string above every name that starts with prefix
+  const upper =
+    prefix === ''
+      ? null
+      : prefix.slice(0, -1) +
+        String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
+  const rows = await q(
+    env,
+    `SELECT * FROM ${T.refs}
+      WHERE ${C.refs.repoId} = ? AND ${C.refs.name} >= ? AND ${C.refs.name} > ?
+        AND (? IS NULL OR ${C.refs.name} < ?)
+        AND (? = 1 OR ${C.refs.name} NOT LIKE 'refs/agents/%')
+      ORDER BY ${C.refs.name}
+      LIMIT ?`,
+    [
+      repoId,
+      prefix,
+      opts.after,
+      upper,
+      upper,
+      prefix.startsWith('refs/agents/') ? 1 : 0,
+      opts.limit,
+    ],
   );
   return rows.map(parseRefRow);
 }

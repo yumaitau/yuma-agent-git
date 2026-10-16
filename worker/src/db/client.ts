@@ -138,6 +138,8 @@ export const repoRowSchema = z.object({
   visibility: z.enum(['private', 'public']),
   /** Repo creator (migration 0006) — creators are admins. */
   created_by: z.string().nullable().optional(),
+  /** Ref naming rules (migration 0011); absent means the pilot's 'scion'. */
+  refs_mode: z.enum(['scion', 'git']).optional(),
 });
 export type RepoRecord = z.infer<typeof repoRowSchema>;
 

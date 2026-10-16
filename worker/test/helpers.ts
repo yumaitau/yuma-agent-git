@@ -36,6 +36,7 @@ const WIPE_ORDER = [
   'import_jobs',
   'agent_tasks',
   'derived_data',
+  'tags',
   'refs',
   'changesets',
   'sessions',

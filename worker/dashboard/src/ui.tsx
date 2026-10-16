@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, authorName } from './api';
-import type { Author } from './api';
+import type { Author, Ref } from './api';
 
 // ---------------------------------------------------------------------------
 // Formatters
@@ -166,5 +166,50 @@ export function Field({
       {label}
       {children}
     </label>
+  );
+}
+
+/**
+ * Branch/tag picker. Branches are short names, tags live under `refs/tags/`;
+ * agent work refs are never listed. A value that is not a listed ref (a
+ * changeset id) shows as its own option.
+ */
+export function RefPicker({
+  refs,
+  value,
+  onChange,
+}: {
+  refs: Ref[];
+  value: string;
+  onChange: (name: string) => void;
+}): ReactElement {
+  const branches = refs.filter((r) => !r.name.startsWith('refs/'));
+  const tags = refs.filter((r) => r.name.startsWith('refs/tags/'));
+  return (
+    <select
+      aria-label="Branch or tag"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {!refs.some((r) => r.name === value) && (
+        <option value={value}>{shortId(value)}</option>
+      )}
+      <optgroup label="Branches">
+        {branches.map((r) => (
+          <option key={r.name} value={r.name}>
+            {r.name}
+          </option>
+        ))}
+      </optgroup>
+      {tags.length > 0 && (
+        <optgroup label="Tags">
+          {tags.map((r) => (
+            <option key={r.name} value={r.name}>
+              {r.name.slice('refs/tags/'.length)}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </select>
   );
 }

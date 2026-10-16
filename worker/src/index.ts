@@ -8,6 +8,7 @@ import { agentJobsQueue } from './queues/agentJobs';
 import { ciQueue } from './ci/runs';
 import { q, run } from './db/client';
 import { flushMetrics } from './observability/metrics';
+import { expireAgentRefs } from './core/refs';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -22,9 +23,10 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush per-invocation counters into component_metrics. */
+  /** Cron (`* * * * *`): flush counters, expire idle agent refs, sweep CI runs. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
+    await expireAgentRefs(env);
     const expired = await q<{ id: string; log_key: string }>(
       env,
       'SELECT id, log_key FROM ci_runs WHERE log_key IS NOT NULL AND finished_at < ? LIMIT 50',

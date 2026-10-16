@@ -20,6 +20,7 @@ import {
   ErrorNotice,
   Field,
   Loading,
+  RefPicker,
   formatRelative,
   shortId,
 } from '../ui';
@@ -95,14 +96,65 @@ function MoveRefForm({
   );
 }
 
+/** Admin-only: point the repository's default branch (HEAD) at another branch. */
+function DefaultBranchForm({
+  refs,
+  current,
+  onSaved,
+}: {
+  refs: Ref[];
+  current: string;
+  onSaved: () => void;
+}): ReactElement {
+  const slug = useSlug();
+  const toast = useToast();
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+
+  const save = useCallback(async () => {
+    setBusy(true);
+    try {
+      await api.updateRepo(slug, { default_branch: name });
+      toast.show(`default branch is now ${name}`);
+      onSaved();
+    } catch (err) {
+      toast.showError(err);
+    } finally {
+      setBusy(false);
+    }
+  }, [slug, name, toast, onSaved]);
+
+  return (
+    <div className="row" style={{ alignItems: 'flex-end', marginTop: 8 }}>
+      <Field label="Default branch">
+        <select value={name} onChange={(e) => setName(e.target.value)}>
+          {refs
+            .filter((r) => !r.name.startsWith('refs/'))
+            .map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name}
+              </option>
+            ))}
+        </select>
+      </Field>
+      <button disabled={busy || name === current} onClick={() => void save()}>
+        Set default branch
+      </button>
+    </div>
+  );
+}
+
 export function RepoOverviewView(): ReactElement {
   const slug = useSlug();
-  const { data: metadata, error: repoError } = usePolling(
-    () => api.getRepo(slug),
-    30_000,
-  );
+  const {
+    data: metadata,
+    error: repoError,
+    refresh: refreshRepo,
+  } = usePolling(() => api.getRepo(slug), 30_000);
   const branch = metadata?.repo.default_branch ?? 'main';
-  const head = `ref:${branch}`;
+  const [picked, setPicked] = useState<string | null>(null);
+  const selected = picked ?? branch;
+  const head = `ref:${selected}`;
   const [initializing, setInitializing] = useState(false);
   const [initError, setInitError] = useState<ApiError | null>(null);
   const {
@@ -118,7 +170,7 @@ export function RepoOverviewView(): ReactElement {
     refresh: refreshChangesets,
   } = usePolling<Changeset[]>(() => api.listChangesets(slug, { limit: 12 }), 15_000);
 
-  const exportHead = refs?.find((r) => r.name === branch)?.head ?? head;
+  const exportHead = refs?.find((r) => r.name === selected)?.head ?? head;
   const quote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`;
   const clone = `yag clone ${quote(slug)} ./project --api ${quote(window.location.origin)} --rev ${quote(head)}\ncd project\nyag status`;
   const curl = `curl -fsSL "${window.location.origin}${fastImportUrl(slug, head, 'snapshot')}" -o ${slug.replace(/\//g, '-')}.fast-import\n# then, in an empty git repo:\ngit init git-export && cd git-export\ngit fast-import < ../${slug.replace(/\//g, '-')}.fast-import`;
@@ -144,6 +196,9 @@ export function RepoOverviewView(): ReactElement {
           {slug}
         </h1>
         <div className="row">
+          {refs && refs.length > 0 && (
+            <RefPicker refs={refs} value={selected} onChange={setPicked} />
+          )}
           <Link className="btn" to={`/r/${slug}/diff`}>
             Diff explorer
           </Link>
@@ -221,6 +276,9 @@ export function RepoOverviewView(): ReactElement {
         </div>
       ) : (
         <Empty>No branches yet.</Empty>
+      )}
+      {metadata?.can_admin && refs?.some((r) => !r.name.startsWith('refs/')) && (
+        <DefaultBranchForm refs={refs} current={branch} onSaved={refreshRepo} />
       )}
 
       <h2>Latest changesets</h2>
