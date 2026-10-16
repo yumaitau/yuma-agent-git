@@ -6,7 +6,8 @@ import { parsePolicy, reservation } from './config';
 import { parseContext, type RunContext } from './context';
 import { jobGate } from './environments';
 import { admitRun } from './runs';
-import type { Pipeline } from './spec';
+import { runnerLabels, type Pipeline } from './spec';
+import { stopSelfHosted } from './runners';
 
 /**
  * Pipeline runs (issue #47): a DAG of jobs from one spec file. A job starts as
@@ -110,6 +111,7 @@ export async function startPipeline(env: Env, input: StartInput): Promise<string
           dockerfile: 'Dockerfile',
           image: null,
           services: job.services,
+          runs_on: job.runs_on,
           environment: job.environment,
           secrets: job.secrets,
           permissions: job.permissions,
@@ -230,6 +232,7 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
         )
           continue;
         try {
+          const runsOn = runnerLabels(config);
           const started = await admitRun(
             env,
             {
@@ -239,7 +242,9 @@ export async function advancePipeline(env: Env, id: string): Promise<void> {
               config,
               actor: row.requested_by,
               publish: false,
-              reserved: reservation(parsePolicy(JSON.parse(config))),
+              // self-hosted runners cost the Cloudflare budget nothing
+              reserved: runsOn ? 0 : reservation(parsePolicy(JSON.parse(config))),
+              runsOn,
               pipelineRunId: id,
               jobKey: job.key,
               context: context && { ...context, approval_id: approval?.id ?? null },
@@ -327,6 +332,7 @@ export async function cancelPipeline(
     [id],
   );
   for (const job of started) {
+    if (await stopSelfHosted(env, job.id)) continue;
     if (env.CI_RUNNER) {
       try {
         await env.CI_RUNNER.get(env.CI_RUNNER.idFromName(job.id)).fetch(

@@ -272,6 +272,12 @@ function evaluateAccess(ctx: DecisionContext, perm: Perm, path?: string): Decisi
   // Token limits constrain every role and path grant, including repo creators.
   // An agent token also gets the human's role below: the intersection (#57).
   if (principal !== null && principal.kind !== 'user') {
+    // A CI clone token reads, whole, the one repo its run was admitted for
+    // (issue #48); scheduled runs have no human role to fall back on.
+    if (principal.kind === 'token' && principal.ciRunId)
+      return {
+        allowed: principal.repoId === repo.id && (perm === 'read' || perm === 'history'),
+      };
     const repos = boundRepos(principal);
     if (repos !== null && !repos.includes(repo.id)) return { allowed: false };
     if (principal.kind === 'agent' && perm === 'admin') return { allowed: false };

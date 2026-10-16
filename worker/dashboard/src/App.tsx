@@ -6,6 +6,7 @@ import { CiView, HistoryView, PullsView, PullView } from './views/Collaboration'
 import { IssuesView, NewIssueView } from './views/Issues';
 import { IssueView } from './views/IssueView';
 import { CiAccessView } from './views/CiAccess';
+import { RunnersView } from './views/Runners';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
 import { HomeView } from './views/Home';
@@ -55,6 +56,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/security" element={<SecurityView />} />
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
+                <Route path="/orgs/:org/runners" element={<RunnersView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />
                 <Route path="/r/:owner/:name/issues" element={<IssuesView />} />
                 <Route path="/r/:owner/:name/issues/new" element={<NewIssueView />} />
@@ -63,6 +65,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
                 <Route path="/r/:owner/:name/ci" element={<CiView />} />
                 <Route path="/r/:owner/:name/ci/access" element={<CiAccessView />} />
+                <Route path="/r/:owner/:name/ci/runners" element={<RunnersView />} />
                 <Route path="/r/:owner/:name" element={<RepoOverviewView />} />
                 <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
                 <Route path="/r/:owner/:name/diff" element={<DiffExplorerView />} />

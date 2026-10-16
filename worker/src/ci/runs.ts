@@ -105,11 +105,15 @@ export interface Admission {
   jobKey?: string;
   /** Trigger context for secrets, environments and OIDC claims. */
   context?: RunContext | null;
+  /** Self-hosted runner labels (issue #48); null or absent for the built-in pool. */
+  runsOn?: string[] | null;
 }
 
 /**
  * Queue one run inside the shared ledger: the monthly budget, two runner slots
  * and the caller's duplicate `guard`. Returns null when it is not admitted.
+ * Self-hosted runs (issue #48) skip the budget and the built-in slots and wait
+ * for a runner to claim them instead of a queue message.
  */
 export async function admitRun(
   env: Env,
@@ -119,14 +123,16 @@ export async function admitRun(
   const now = Date.now();
   const id = crypto.randomUUID();
   const month = new Date(now).toISOString().slice(0, 7);
+  const runsOn = a.runsOn ? JSON.stringify(a.runsOn) : null;
   // Single SQLite statement serializes admission across concurrent requests.
   // Never refund reservations: retries, failures and cancellations cannot hide spend.
   const inserted = await env.DB.prepare(
     `INSERT INTO ci_runs
-    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key, context)
-    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?
-    WHERE (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE month = ?) + ? <= ?
-      AND (SELECT COUNT(*) FROM ci_runs WHERE state IN ('queued','running')) < 2
+    (id, repo_id, head_cs, settings_version, config, requested_by, state, publish, month, reserved_micros, created_at, pipeline_run_id, job_key, context, runs_on)
+    SELECT ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE (? IS NOT NULL OR (
+      (SELECT COALESCE(SUM(reserved_micros), 0) FROM ci_runs WHERE month = ?) + ? <= ?
+      AND (SELECT COUNT(*) FROM ci_runs WHERE state IN ('queued','running') AND runs_on IS NULL) < 2))
       AND ${guard.sql}`,
   )
     .bind(
@@ -143,6 +149,8 @@ export async function admitRun(
       a.pipelineRunId ?? null,
       a.jobKey ?? null,
       a.context ? JSON.stringify(a.context) : null,
+      runsOn,
+      runsOn,
       month,
       a.reserved,
       monthlyBudget(env),
@@ -150,6 +158,7 @@ export async function admitRun(
     )
     .run();
   if (!inserted.meta.changes) return null;
+  if (runsOn) return id;
   try {
     await env.CI_QUEUE!.send({ run_id: id });
   } catch {

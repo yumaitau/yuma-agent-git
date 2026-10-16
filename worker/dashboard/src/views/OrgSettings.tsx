@@ -309,6 +309,12 @@ function OrgDetail({ slug }: { slug: string }): ReactElement {
       <h1>{org.display_name}</h1>
       <div className="small muted">
         <code>{org.slug}</code> · your role <Chip kind="info">{role}</Chip>
+        {canManage && (
+          <>
+            {' '}
+            · <Link to={`/orgs/${org.slug}/runners`}>Self-hosted runners</Link>
+          </>
+        )}
       </div>
 
       <div className="panel">

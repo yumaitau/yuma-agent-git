@@ -144,6 +144,29 @@ const PURPOSES: Record<string, string> = {
   'GET /ci/oidc/jwks': 'CI OIDC signing keys, current and previous (public)',
   'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
   'POST /ci/oidc/token': 'ID token for a running job (`?audience=&lifetime=`)',
+  'POST /runner/v1/register':
+    'Register a self-hosted runner with a one-time token (credential returned once)',
+  'POST /runner/v1/jobs/claim':
+    'Long-poll for a job matching the runner labels (`?wait=`)',
+  'POST /runner/v1/jobs/:id/heartbeat':
+    'Extend the job lease; says whether it was cancelled',
+  'POST /runner/v1/jobs/:id/logs': 'Append a masked log chunk to a step (`?step=`)',
+  'POST /runner/v1/jobs/:id/steps/:step': 'Report a step state and exit code',
+  'PUT /runner/v1/jobs/:id/artifacts/:name': 'Upload a job artifact (100 MiB at most)',
+  'POST /runner/v1/jobs/:id/complete': 'Report the job result and release the runner',
+  'POST /api/v1/orgs/:org/runners/registration-token':
+    'One-time org runner registration token (1 hour, recent MFA)',
+  'GET /api/v1/orgs/:org/runners': 'Org self-hosted runners',
+  'PATCH /api/v1/orgs/:org/runners/:id':
+    'Disable, enable or mark an org runner trusted-only',
+  'DELETE /api/v1/orgs/:org/runners/:id': 'Revoke an org runner and fail its running job',
+  'POST /api/v1/repos/:repo/runners/registration-token':
+    'One-time repo runner registration token (1 hour, recent MFA)',
+  'GET /api/v1/repos/:repo/runners': 'Repo self-hosted runners',
+  'PATCH /api/v1/repos/:repo/runners/:id':
+    'Disable, enable or mark a repo runner trusted-only',
+  'DELETE /api/v1/repos/:repo/runners/:id':
+    'Revoke a repo runner and fail its running job',
   'GET /api/v1/repos/:repo/secrets':
     'Secret names (`?environment=`); values are write-only',
   'PUT /api/v1/repos/:repo/secrets/:name': 'Set a secret `{value}` (`?environment=`)',
@@ -308,6 +331,8 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
   if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
+  if (path === '/runner/v1/register') return { auth: 'registration token', perm: '—' };
+  if (path.startsWith('/runner/')) return { auth: 'runner credential', perm: 'own jobs' };
   if (path.includes('.git/')) {
     return {
       auth: 'token (Basic or Bearer)',
@@ -497,6 +522,8 @@ const SECURITY: Record<string, Record<string, string[]>[]> = {
   HMAC: [{ githubSignature: [] }],
   'SCIM token': [{ scimBearer: [] }],
   'CI request token': [{ ciJobBearer: [] }],
+  'registration token': [],
+  'runner credential': [{ runnerBearer: [] }],
   'token (Basic or Bearer)': [{ gitBasic: [] }, { bearer: [] }],
 };
 
@@ -599,6 +626,12 @@ function openapi(mod: WorkerModule, rows: Row[]): JsonObject {
           scheme: 'bearer',
           description:
             'Per-run CI request token (`yagjob_…`) from `YAG_ID_TOKEN_REQUEST_TOKEN` in the job',
+        },
+        runnerBearer: {
+          type: 'http',
+          scheme: 'bearer',
+          description:
+            'Self-hosted runner credential (`yagrun_…`) from `POST /runner/v1/register`',
         },
         githubSignature: {
           type: 'apiKey',

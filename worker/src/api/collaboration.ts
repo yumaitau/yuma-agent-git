@@ -23,6 +23,8 @@ import {
 } from '../ci/config';
 import { pullPipelines, pushPipelines } from '../ci/triggers';
 import { requestRun } from '../ci/environments';
+import { advancePipelines } from '../ci/planner';
+import { stopSelfHosted } from '../ci/runners';
 import { actorKindOf, contextFor, parseContext, runRef, triggerOf } from '../ci/context';
 import { recordAudit } from '../audit/record';
 import { nextNumber } from '../collab/issues';
@@ -503,7 +505,9 @@ collaborationRoutes.post(`${base}/ci/runs/:id/cancel`, async (c) => {
       [c.req.param('id'), loaded.repo.id],
     );
     if (!job) return apiError(c, 404, 'run_not_found', 'Run not found');
-    if (c.env.CI_RUNNER) {
+    // a self-hosted runner sees the cancellation on its next heartbeat
+    if (await stopSelfHosted(c.env, job.id)) await advancePipelines(c.env);
+    else if (c.env.CI_RUNNER) {
       const response = await c.env.CI_RUNNER.get(
         c.env.CI_RUNNER.idFromName(job.id),
       ).fetch('https://runner/cancel', {

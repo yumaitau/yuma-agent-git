@@ -51,6 +51,8 @@ import { decisionBody, environmentBody, secretBody, variableBody } from './secre
 import { lifetimeSchema } from '../ci/oidc';
 import { createTagSchema, moveRefSchema } from './refs';
 import { createRepoSchema, updateRepoSchema } from './repos';
+import { patchRunnerBody, registrationTokenBody } from './runners';
+import { completeSchema, registerSchema, stepSchema } from '../ci/runners';
 
 /**
  * The public API contract (issue #28): one entry per HTTP route, keyed like
@@ -155,6 +157,25 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /ci/oidc/jwks': { id: 'getCiOidcJwks' },
   'GET /ci/oidc/token': { id: 'getCiIdToken', query: idTokenQuery },
   'POST /ci/oidc/token': { id: 'createCiIdToken', query: idTokenQuery },
+  'POST /runner/v1/register': { id: 'registerRunner', body: registerSchema },
+  'POST /runner/v1/jobs/claim': {
+    id: 'claimRunnerJob',
+    query: z.object({
+      wait: z.int().min(0).max(30).optional().describe('Long-poll seconds (default 30)'),
+    }),
+  },
+  'POST /runner/v1/jobs/:id/heartbeat': { id: 'runnerHeartbeat' },
+  'POST /runner/v1/jobs/:id/logs': {
+    id: 'appendRunnerLog',
+    query: z.object({ step: z.int().min(0).max(63) }),
+    rawBody: 'text/plain',
+  },
+  'POST /runner/v1/jobs/:id/steps/:step': { id: 'reportRunnerStep', body: stepSchema },
+  'PUT /runner/v1/jobs/:id/artifacts/:name': {
+    id: 'uploadRunnerArtifact',
+    rawBody: 'application/octet-stream',
+  },
+  'POST /runner/v1/jobs/:id/complete': { id: 'completeRunnerJob', body: completeSchema },
   'GET /scim/v2/Users': {
     id: 'scimListUsers',
     query: z.object({
@@ -243,6 +264,13 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/orgs/:org/secrets': { id: 'listOrgSecrets' },
   'PUT /api/v1/orgs/:org/secrets/:name': { id: 'putOrgSecret', body: secretBody },
   'DELETE /api/v1/orgs/:org/secrets/:name': { id: 'deleteOrgSecret' },
+  'POST /api/v1/orgs/:org/runners/registration-token': {
+    id: 'createOrgRunnerToken',
+    body: registrationTokenBody,
+  },
+  'GET /api/v1/orgs/:org/runners': { id: 'listOrgRunners' },
+  'PATCH /api/v1/orgs/:org/runners/:id': { id: 'updateOrgRunner', body: patchRunnerBody },
+  'DELETE /api/v1/orgs/:org/runners/:id': { id: 'deleteOrgRunner' },
   'GET /api/v1/orgs/:org/variables': { id: 'listOrgVariables' },
   'PUT /api/v1/orgs/:org/variables/:name': { id: 'putOrgVariable', body: variableBody },
   'DELETE /api/v1/orgs/:org/variables/:name': { id: 'deleteOrgVariable' },
@@ -483,6 +511,16 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'GET /api/v1/repos/:repo/refs/:name': { id: 'getRef' },
   'PUT /api/v1/repos/:repo/refs/:name': { id: 'moveRef', body: moveRefSchema },
   'GET /api/v1/repos/:repo/rulesets': { id: 'listRulesets' },
+  'POST /api/v1/repos/:repo/runners/registration-token': {
+    id: 'createRepoRunnerToken',
+    body: registrationTokenBody,
+  },
+  'GET /api/v1/repos/:repo/runners': { id: 'listRepoRunners' },
+  'PATCH /api/v1/repos/:repo/runners/:id': {
+    id: 'updateRepoRunner',
+    body: patchRunnerBody,
+  },
+  'DELETE /api/v1/repos/:repo/runners/:id': { id: 'deleteRepoRunner' },
   'GET /api/v1/repos/:repo/secrets': { id: 'listRepoSecrets', query: environmentQuery },
   'PUT /api/v1/repos/:repo/secrets/:name': {
     id: 'putRepoSecret',

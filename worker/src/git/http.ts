@@ -4,6 +4,7 @@ import { apiError, errorResponse } from '../api/errors';
 import { decide, pathDecider, restrictingDecision, type Decision } from '../auth/rbac';
 import { ssoMessage } from '../auth/sso';
 import { resolveTokenPrincipal } from '../auth/tokens';
+import { resolveCloneToken } from '../ci/runners';
 import { PayloadTooLargeError } from '../core/errors';
 import { getRepoBySlug } from '../db/repos';
 import type { RepoRecord } from '../db/client';
@@ -51,7 +52,11 @@ export async function gitBasicAuth(c: Context<AppEnv>, next: Next): Promise<void
     const colon = decoded.indexOf(':');
     const user = colon < 0 ? decoded : decoded.slice(0, colon);
     const password = colon < 0 ? '' : decoded.slice(colon + 1);
-    const principal = await resolveTokenPrincipal(c.env, password || user);
+    const secret = password || user;
+    // a self-hosted runner clones with its job's clone token (issue #48)
+    const principal =
+      (await resolveTokenPrincipal(c.env, secret)) ??
+      (await resolveCloneToken(c.env, secret));
     if (principal) c.set('principal', principal);
   }
   await next();

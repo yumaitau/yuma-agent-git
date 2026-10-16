@@ -109,6 +109,23 @@ export function runnerServices(config: string): Service[] {
     .parse(JSON.parse(config)).services;
 }
 
+/**
+ * Runner routing (issue #48): `runs-on` labels a self-hosted runner must all
+ * carry. No `runs-on`, or one naming `cloudflare`, runs on the built-in pool.
+ */
+export const BUILTIN_LABELS = ['cloudflare', 'linux', 'x64'];
+const label = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._-]{0,49}$/, 'Use lower-case letters, digits, ., _ or -');
+export const labelsSchema = z.array(label).min(1).max(10);
+
+/** Self-hosted labels in a stored run config; null for the built-in pool. */
+export function runnerLabels(config: string): string[] | null {
+  return z
+    .object({ runs_on: labelsSchema.nullable().default(null) })
+    .parse(JSON.parse(config)).runs_on;
+}
+
 const job = z.strictObject({
   needs: z.preprocess(one, z.array(id).max(MAX_JOBS)).optional(),
   matrix: z
@@ -121,6 +138,7 @@ const job = z.strictObject({
     )
     .optional(),
   timeout_seconds: z.number().int().min(30).max(600).default(300),
+  'runs-on': z.preprocess(one, labelsSchema).optional(),
   services: z
     .record(
       z
@@ -195,6 +213,16 @@ const specSchema = z
             });
         }
       }
+      const runsOn = j['runs-on'] ?? [];
+      if (
+        runsOn.includes('cloudflare') &&
+        runsOn.some((l) => !BUILTIN_LABELS.includes(l))
+      )
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jobs', name, 'runs-on'],
+          message: `Cloudflare runners only carry the labels ${BUILTIN_LABELS.join(', ')}`,
+        });
       if (j.aws && j.permissions.id_token !== 'write')
         ctx.addIssue({
           code: 'custom',
@@ -265,6 +293,8 @@ export interface PlannedJob extends Pick<
   commands: string[];
   timeout_seconds: number;
   services: Service[];
+  /** Self-hosted runner labels, or null for the built-in pool. */
+  runs_on: string[] | null;
 }
 
 export interface Pipeline {
@@ -352,6 +382,8 @@ export function parseSpec(path: string, text: string): PipelineFile {
           image: s.image,
           env: s.env ?? {},
         })),
+        runs_on:
+          j['runs-on'] && !j['runs-on'].includes('cloudflare') ? j['runs-on'] : null,
         environment: j.environment,
         secrets: jobSecrets(j),
         permissions: j.permissions,

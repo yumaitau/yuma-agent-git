@@ -15,6 +15,7 @@ import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
 import { gitBasicAuth, gitRoutes } from './git/http';
 import { oidcRoutes } from './ci/oidc';
+import { runnerRoutes } from './ci/runners';
 import type { AppEnv } from './auth/principal';
 
 /**
@@ -58,6 +59,10 @@ app.route('/', gitRoutes);
 // and the token endpoint, which authenticates with a per-run request token.
 app.route('/', oidcRoutes);
 
+// Self-hosted runners (issue #48): a one-time registration token, then the
+// runner's own credential. Outside /api: runners are not users.
+app.route('/', runnerRoutes);
+
 // These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
 // passkeys, SCIM, webhooks, the GitHub App handshake, token management and
 // agent identities with their token exchange.
@@ -83,6 +88,7 @@ app.notFound((c) => {
     path.startsWith('/scim/') ||
     path.startsWith('/healthz') ||
     path.startsWith('/ci/oidc/') ||
+    path.startsWith('/runner/') ||
     /^\/[^/]+\/[^/]+\.git\//.test(path);
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);

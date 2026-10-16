@@ -25,6 +25,8 @@ export type Principal =
       scopes: string[];
       repoId: string | null;
       authMethod?: string | null;
+      /** A self-hosted runner's clone token (ci/runners.ts): reads `repoId` only. */
+      ciRunId?: string;
     }
   | {
       kind: 'agent';
