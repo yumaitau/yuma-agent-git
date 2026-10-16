@@ -65,7 +65,10 @@ export function triggerOf(c: Context<AppEnv>): Trigger {
 }
 
 /** A pull request whose head comes from a fork (#36). */
-export function forkPull(pull: { repo_id: string; head_repo_id?: string | null }): boolean {
+export function forkPull(pull: {
+  repo_id: string;
+  head_repo_id?: string | null;
+}): boolean {
   return (pull.head_repo_id ?? pull.repo_id) !== pull.repo_id;
 }
 

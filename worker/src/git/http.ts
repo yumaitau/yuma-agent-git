@@ -140,7 +140,8 @@ export async function loadGitRepo(
   const read = repo ? await decide(c.env, repo, principal, 'read') : null;
   const readRefused = read && sso(read);
   if (readRefused) return no(readRefused);
-  if (!repo || !read?.allowed) return no({ kind: 'not_found', message: `no repo ${slug}` });
+  if (!repo || !read?.allowed)
+    return no({ kind: 'not_found', message: `no repo ${slug}` });
   if (perm === 'write') {
     const decision = await decide(c.env, repo, principal, 'write');
     const refused = sso(decision);

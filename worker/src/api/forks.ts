@@ -62,9 +62,10 @@ forksRoutes.post('/repos/:repo{.+}/forks', async (c) => {
     // branches and tags only: agent work refs and merge queue refs stay behind
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `UPDATE repos SET refs_mode = ?, merge_methods = ?, default_merge_method = ?
-          WHERE id = ?`,
+        `UPDATE repos SET fork_of = ?, refs_mode = ?, merge_methods = ?,
+           default_merge_method = ? WHERE id = ?`,
       ).bind(
+        upstream.id,
         upstream.refs_mode ?? 'scion',
         JSON.stringify(upstream.merge_methods ?? ['merge', 'squash', 'rebase']),
         upstream.default_merge_method ?? 'merge',

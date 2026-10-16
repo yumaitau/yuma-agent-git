@@ -49,6 +49,7 @@ export async function createRepo(
     // column defaults (migration 0023), so the record matches the stored row
     merge_methods: '["merge","squash","rebase"]',
     default_merge_method: 'merge' as const,
+    // set by the fork route (migration 0045); older schemas lack the column
     fork_of: input.forkOf ?? null,
   };
   await run(
@@ -56,9 +57,8 @@ export async function createRepo(
     `INSERT INTO ${T.repos}
        (${C.repos.id}, ${C.repos.slug}, ${C.repos.githubInstallationId},
         ${C.repos.githubRepoId}, ${C.repos.defaultBranch}, ${C.repos.createdAt},
-        ${C.repos.visibility}, created_by, refs_mode, ${C.repos.ownerKind}, ${C.repos.ownerId},
-        fork_of)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ${C.repos.visibility}, created_by, refs_mode, ${C.repos.ownerKind}, ${C.repos.ownerId})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.slug,
@@ -71,7 +71,6 @@ export async function createRepo(
       row.refs_mode,
       row.owner_kind,
       row.owner_id,
-      row.fork_of,
     ],
   );
   return parseRepoRow(row);
