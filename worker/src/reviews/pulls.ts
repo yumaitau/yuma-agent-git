@@ -233,13 +233,17 @@ async function checkMerge(
     : null;
   // a merge commit brings the pull request's own commits in; squash and
   // rebase write new ones, so only `merge` is checked for signatures (#58)
-  const target = await getRef(env, pull.repo_id, pull.base_ref);
   const signatures = rulesets.some(
     (r) =>
       applies(r, repo, pull.base_ref) &&
       r.rules.some((rule) => rule.type === 'required_signatures'),
   )
-    ? await signatureFacts(env, pull.repo_id, target?.head ?? null, pull.head_cs)
+    ? await signatureFacts(
+        env,
+        pull.repo_id,
+        (await getRef(env, pull.repo_id, pull.base_ref))?.head ?? null,
+        pull.head_cs,
+      )
     : undefined;
   const facts = (m: MergeMethod): EvalInput => ({
     repo,

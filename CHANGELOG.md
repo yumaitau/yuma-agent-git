@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Release assets uploaded from a CI job with its ID token (`X-Yag-Id-Token`,
+  sent by `yag release upload` and `create` inside CI) record the run, and a
+  run attests only the assets it uploaded (#58 closes the #54 gap).
 - Pull request merges record a merge commit by default instead of fast-forwarding
   (#42); set `default_merge_method` to change that per repo.
 - Agent tokens need the new `issues:write` scope to open, edit or comment on
@@ -22,6 +25,21 @@ All notable changes to this project are documented here. The format follows
   call, and the dashboard's fast-import snippet sends a bearer token.
 
 ### Added
+
+- Signed provenance (#58). Every move of a protected branch or tag gets an
+  in-toto statement (who, agent and the person it acted for, task, pull
+  requests with approvals and checks, rulesets and any bypass, each new
+  changeset with its signature check and agent sessions) signed with the
+  forge's Ed25519 key (`PROVENANCE_SIGNING_KEYS`, rotated with
+  `scripts/ci-keys.mjs`). `GET /api/v1/repos/:repo/provenance?cs=` returns the
+  records; `yag provenance verify <cs>` checks them offline against
+  `/.well-known/yag-provenance-keys`. Pushed commits are checked for SSH,
+  OpenPGP and gitsign (x509, against `SIGSTORE_TRUST_ROOTS`) signatures;
+  people register signing keys under Security. New ruleset rules
+  `required_signatures` and `required_provenance`. Agents record sessions
+  with redacted transcripts (`POST /sessions`, MCP `session_record`), and the
+  built-in runtime records its own; the changeset page shows the signature,
+  provenance and transcript links for writers.
 
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts

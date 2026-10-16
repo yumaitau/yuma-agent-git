@@ -53,12 +53,16 @@ yag release upload v1.2.0 dist/app.tar.gz
 yag release attest v1.2.0        # uses YAG_ID_TOKEN_REQUEST_URL and _TOKEN
 ```
 
-`attest` requests an ID token with `audience=yag:attest` and posts it to
+Inside CI, `upload` (and `create` with files) sends the same kind of ID token
+in the `X-Yag-Id-Token` header, so each asset records the run that uploaded
+it. `attest` requests an ID token with `audience=yag:attest` and posts it to
 `POST /releases/{id}/attestations`. The server checks that the token is a
 live token from its own issuer for that audience and repository, that the run
 exists and that it built the release's target changeset (`409
-provenance_source_mismatch` otherwise). It then signs an in-toto v1 statement
-with an SLSA provenance v1 predicate:
+provenance_source_mismatch` otherwise). A run attests only assets it uploaded
+itself: without `assets` it covers those, and naming an asset a person or
+another run uploaded is refused (`409 asset_not_from_run`). It then signs an
+in-toto v1 statement with an SLSA provenance v1 predicate:
 
 - `subject`: each asset name and SHA-256.
 - `buildDefinition`: the workflow ref, event, environment, job and actor from
