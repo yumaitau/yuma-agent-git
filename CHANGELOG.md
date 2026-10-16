@@ -15,6 +15,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Agent guardrails (#62). Org policies, written in a typed rules DSL
+  (`docs/adr/0003-policy-engine.md`) with a default pack in
+  `policies/default.json`, judge agent pushes, commits, ref moves, tags and
+  pipeline runs, and every agent tool call. A rule denies or holds the action
+  for a person: CI workflows, pipelines, CODEOWNERS and ruleset files,
+  dependencies from outside the npm registry, more than 50 files or 1 MiB,
+  and releases need approval; force pushes outside `refs/agents/` are
+  refused. People approve the exact payload hash in Settings or through
+  `POST /api/v1/repos/:repo/approvals/:id`, and the agent's identical retry
+  lands. Policies are versioned and audited (`PUT /api/v1/orgs/:org/policy`)
+  and testable with `yag policy test`. The kill switch
+  (`POST /api/v1/orgs/:org/agents/pause`, or `/api/v1/admin/agents/pause`
+  for the instance) revokes agent tokens, cancels agent tasks and refuses
+  agent writes from the next request; the org page shows who paused agents.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).
