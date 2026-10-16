@@ -26,6 +26,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Dashboard coverage (#80): a CI run page that refreshes the log while the run
+  is going and lists its artifacts, organisation secrets and variables (values
+  are never shown), and the organisation audit log with filters and NDJSON or
+  CSV export. Views load on first visit, so the entry bundle stays small. Every
+  view test runs axe checks, and `npm run test:e2e` drives the issue to merge
+  golden path in Playwright against `wrangler dev --local`.
 - Wave 4a seams. GitHub Actions translation (#49) maps `actions/cache`,
   `upload-artifact`, `download-artifact` and `codeql-action/upload-sarif` onto
   job caches and artifacts (#51) and code scanning (#67). Notifications (#44)
