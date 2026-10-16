@@ -460,6 +460,22 @@ export const signingKeySchema = z.object({
 });
 export type SigningKey = z.infer<typeof signingKeySchema>;
 
+export const sshKeySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  key_type: z.string(),
+  fingerprint: z.string(),
+  created_at: z.number(),
+  last_used_at: z.number().nullable(),
+});
+export type SshKey = z.infer<typeof sshKeySchema>;
+
+export const deployKeySchema = sshKeySchema.extend({
+  read_only: z.boolean(),
+  created_by: z.string(),
+});
+export type DeployKey = z.infer<typeof deployKeySchema>;
+
 export const memberSchema = z.object({
   user_id: z.string(),
   role: z.enum(['admin', 'write', 'triage', 'read']),
@@ -1040,6 +1056,61 @@ export const api = {
   async deleteSigningKey(id: string): Promise<void> {
     await requestJson(
       `/api/v1/me/signing-keys/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+      z.null(),
+    );
+  },
+
+  async listSshKeys(): Promise<SshKey[]> {
+    const body = await requestJson(
+      '/api/v1/me/ssh-keys',
+      {},
+      z.object({ keys: z.array(sshKeySchema) }),
+    );
+    return body.keys;
+  },
+
+  async addSshKey(input: { title: string; public_key: string }): Promise<SshKey> {
+    const body = await requestJson(
+      '/api/v1/me/ssh-keys',
+      { method: 'POST', body: input },
+      z.object({ key: sshKeySchema }),
+    );
+    return body.key;
+  },
+
+  async deleteSshKey(id: string): Promise<void> {
+    await requestJson(
+      `/api/v1/me/ssh-keys/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+      z.null(),
+    );
+  },
+
+  async listDeployKeys(slug: string): Promise<DeployKey[]> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/deploy-keys`,
+      {},
+      z.object({ keys: z.array(deployKeySchema) }),
+    );
+    return body.keys;
+  },
+
+  async addDeployKey(
+    slug: string,
+    input: { title: string; public_key: string; read_only: boolean },
+  ): Promise<DeployKey> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/deploy-keys`,
+      { method: 'POST', body: input },
+      z.object({ key: deployKeySchema }),
+    );
+    return body.key;
+  },
+
+  async deleteDeployKey(slug: string, id: string): Promise<void> {
+    await requestJson(
+      `/api/v1/repos/${slug}/deploy-keys/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
       z.null(),
     );
