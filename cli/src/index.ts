@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { YagApi } from './api.js';
 import { ObjectCache } from './cache.js';
 import { checkout } from './checkout.js';
+import { processDeps, registerGhCommands } from './commands/index.js';
 import { loadConfig, saveConfig } from './config.js';
 import { commit, status } from './workcopy.js';
 
@@ -77,22 +78,8 @@ program
     },
   );
 
-program
-  .command('pr')
-  .description('Open a pull request from the checked-out changeset')
-  .requiredOption('-t, --title <title>', 'pull request title')
-  .option('--body <body>', 'description', '')
-  .option('--draft', 'start as a draft', false)
-  .action(async (opts: { title: string; body: string; draft: boolean }) => {
-    const { loadState } = await import('./config.js');
-    const { api } = await client();
-    const state = await loadState(process.cwd());
-    const result = await api.createPull({ ...opts, head_cs: state.cs });
-    const config = await loadConfig(process.cwd());
-    console.log(
-      `${config.api.replace(/\/$/, '')}/r/${config.repo}/pulls/${result.pull.id}`,
-    );
-  });
+// gh-style issue, pr, run, repo, api and auth commands (#74)
+registerGhCommands(program, processDeps());
 const ci = program.command('ci').description('Run checks and inspect Cloudflare CI');
 ci.command('run')
   .option('--publish', 'build and publish a default-branch image (admin only)', false)

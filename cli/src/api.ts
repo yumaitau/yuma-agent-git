@@ -193,9 +193,6 @@ export class YagApi {
     return (await res.json()) as T;
   }
 
-  async createPull(input: RequestBody<'createPull'>): Promise<{ pull: { id: number } }> {
-    return this.json('/pulls', { method: 'POST', body: JSON.stringify(input) });
-  }
   async runCI(
     head?: string,
     publish = false,
