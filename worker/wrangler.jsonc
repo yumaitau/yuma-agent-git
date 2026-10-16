@@ -103,6 +103,7 @@
           { "name": "AGENT", "class_name": "YagAgent" },
           { "name": "SUPERFAN", "class_name": "SuperfanDO" },
           { "name": "RATE_LIMIT", "class_name": "RateLimitDO" },
+          { "name": "MERGE_QUEUE", "class_name": "MergeQueueDO" },
         ],
       },
       "queues": {
@@ -159,6 +160,7 @@
         "name": "RATE_LIMIT",
         "class_name": "RateLimitDO",
       },
+      { "name": "MERGE_QUEUE", "class_name": "MergeQueueDO" },
     ],
   },
   "migrations": [
@@ -179,5 +181,6 @@
       "new_sqlite_classes": ["RateLimitDO"],
     },
     { "tag": "v5", "new_sqlite_classes": ["CiRunnerDO"] },
+    { "tag": "v6", "new_sqlite_classes": ["MergeQueueDO"] },
   ],
 }

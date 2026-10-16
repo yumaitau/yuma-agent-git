@@ -2103,6 +2103,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/merge-queue': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Merge queue of a branch: entries in order and groups */
+    get: operations['getMergeQueue'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/milestones': {
     parameters: {
       query?: never;
@@ -2271,6 +2288,24 @@ export interface paths {
     /** Merge a pull request (merge commit, squash or rebase) */
     post: operations['mergePull'];
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/queue': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Add a pull request to its target branch merge queue */
+    post: operations['enqueuePull'];
+    /** Take a pull request out of the merge queue */
+    delete: operations['dequeuePull'];
     options?: never;
     head?: never;
     patch?: never;
@@ -3963,6 +3998,7 @@ export interface operations {
               | 'issues'
               | 'ci_run'
               | 'work_item'
+              | 'merge_group'
             )[];
             /**
              * @default yag
@@ -4208,6 +4244,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'merge_group'
           )[];
           /** @enum {string} */
           format?: 'yag' | 'github';
@@ -4934,6 +4971,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'merge_group'
           )[];
           /**
            * @default yag
@@ -7368,6 +7406,7 @@ export interface operations {
             | 'issues'
             | 'ci_run'
             | 'work_item'
+            | 'merge_group'
           )[];
           /**
            * @default yag
@@ -8121,6 +8160,33 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getMergeQueue: {
+    parameters: {
+      query?: {
+        ref?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listMilestones: {
     parameters: {
       query?: never;
@@ -8494,6 +8560,69 @@ export interface operations {
         };
       };
     };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  enqueuePull: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          head_cs: string;
+          revision: number;
+          /** @enum {string} */
+          method?: 'merge' | 'squash' | 'rebase';
+          /** @default 0 */
+          priority?: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  dequeuePull: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Success */
       '2XX': {

@@ -46,6 +46,8 @@ export interface PullDetail {
     /** Methods the repo and rulesets allow, and the one to offer first (#42). */
     methods: MergeMethod[];
     method: MergeMethod;
+    /** The target only changes through the merge queue (#43). */
+    merge_queue?: boolean;
   };
 }
 /** `GET …/pulls/:id/conflicts` (#42). */

@@ -13,6 +13,7 @@ import { guardrailsRoutes } from './guardrails';
 import { importRoutes } from './imports';
 import { hooksRoutes } from './hooks';
 import { issuesRoutes } from './issues';
+import { mergeQueueRoutes } from './mergeQueue';
 import { objectsRoutes } from './objects';
 import { openapiRoutes } from './openapi';
 import { orgsRoutes } from './orgs';
@@ -33,6 +34,7 @@ apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1
 
 apiRouter.route('/', collaborationRoutes);
 apiRouter.route('/', reviewsRoutes);
+apiRouter.route('/', mergeQueueRoutes);
 apiRouter.route('/', issuesRoutes);
 apiRouter.route('/', workRoutes);
 apiRouter.route('/', hooksRoutes);

@@ -793,6 +793,23 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: { reviewers: [] },
         expect: { anon: 401, stranger: 404, creator: 404 },
       },
+      // merge queue (#43): guarded; no such pull request, an empty queue
+      {
+        method: 'POST',
+        path: '/api/v1/repos/acme/sweep/pulls/1/queue',
+        body: {},
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/repos/acme/sweep/pulls/1/queue',
+        expect: { anon: 401, stranger: 404, creator: 404 },
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/merge-queue',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
       {
         method: 'GET',
         path: '/api/v1/repos/acme/sweep/work',

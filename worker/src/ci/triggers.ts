@@ -3,6 +3,7 @@ import { q } from '../db/client';
 import { diffRevisions } from '../core/diff';
 import { TAG_PREFIX } from '../core/refs';
 import type { Pull } from '../../shared/collaboration';
+import { monthlyBudget } from './config';
 import { contextFor, type RunContext, type Trigger } from './context';
 import { advancePipelines, startPipeline } from './planner';
 import { globMatch, loadPipelines, nextRun, type PipelineFile } from './spec';
@@ -137,6 +138,83 @@ export async function pullPipelines(
     },
   );
   return { status: started.length > 0 ? 'queued' : 'not_started' };
+}
+
+/** CI is on and the month's reservations are under `CI_MONTHLY_BUDGET_USD`. */
+async function ciAdmits(env: Env): Promise<boolean> {
+  if (!ciReady(env)) return false;
+  const month = new Date().toISOString().slice(0, 7);
+  const used = await q<{ reserved: number }>(
+    env,
+    'SELECT COALESCE(SUM(reserved_micros), 0) AS reserved FROM ci_runs WHERE month = ?',
+    [month],
+  );
+  return (used[0]?.reserved ?? 0) < monthlyBudget(env);
+}
+
+/** Files that run for a merge group into `baseRef` (unparsable files always do). */
+async function mergeGroupFiles(
+  env: Env,
+  repoId: string,
+  head: string,
+  baseRef: string,
+): Promise<PipelineFile[]> {
+  return (await loadPipelines(env, repoId, head)).filter(
+    (f) =>
+      !f.pipeline ||
+      (f.pipeline.on.merge_group !== undefined &&
+        matches(f.pipeline.on.merge_group?.branches, baseRef)),
+  );
+}
+
+/**
+ * Could merge group checks start for a group built on `head`? False when the
+ * revision has `merge_group` pipelines but CI is off or out of budget, so the
+ * queue skips building groups it could not test.
+ */
+export async function mergeGroupReady(
+  env: Env,
+  repoId: string,
+  head: string,
+  baseRef: string,
+): Promise<boolean> {
+  return (
+    (await mergeGroupFiles(env, repoId, head, baseRef)).length === 0 || ciAdmits(env)
+  );
+}
+
+/**
+ * Merge group trigger (#43): start the `merge_group` pipelines of a merge
+ * queue group's speculative head. Returns the pipeline run ids (a file that
+ * does not parse records a failed run), or null when CI cannot run them now:
+ * it is off, or the month's budget is spent, so no speculative group starts.
+ */
+export async function mergeGroupPipelines(
+  env: Env,
+  repoId: string,
+  head: string,
+  baseRef: string,
+  groupId: string,
+  trigger: Trigger,
+): Promise<string[] | null> {
+  const files = await mergeGroupFiles(env, repoId, head, baseRef);
+  if (files.length === 0) return [];
+  if (!(await ciAdmits(env))) return null;
+  const ref = `refs/merge-queue/${baseRef}/${groupId}`;
+  const ids: string[] = [];
+  for (const file of files)
+    ids.push(
+      await startPipeline(env, {
+        repoId,
+        head,
+        ...file,
+        event: 'merge_group',
+        ref,
+        actor: trigger.actor,
+        context: contextFor(trigger, 'merge_group', ref),
+      }),
+    );
+  return ids;
 }
 
 /**

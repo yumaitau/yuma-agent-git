@@ -529,6 +529,8 @@ const AUDITED: Record<string, AuditAction> = {
     'pull.thread.resolve',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/suggestions/apply': 'pull.suggestion.apply',
   'PUT /api/v1/repos/:repo{.+}/pulls/:id/reviewers': 'pull.reviewers.update',
+  'POST /api/v1/repos/:repo{.+}/pulls/:id/queue': 'merge_queue.enqueue',
+  'DELETE /api/v1/repos/:repo{.+}/pulls/:id/queue': 'merge_queue.dequeue',
   'PUT /api/v1/repos/:repo{.+}/ci': 'ci.settings.update',
   'POST /api/v1/repos/:repo{.+}/ci/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',

@@ -27,6 +27,7 @@ const REF_RULES: Record<Exclude<Target, 'push'>, [string, string][]> = {
     ['update', 'Require a pull request'],
     ['required_status_checks', 'Require CI to pass'],
     ['required_review_thread_resolution', 'Require review threads resolved'],
+    ['merge_queue', 'Require the merge queue'],
   ],
   tag: [
     ['deletion', 'Block deletion'],
@@ -61,6 +62,8 @@ export function describeRule(rule: Ruleset['rules'][number]): string {
       return `merge by ${(rule.allowed as string[]).join(' or ')}`;
     case 'required_review_thread_resolution':
       return 'all threads resolved';
+    case 'merge_queue':
+      return `merge queue (${String(rule.mode ?? 'strict')}, ${String(rule.max_batch ?? 5)} per group)`;
     case 'max_file_size':
       return `files up to ${Number(rule.max_bytes) / MB} MB`;
     case 'file_path_restriction':

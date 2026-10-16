@@ -5,9 +5,10 @@ import { isAncestorDag } from './ancestry';
 import { ApiError, ObjectWalkLimitError } from './errors';
 import { mutatePullLocked, preparePull, type Prepared } from '../reviews/pulls';
 import { parsePolicy } from '../ci/config';
-import { tx, type RepoRecord } from '../db/client';
+import { q, tx, type RepoRecord } from '../db/client';
 import { getRepo } from '../db/repos';
 import { TAG_PREFIX, validateRefName } from './refs';
+import { MERGE_METHODS } from '../../shared/collaboration';
 import { actorOf } from '../audit/record';
 import {
   actorFor,
@@ -37,6 +38,30 @@ const moveSchema = z.object({
   via: z.string().max(32).optional(),
   /** Only for putting back a move the same push made (atomic rollback). */
   skip_rulesets: z.boolean().optional(),
+});
+
+/**
+ * The merge queue's land (#43): one CAS move of `name` from `from` to `to`
+ * that marks `pulls` merged, or with `reopen` (an optimistic revert) opens
+ * them again at a new revision. The queue has already checked their gates.
+ */
+const queueLandSchema = z.object({
+  repo_id: z.string().min(1),
+  name: z.string().min(1),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  pulls: z
+    .array(
+      z.object({
+        id: z.int(),
+        head_cs: z.string(),
+        revision: z.int(),
+        method: z.enum(MERGE_METHODS),
+      }),
+    )
+    .min(1)
+    .max(50),
+  reopen: z.boolean().default(false),
 });
 
 interface Policy {
@@ -136,6 +161,20 @@ export class RefLockDO {
         });
         if (response) return response;
       }
+    }
+    if (request.method === 'POST' && url.pathname === '/queue-land') {
+      const parsed = queueLandSchema.safeParse(await request.json());
+      if (!parsed.success) return fail(400, 'invalid_request', 'invalid queue land');
+      return this.state.blockConcurrencyWhile(async () => {
+        try {
+          return await this.queueLand(parsed.data);
+        } catch (err) {
+          if (err instanceof ApiError)
+            return fail(err.status, err.code, err.message, err.details);
+          console.error('ref-lock queue land failed', err);
+          return fail(500, 'internal_error', 'queue land failed');
+        }
+      });
     }
     if (request.method !== 'POST' || url.pathname !== '/move') {
       return fail(404, 'not_found', 'unknown ref-lock operation');
@@ -240,6 +279,81 @@ export class RefLockDO {
       }
     }
     return response;
+  }
+
+  private async queueLand(args: z.infer<typeof queueLandSchema>): Promise<Response> {
+    validateRefName(args.name);
+    const current = await getRef(this.env, args.repo_id, args.name);
+    if (current?.head !== args.from)
+      return fail(409, 'ref_stale', `ref ${args.name} moved`, {
+        expected: args.from,
+        actual: current?.head ?? null,
+      });
+    // pull request changes also take this DO's gate, so these reads stay true
+    const ids = args.pulls.map((p) => p.id);
+    const rows = await q<{
+      id: number;
+      state: string;
+      head_cs: string;
+      revision: number;
+    }>(
+      this.env,
+      `SELECT id, state, head_cs, revision FROM pull_requests
+        WHERE repo_id = ? AND base_ref = ? AND id IN (${ids.map(() => '?').join(',')})`,
+      [args.repo_id, args.name, ...ids],
+    );
+    for (const want of args.pulls) {
+      const row = rows.find((r) => r.id === want.id);
+      const ok = args.reopen
+        ? row?.state === 'merged'
+        : row?.state === 'open' &&
+          row.head_cs === want.head_cs &&
+          row.revision === want.revision;
+      if (!ok)
+        return fail(409, 'pull_stale', 'A queued pull request changed.', {
+          pull_id: want.id,
+        });
+    }
+    const now = Date.now();
+    const db = this.env.DB;
+    const landed = `EXISTS (SELECT 1 FROM refs WHERE repo_id = ? AND name = ? AND head = ?)`;
+    const results = await db.batch([
+      db
+        .prepare(
+          'UPDATE refs SET head = ?, updated_at = ? WHERE repo_id = ? AND name = ? AND head = ?',
+        )
+        .bind(args.to, now, args.repo_id, args.name, args.from),
+      ...args.pulls.map((p) =>
+        args.reopen
+          ? db
+              .prepare(
+                `UPDATE pull_requests SET state = 'open', merged_at = NULL, merge_method = NULL,
+                  merged_cs = NULL, base_cs = ?, revision = revision + 1, updated_at = ?
+                  WHERE id = ? AND state = 'merged' AND ${landed}`,
+              )
+              .bind(args.to, now, p.id, args.repo_id, args.name, args.to)
+          : db
+              .prepare(
+                `UPDATE pull_requests SET state = 'merged', merged_at = ?, updated_at = ?,
+                  base_cs = ?, merge_method = ?, merged_cs = ?
+                  WHERE id = ? AND state = 'open' AND ${landed}`,
+              )
+              .bind(
+                now,
+                now,
+                args.from,
+                p.method,
+                args.to,
+                p.id,
+                args.repo_id,
+                args.name,
+                args.to,
+              ),
+      ),
+    ]);
+    if (!results[0]!.meta.changes)
+      return fail(409, 'ref_stale', `ref ${args.name} moved`, { expected: args.from });
+    return ok(args.from, args.to);
   }
 
   private async moveRef(

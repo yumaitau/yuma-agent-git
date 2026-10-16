@@ -72,6 +72,8 @@ const WIPE_ORDER = [
   'review_threads',
   'review_requests',
   'pull_reviews',
+  'merge_queue_entries',
+  'merge_groups',
   'pull_requests',
   'ci_job_tokens',
   'environment_approvals',

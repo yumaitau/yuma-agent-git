@@ -21,8 +21,10 @@ import {
   evaluate,
   principalSchema,
   recordOutcome,
+  mergeQueueRule,
   rulesetsFor,
   type EvalInput,
+  type MergeQueueRule,
   type Outcome,
 } from '../policy/rulesets';
 import { commitChanges } from '../core/commit';
@@ -80,9 +82,39 @@ export async function pullGate(
   reasons: string[];
   methods: MergeMethod[];
   method: MergeMethod;
+  /** The target only changes through the merge queue (#43). */
+  merge_queue: boolean;
 }> {
-  const { mergeable, reasons, methods, method } = await checkMerge(env, pull, null);
-  return { mergeable, reasons, methods, method };
+  const { mergeable, reasons, methods, method, queue } = await checkMerge(
+    env,
+    pull,
+    null,
+  );
+  return { mergeable, reasons, methods, method, merge_queue: queue !== null };
+}
+
+/**
+ * Could the merge queue (#43) land this pull request for `actor`: every
+ * merge requirement except the queue rule itself, which the queue satisfies.
+ */
+export async function queueGate(
+  env: Env,
+  pull: Pull,
+  actor: Principal | null,
+  method: MergeMethod | null,
+): Promise<{
+  mergeable: boolean;
+  reasons: string[];
+  method: MergeMethod;
+  queue: MergeQueueRule | null;
+}> {
+  const {
+    mergeable,
+    reasons,
+    method: chosen,
+    queue,
+  } = await checkMerge(env, pull, actor, method, true);
+  return { mergeable, reasons, method: chosen, queue };
 }
 
 interface MergeCheck {
@@ -100,6 +132,8 @@ interface MergeCheck {
   pipelineCount: number;
   /** The settings pipeline's latest run is one of the checks. */
   settingsRun: boolean;
+  /** The target's merge queue rule (#43), if any. */
+  queue: MergeQueueRule | null;
 }
 
 /**
@@ -116,6 +150,7 @@ async function checkMerge(
   pull: Pull,
   actor: Principal | null,
   method: MergeMethod | null = null,
+  queued = false,
 ): Promise<MergeCheck> {
   const reasons: string[] = [];
   if (pull.state !== 'open') reasons.push('Open this pull request before merging.');
@@ -162,6 +197,7 @@ async function checkMerge(
       name: pull.base_ref,
       kind: 'update',
       fastForward: true,
+      queue: queued,
       merge: {
         approvals,
         checksPassed,
@@ -193,6 +229,7 @@ async function checkMerge(
     version,
     pipelineCount: pipelines.count,
     settingsRun,
+    queue: mergeQueueRule(rulesets, repo, pull.base_ref),
   };
 }
 
@@ -215,14 +252,14 @@ async function authorFor(env: Env, principal: Principal | null): Promise<Author>
  * the merger commits them; a squash keeps the first author and credits the
  * rest with `Co-authored-by` trailers.
  */
-async function landPull(
+export async function landPull(
   env: Env,
   pull: Pull,
   method: MergeMethod,
   target: Changeset,
   head: Changeset,
   principal: Principal | null,
-  body: z.infer<typeof mergePullSchema>,
+  body: Pick<z.infer<typeof mergePullSchema>, 'commit_title' | 'commit_message'>,
 ): Promise<Changeset> {
   const author = await authorFor(env, principal);
   const committer = { ...gitIdentity(author), at: Date.now() };

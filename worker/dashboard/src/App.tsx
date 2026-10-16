@@ -8,6 +8,7 @@ import { IssueView } from './views/IssueView';
 import { BoardView } from './views/Board';
 import { CiAccessView } from './views/CiAccess';
 import { RunnersView } from './views/Runners';
+import { MergeQueueView } from './views/MergeQueue';
 import { WebhooksView } from './views/Webhooks';
 import { OAuthAuthorizeView } from './views/OAuthAuthorize';
 import { Layout } from './Layout';
@@ -67,6 +68,7 @@ function AppRoutes(): ReactElement {
                 <Route path="/r/:owner/:name/board" element={<BoardView />} />
                 <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
+                <Route path="/r/:owner/:name/queue" element={<MergeQueueView />} />
                 <Route path="/r/:owner/:name/ci" element={<CiView />} />
                 <Route path="/r/:owner/:name/ci/access" element={<CiAccessView />} />
                 <Route path="/r/:owner/:name/ci/runners" element={<RunnersView />} />
