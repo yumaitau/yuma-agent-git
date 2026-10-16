@@ -204,6 +204,16 @@ untrusted pull requests, and masked in logs. Repository code in an opted-in job
 can read its credentials, so deploy credentials belong behind a protected
 environment. Details: [ci-oidc-aws.md](ci-oidc-aws.md).
 
+### 3.2 Integrations (issue #75)
+
+Outbound webhooks (repo, org and app scope) receive `push`, `ref`,
+`pull_request`, `pull_request_review`, `issues` and `ci_run` events through the
+`forge-events` queue, signed with `X-Yag-Signature-256`, retried with backoff
+for 24 hours and kept in a delivery log with manual redelivery. Apps get
+installation tokens that act as agent principals for the installer, limited
+to the app's permissions and installed repositories; OAuth apps sign people in
+with the authorization code grant and PKCE. Details: [webhooks.md](webhooks.md).
+
 ## 4. Agent orchestration
 
 The platform's reason to exist: agents that **never check out code**.

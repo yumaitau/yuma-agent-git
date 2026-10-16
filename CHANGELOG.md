@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Outbound webhooks, apps and OAuth apps (#75). Repo, org and app webhooks
+  receive push, ref, pull request, review, issue and CI run events in the
+  forge's format or a GitHub-compatible one, signed with
+  `X-Yag-Signature-256` (`X-Hub-Signature-256` too for GitHub), retried with
+  backoff for 24 hours, with a delivery log and redelivery. URLs must be https
+  and never private, loopback, link-local or metadata addresses. Apps exchange
+  a signed JWT for one-hour installation tokens limited to their permissions
+  and installed repositories; OAuth apps sign people in with the authorization
+  code grant and PKCE.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).
