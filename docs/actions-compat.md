@@ -45,8 +45,10 @@ all work as for pipelines. An unsupported workflow records a failed run with its
 reasons, as a broken pipeline file does. Once `.yuma/pipelines` files exist,
 they run instead and the workflows stop.
 
-Pushes by agents that change `.github/workflows/**` are judged as
-`pipeline.edit` by the agent policy, as `.yuma/pipelines/**` changes are.
+The default agent policy already holds agent changes to `.github/workflows/**`
+for a human approval (rule `ci-workflows`). An org policy that drops that rule
+should cover the path another way: `pipeline.edit` matches only
+`.yuma/pipelines/**`.
 
 Jobs of translated workflows get these variables from forge data:
 `GITHUB_ACTIONS`, `GITHUB_WORKFLOW`, `GITHUB_SHA` (empty until the Git commit id

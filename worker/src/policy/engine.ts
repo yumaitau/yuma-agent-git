@@ -11,8 +11,8 @@ import { globMatch } from './rulesets';
  * `require_approval`) and conditions under `when`; every condition present
  * must hold for the rule to match (an empty `when` always matches). The
  * strictest matching effect wins: deny, then require_approval, else allow.
- * A push or commit that changes `.yuma/pipelines/**` or `.github/workflows/**`
- * is also judged as `pipeline.edit`. `secret.write` is accepted for policies written now:
+ * A push or commit that changes `.yuma/pipelines/**` is also judged as
+ * `pipeline.edit`. `secret.write` is accepted for policies written now:
  * agents cannot write secrets (sessions only). The work queue (#59) judges
  * `issue.ready` and `queue.claim` (with the item's risk), a self-hosted runner
  * claim judges `deploy` for an agent-started job that names an environment
@@ -148,16 +148,13 @@ function matches(patterns: readonly string[], value: string): boolean {
   return hit;
 }
 
-/**
- * Pipeline definitions, and GitHub workflows that can run as pipelines (#49):
- * a push or commit that changes one is also `pipeline.edit`.
- */
-export const PIPELINE_PATHS = ['.yuma/pipelines/**', '.github/workflows/**'];
+/** Pipeline definitions: a push or commit that changes one is also `pipeline.edit`. */
+export const PIPELINE_PATHS = '.yuma/pipelines/**';
 
 function actionsOf(input: PolicyInput): PolicyAction[] {
   const edits =
     (input.action === 'push' || input.action === 'changeset.create') &&
-    (input.files ?? []).some((f) => PIPELINE_PATHS.some((p) => globMatch(p, f.path)));
+    (input.files ?? []).some((f) => globMatch(PIPELINE_PATHS, f.path));
   return edits ? [input.action, 'pipeline.edit'] : [input.action];
 }
 

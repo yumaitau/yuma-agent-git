@@ -30,8 +30,7 @@ All notable changes to this project are documented here. The format follows
   workflows as pipelines when the repository has no `.yuma/pipelines` files;
   their jobs get `GITHUB_*` variables. `yag actions check` (alias
   `yag ci analyse`) prints the report for a local checkout or a repository, and
-  MCP gains `ci_actions_report`. Agent pushes that change `.github/workflows`
-  are judged as `pipeline.edit` too. See `docs/actions-compat.md` for the gaps.
+  MCP gains `ci_actions_report`. See `docs/actions-compat.md` for the gaps.
 - Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
   Git history is in, and pull mirrors (#73) record upstream secrets as alerts
   instead of refusing the sync; neither blocks. The merge queue (#43) keeps
