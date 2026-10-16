@@ -204,6 +204,16 @@ describe('metadata shards (#78)', () => {
       ),
     ).toEqual({ shard: 'DB_SHARD_1', target: 'DB', state: 'settling' });
     expect(await count(shard(), 'o1')).toBe(455);
+    const audit = await q1<{ org_id: string; target: string }>(
+      dbEnv,
+      "SELECT org_id, target FROM audit_events WHERE action = 'shard.move'",
+    );
+    expect(audit?.org_id).toBe('acme');
+    expect(JSON.parse(audit!.target)).toEqual({
+      org_id: 'o1',
+      from: 'DB',
+      to: 'DB_SHARD_1',
+    });
     // a write that resolved DB before the freeze and landed after the copy
     await dbEnv.DB.prepare(
       `INSERT INTO usage_events (id, org_id, repo_id, agent_id, kind, source, model, input_tokens, output_tokens, at, created_at)

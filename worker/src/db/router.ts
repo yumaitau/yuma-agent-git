@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { appendAudit } from '../audit/record';
 import { ApiError } from '../core/errors';
 
 /**
@@ -194,6 +195,16 @@ export async function advanceShardMoves(env: Env, pages = 20): Promise<void> {
       target: move.shard,
       state: 'settling',
       cursor,
+    });
+    // where an org's data lives is a residency fact: audit it in the org's chain
+    const org = await env.DB.prepare('SELECT slug FROM orgs WHERE id = ?')
+      .bind(move.org_id)
+      .first<{ slug: string }>();
+    await appendAudit(env, {
+      action: 'shard.move',
+      actor: { kind: 'system', id: 'shard-router' },
+      ...(org ? { orgId: org.slug } : {}),
+      target: { org_id: move.org_id, from: move.shard, to: move.target },
     });
   }
 }
