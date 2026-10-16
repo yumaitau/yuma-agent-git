@@ -110,6 +110,8 @@ import { patchPackageSchema } from './packages';
 import { publishSchema as npmPublishSchema } from '../registry/npm';
 import { patchRunnerBody, registrationTokenBody } from './runners';
 import { completeSchema, registerSchema, stepSchema } from '../ci/runners';
+import { reserveCacheBody, restoreCacheQuery } from '../ci/job-routes';
+import { limitsSchema } from '../ci/capacity';
 
 /**
  * The public API contract (issue #28): one entry per HTTP route, keyed like
@@ -237,8 +239,16 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     rawBody: 'text/plain',
   },
   'POST /runner/v1/jobs/:id/steps/:step': { id: 'reportRunnerStep', body: stepSchema },
+  'GET /runner/v1/jobs/:id/artifacts': { id: 'listRunnerArtifacts' },
+  'GET /runner/v1/jobs/:id/artifacts/:name': { id: 'downloadRunnerArtifact' },
   'PUT /runner/v1/jobs/:id/artifacts/:name': {
     id: 'uploadRunnerArtifact',
+    rawBody: 'application/octet-stream',
+  },
+  'GET /runner/v1/jobs/:id/caches': { id: 'restoreRunnerCache', query: restoreCacheQuery },
+  'POST /runner/v1/jobs/:id/caches': { id: 'reserveRunnerCache', body: reserveCacheBody },
+  'PUT /runner/v1/jobs/:id/caches/:cache': {
+    id: 'uploadRunnerCache',
     rawBody: 'application/octet-stream',
   },
   'POST /runner/v1/jobs/:id/complete': { id: 'completeRunnerJob', body: completeSchema },
@@ -464,6 +474,9 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'PATCH /api/v1/orgs/:org/runners/:id': { id: 'updateOrgRunner', body: patchRunnerBody },
   'DELETE /api/v1/orgs/:org/runners/:id': { id: 'deleteOrgRunner' },
   'GET /api/v1/orgs/:org/variables': { id: 'listOrgVariables' },
+  'GET /api/v1/orgs/:org/ci/limits': { id: 'getOrgCiLimits' },
+  'PUT /api/v1/orgs/:org/ci/limits': { id: 'putOrgCiLimits', body: limitsSchema },
+  'DELETE /api/v1/orgs/:org/ci/limits': { id: 'deleteOrgCiLimits' },
   'PUT /api/v1/orgs/:org/variables/:name': { id: 'putOrgVariable', body: variableBody },
   'DELETE /api/v1/orgs/:org/variables/:name': { id: 'deleteOrgVariable' },
   'POST /api/v1/orgs/:org/rulesets': { id: 'createOrgRuleset', body: rulesetInputSchema },
@@ -613,6 +626,13 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/ci/runs/:id/cancel': { id: 'cancelCiRun' },
   'POST /api/v1/repos/:repo/ci/runs/:id/retry': { id: 'retryCiRun' },
   'GET /api/v1/repos/:repo/ci/runs/:id/log': { id: 'getCiRunLog' },
+  'GET /api/v1/repos/:repo/ci/runs/:id/artifacts': { id: 'listCiRunArtifacts' },
+  'GET /api/v1/repos/:repo/ci/pipelines/runs/:id/artifacts': {
+    id: 'listPipelineRunArtifacts',
+  },
+  'GET /api/v1/repos/:repo/ci/artifacts/:id': { id: 'downloadCiArtifact' },
+  'GET /api/v1/repos/:repo/ci/caches': { id: 'listCiCaches' },
+  'DELETE /api/v1/repos/:repo/ci/caches/:id': { id: 'deleteCiCache' },
   'GET /api/v1/repos/:repo/codeowners': {
     id: 'getCodeowners',
     query: z.object({

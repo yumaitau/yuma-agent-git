@@ -22,8 +22,7 @@ export const ciLimitsRoutes = new Hono<AppEnv>();
 const path = '/orgs/:org/ci/limits';
 
 async function ciAdminOrg(c: Context<AppEnv>) {
-  const user = c.get('user');
-  if (!user) throw new ApiError(401, 'unauthorized', 'session required');
+  const user = c.get('user')!;
   const admins = (c.env.CI_ADMIN_USER_IDS ?? '').split(',').map((s) => s.trim());
   if (!admins.includes(user.id)) throw new ApiError(403, 'forbidden', 'CI admin required');
   const org = await getOrgBySlug(c.env, c.req.param('org') ?? '');
@@ -69,6 +68,7 @@ ciLimitsRoutes.get(path, async (c) => {
 
 ciLimitsRoutes.put(path, async (c) => {
   try {
+    if (!c.get('user')) return apiError(c, 401, 'unauthorized', 'session required');
     const org = await ciAdminOrg(c);
     const parsed = limitsSchema.safeParse(await readJsonBody(c));
     if (!parsed.success)
@@ -110,6 +110,7 @@ ciLimitsRoutes.put(path, async (c) => {
 
 ciLimitsRoutes.delete(path, async (c) => {
   try {
+    if (!c.get('user')) return apiError(c, 401, 'unauthorized', 'session required');
     const org = await ciAdminOrg(c);
     await recordAudit(
       c,

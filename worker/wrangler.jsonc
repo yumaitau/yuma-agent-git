@@ -68,7 +68,8 @@
       { "binding": "MIRROR_QUEUE", "queue": "mirror-sync" },
     ],
     "consumers": [
-      { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 0 },
+      // per-org pools (#52) admit the jobs; up to 20 run at once, the container default max_instances
+      { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 20, "max_retries": 0 },
       {
         "queue": "derived-data",
         "max_batch_size": 10,
@@ -124,7 +125,8 @@
           {
             "queue": "ci-runs",
             "max_batch_size": 1,
-            "max_concurrency": 1,
+            // per-org pools (#52) admit the jobs; up to 20 run at once, the container default max_instances
+            "max_concurrency": 20,
             "max_retries": 0,
           },
           { "queue": "derived-data", "max_batch_size": 10, "max_retries": 3 },

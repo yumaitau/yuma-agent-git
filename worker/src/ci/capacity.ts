@@ -91,7 +91,7 @@ export async function poolFor(env: Env, repoId: string): Promise<Pool> {
 
 /** Whole micro-dollars of a pool's monthly budget. */
 export function budgetMicros(limits: CiLimits): number {
-  return Math.floor(limits.monthly_budget_usd * 1_000_000);
+  return Math.round(limits.monthly_budget_usd * 1_000_000);
 }
 
 /** Reasons a job cannot run in this pool, checked when a pipeline is planned. */

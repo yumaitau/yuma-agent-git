@@ -926,6 +926,32 @@ describe('route sweep — the authz contract future routes must extend', () => {
         body: { to: 'dual' },
         expect: { anon: 401, stranger: 404, creator: 409 }, // github -> dual skips a stage
       },
+      // CI artifacts and caches (#51)
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/ci/caches',
+        expect: { anon: 401, stranger: 404, creator: 200 },
+      },
+      {
+        method: 'DELETE',
+        path: '/api/v1/repos/acme/sweep/ci/caches/missing',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such entry
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/ci/artifacts/missing',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such artifact
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/ci/runs/missing/artifacts',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such run
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/repos/acme/sweep/ci/pipelines/runs/missing/artifacts',
+        expect: { anon: 401, stranger: 404, creator: 404 }, // guarded; no such run
+      },
     ];
 
     for (const entry of sweep) {
