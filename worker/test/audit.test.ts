@@ -634,6 +634,12 @@ const AUDITED: Record<string, AuditAction> = {
   'PATCH /api/v1/hooks/:id': 'webhook.update',
   'DELETE /api/v1/hooks/:id': 'webhook.delete',
   'POST /api/v1/hooks/:id/deliveries/:delivery/redeliver': 'webhook.redeliver',
+  'POST /api/v1/repos/:repo{.+}/mirrors': 'mirror.create',
+  'PATCH /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.update',
+  'DELETE /api/v1/repos/:repo{.+}/mirrors/:id': 'mirror.delete',
+  // when the sync moved a ref or failed; a no-op sync changes nothing
+  'POST /api/v1/repos/:repo{.+}/mirrors/:id/sync': 'mirror.sync',
+  'POST /api/v1/repos/:repo{.+}/migration': 'repo.migration',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':

@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../worker"
 
-for queue in derived-data agent-jobs git-import ci-runs audit-stream forge-events; do
+for queue in derived-data agent-jobs git-import ci-runs audit-stream forge-events mirror-sync; do
   if output=$(npx wrangler queues create "$queue" 2>&1); then
     echo "queue ok: $queue"
   elif grep -qiE 'already (exists|taken)' <<< "$output"; then

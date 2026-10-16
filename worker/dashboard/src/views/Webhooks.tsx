@@ -95,7 +95,10 @@ export function WebhooksView(): ReactElement {
       <RepoNav active="CI" />
       <div className="row between">
         <h1>Webhooks</h1>
-        <Link to={`/r/${slug}/ci/access`}>Secrets and environments</Link>
+        <span className="row">
+          <Link to={`/r/${slug}/mirrors`}>Mirrors</Link>
+          <Link to={`/r/${slug}/ci/access`}>Secrets and environments</Link>
+        </span>
       </div>
       {error && <ErrorNotice error={error} />}
       {notice && <p role="status">{notice}</p>}

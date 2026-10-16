@@ -62,6 +62,7 @@
       },
       { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
       { "binding": "EVENTS_QUEUE", "queue": "forge-events" },
+      { "binding": "MIRROR_QUEUE", "queue": "mirror-sync" },
     ],
     "consumers": [
       { "queue": "ci-runs", "max_batch_size": 1, "max_concurrency": 1, "max_retries": 0 },
@@ -113,6 +114,7 @@
           { "binding": "IMPORT_QUEUE", "queue": "git-import" },
           { "binding": "AUDIT_QUEUE", "queue": "audit-stream" },
           { "binding": "EVENTS_QUEUE", "queue": "forge-events" },
+          { "binding": "MIRROR_QUEUE", "queue": "mirror-sync" },
         ],
         "consumers": [
           {
@@ -133,6 +135,8 @@
           },
           // webhook fan-out and delivery; retries are scheduled as new messages
           { "queue": "forge-events", "max_batch_size": 10, "max_retries": 3 },
+          // one sync per invocation; a held mirror retries the message later
+          { "queue": "mirror-sync", "max_batch_size": 1, "max_retries": 10 },
         ],
       },
       "ai": {

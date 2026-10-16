@@ -61,6 +61,8 @@ import {
   policyTestSchema,
 } from './guardrails';
 import { hookInputSchema, hookPatchSchema } from './hooks';
+import { mirrorInputSchema, mirrorPatchSchema } from './mirrors';
+import { transitionSchema } from '../mirrors/migration';
 import { putSsoSchema } from './org-sso';
 import {
   createOrgSchema,
@@ -728,6 +730,19 @@ export const API_CONTRACT: Record<string, RouteContract> = {
     body: releaseWork,
   },
   'POST /api/v1/repos/:repo/tags': { id: 'createTag', body: createTagSchema },
+  'GET /api/v1/repos/:repo/mirrors': { id: 'listMirrors' },
+  'POST /api/v1/repos/:repo/mirrors': { id: 'createMirror', body: mirrorInputSchema },
+  'PATCH /api/v1/repos/:repo/mirrors/:id': {
+    id: 'updateMirror',
+    body: mirrorPatchSchema,
+  },
+  'DELETE /api/v1/repos/:repo/mirrors/:id': { id: 'deleteMirror' },
+  'POST /api/v1/repos/:repo/mirrors/:id/sync': { id: 'syncMirror' },
+  'GET /api/v1/repos/:repo/migration': { id: 'getMigration' },
+  'POST /api/v1/repos/:repo/migration': {
+    id: 'transitionMigration',
+    body: transitionSchema,
+  },
   'GET /api/v1/repos/:repo/tree': {
     id: 'getTree',
     query: z.object({

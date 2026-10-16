@@ -136,7 +136,7 @@ const dnsSchema = z.object({
 });
 
 /** Whether a name resolves to any blocked address (DNS-over-HTTPS). Throws when DNS fails. */
-async function resolvesToBlocked(hostname: string): Promise<boolean> {
+export async function resolvesToBlocked(hostname: string): Promise<boolean> {
   if (hostname.startsWith('[') || v4(hostname) !== null) return false; // checked as a literal
   for (const type of ['A', 'AAAA']) {
     const res = await fetch(
