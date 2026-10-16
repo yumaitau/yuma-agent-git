@@ -161,6 +161,21 @@ Repo existence is never leaked (`worker/src/auth/guards.ts`):
 `denied_by` is `{id, path_prefix, effect, principal}` of the deciding rule, so the UI
 can name it.
 
+Agent guardrails (#62) then judge agent identities and agent tools on pushes, commits,
+ref moves, tags and pipeline runs (`docs/adr/0003-policy-engine.md`). Refusals are `403`
+with the reason in `message` and the matching rules in `policy: {version, matches}`:
+
+| Situation                                             | Response                                                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------- |
+| Agents are paused in the org or on the instance       | `403 agents_paused`; agent tokens answer `401`                        |
+| A policy rule denies the action                       | `403 policy_denied`                                                   |
+| A rule holds it for a person                          | `403 approval_required` with `approval: {id, payload_hash, decision}` |
+| A person rejected this exact payload                  | `403 approval_rejected`                                               |
+| The stored policy cannot be read (agents fail closed) | `403 policy_unavailable`                                              |
+
+Once a person approves (`POST …/approvals/:id`), the agent repeats the identical request
+or push and it goes through. A refused push prints the same `<code>: <message>`.
+
 ## Errors
 
 Every error uses one envelope (`worker/src/api/errors.ts`):
@@ -259,7 +274,7 @@ Without a configured signing key, tokens fail closed.
 
 <!-- generated:routes:start -->
 
-186 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
+198 routes. Auth: `any` = session cookie or bearer token, `session` = browser session only, `token` = bearer token only. Every `/api/*` route rejects anonymous callers with 401 before any of these checks run.
 
 | Method | Path                                                   | Auth                    | Permission                                                  | Rate bucket  | Purpose                                                                            |
 | ------ | ------------------------------------------------------ | ----------------------- | ----------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------- |
@@ -267,6 +282,9 @@ Without a configured signing key, tokens fail closed.
 | POST   | `/:owner/:repo.git/git-upload-pack`                    | token (Basic or Bearer) | read (whole repo)                                           | api_write    | Git protocol v2 `ls-refs` and `fetch` (clone, fetch)                               |
 | GET    | `/:owner/:repo.git/info/refs`                          | token (Basic or Bearer) | read (whole repo); write for `git-receive-pack`             | api_read     | Git smart HTTP advertisement: v2 capabilities, or refs for `git-receive-pack`      |
 | GET    | `/api/v1`                                              | any                     | —                                                           | api_read     | API root: `{ok, service, api: "v1"}`                                               |
+| GET    | `/api/v1/admin/agents/pause`                           | session                 | —                                                           | api_read     | Whether every agent on the instance is paused                                      |
+| POST   | `/api/v1/admin/agents/pause`                           | session                 | —                                                           | api_write    | Pause every agent: revoke agent tokens, cancel runs (`AGENTS_ADMIN_USER_IDS`)      |
+| DELETE | `/api/v1/admin/agents/pause`                           | session                 | —                                                           | api_write    | Resume agents on the instance                                                      |
 | GET    | `/api/v1/admin/metrics`                                | session                 | admin on any repo                                           | api_read     | Operational metrics (`?component=&window=`)                                        |
 | POST   | `/api/v1/admin/secrets/rewrap`                         | session                 | —                                                           | api_write    | Re-wrap secret data keys under the current KEK (`SECRETS_ADMIN_USER_IDS`)          |
 | GET    | `/api/v1/agents`                                       | session                 | —                                                           | api_read     | Agent identities you manage, with live token counts                                |
@@ -291,10 +309,16 @@ Without a configured signing key, tokens fail closed.
 | POST   | `/api/v1/orgs`                                         | session                 | —                                                           | api_write    | Create an org (caller becomes owner)                                               |
 | GET    | `/api/v1/orgs/:org`                                    | session                 | org member                                                  | api_read     | One org and the caller role                                                        |
 | PATCH  | `/api/v1/orgs/:org`                                    | session                 | org owner                                                   | api_write    | Org settings (owners)                                                              |
+| GET    | `/api/v1/orgs/:org/agents/pause`                       | session                 | org member                                                  | api_read     | Org and instance agent pause, and who paused                                       |
+| POST   | `/api/v1/orgs/:org/agents/pause`                       | session                 | org owner or admin                                          | api_write    | Pause org agents: revoke their tokens, cancel runs, refuse writes                  |
+| DELETE | `/api/v1/orgs/:org/agents/pause`                       | session                 | org owner or admin                                          | api_write    | Resume org agents                                                                  |
 | GET    | `/api/v1/orgs/:org/audit`                              | any                     | —                                                           | api_read     | Search or export the org audit chain                                               |
 | GET    | `/api/v1/orgs/:org/members`                            | session                 | org member                                                  | api_read     | List org members                                                                   |
 | PUT    | `/api/v1/orgs/:org/members`                            | session                 | org owner or admin                                          | api_write    | Add or change an org member                                                        |
 | DELETE | `/api/v1/orgs/:org/members/:userId`                    | session                 | org owner or admin                                          | api_write    | Remove an org member (and from its teams)                                          |
+| GET    | `/api/v1/orgs/:org/policy`                             | session                 | org member                                                  | api_read     | Agent policy in force (the default pack when unset)                                |
+| PUT    | `/api/v1/orgs/:org/policy`                             | session                 | org owner or admin                                          | api_write    | Save a new agent policy version                                                    |
+| GET    | `/api/v1/orgs/:org/policy/versions`                    | session                 | org owner or admin                                          | api_read     | Agent policy version history                                                       |
 | GET    | `/api/v1/orgs/:org/repos`                              | session                 | org member                                                  | api_read     | Org repos the caller can read                                                      |
 | GET    | `/api/v1/orgs/:org/rulesets`                           | session                 | org owner or admin                                          | api_read     | List org rulesets                                                                  |
 | POST   | `/api/v1/orgs/:org/rulesets`                           | session                 | org owner or admin                                          | api_write    | Create an org ruleset                                                              |
@@ -317,6 +341,7 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/orgs/:org/variables`                          | session                 | org owner or admin                                          | api_read     | Org variables with values                                                          |
 | PUT    | `/api/v1/orgs/:org/variables/:name`                    | session                 | org owner or admin                                          | api_write    | Set an org variable `{value}`                                                      |
 | DELETE | `/api/v1/orgs/:org/variables/:name`                    | session                 | org owner or admin                                          | api_write    | Delete an org variable                                                             |
+| POST   | `/api/v1/policy/test`                                  | any                     | —                                                           | api_write    | Run an agent policy (or the default pack) against test cases                       |
 | GET    | `/api/v1/repos`                                        | any                     | token needs `repo:read` or `repo:write`                     | api_read     | List repos visible to the caller (keyset paged)                                    |
 | POST   | `/api/v1/repos`                                        | session                 | —                                                           | api_write    | Create a repo (creator becomes admin)                                              |
 | GET    | `/api/v1/repos/:owner/:name`                           | any                     | read                                                        | api_read     | Repo metadata plus `can_admin`                                                     |
@@ -329,6 +354,8 @@ Without a configured signing key, tokens fail closed.
 | GET    | `/api/v1/repos/:repo/agents/tasks`                     | any                     | read                                                        | agent_run    | List agent tasks (`?status=&limit=`)                                               |
 | POST   | `/api/v1/repos/:repo/agents/tasks`                     | any                     | write + `agent:run`                                         | agent_run    | Queue an agent task                                                                |
 | GET    | `/api/v1/repos/:repo/ancestor-distance`                | any                     | read                                                        | api_read     | First-parent distance between `a` and `b`                                          |
+| GET    | `/api/v1/repos/:repo/approvals`                        | any                     | admin (whole repo)                                          | api_read     | Agent actions held for a human (`?state=pending\|approved\|rejected\|all`)         |
+| POST   | `/api/v1/repos/:repo/approvals/:id`                    | session                 | admin (whole repo)                                          | api_write    | Approve or reject a held agent action                                              |
 | GET    | `/api/v1/repos/:repo/blame`                            | any                     | read + path:history                                         | api_read     | Line ranges to changesets for one file                                             |
 | PUT    | `/api/v1/repos/:repo/blob`                             | any                     | write                                                       | api_write    | Pre-upload a blob (hash-verified, max 64 MiB)                                      |
 | GET    | `/api/v1/repos/:repo/changed-paths`                    | any                     | read                                                        | api_read     | Files changed by one changeset                                                     |

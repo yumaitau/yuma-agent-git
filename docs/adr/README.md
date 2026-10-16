@@ -5,10 +5,11 @@ revisit it. Records are numbered in order and never renumbered. To change a
 decision, write a new record that supersedes the old one and update the old
 record's status.
 
-| ADR                            | Title                                  | Status                    |
-| ------------------------------ | -------------------------------------- | ------------------------- |
-| [0001](0001-forge-strategy.md) | Forge strategy                         | Accepted (spikes not run) |
-| [0002](0002-saml-sso.md)       | SAML sign-in waits for a safe verifier | Accepted                  |
+| ADR                            | Title                                   | Status                    |
+| ------------------------------ | --------------------------------------- | ------------------------- |
+| [0001](0001-forge-strategy.md) | Forge strategy                          | Accepted (spikes not run) |
+| [0002](0002-saml-sso.md)       | SAML sign-in waits for a safe verifier  | Accepted                  |
+| [0003](0003-policy-engine.md)  | Agent policies use a typed TS rules DSL | Accepted                  |
 
 ## Template
 

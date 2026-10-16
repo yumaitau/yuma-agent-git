@@ -456,6 +456,30 @@ export const rulesetEvaluationSchema = z.object({
 });
 export type RulesetEvaluation = z.infer<typeof rulesetEvaluationSchema>;
 
+// Agent guardrails (issue #62)
+export const agentPauseSchema = z.object({
+  paused_by: z.string(),
+  paused_by_login: z.string().nullable(),
+  reason: z.string(),
+  paused_at: z.number(),
+});
+export type AgentPause = z.infer<typeof agentPauseSchema>;
+
+export const approvalSchema = z.object({
+  id: z.string(),
+  action: z.string(),
+  principal: z.string(),
+  on_behalf_of_login: z.string().nullable(),
+  payload_hash: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+  reasons: z.array(z.object({ rule: z.string(), message: z.string() })),
+  requested_at: z.number(),
+  decision: z.enum(['pending', 'approved', 'rejected']),
+  decided_by_login: z.string().nullable(),
+  decided_at: z.number().nullable(),
+});
+export type Approval = z.infer<typeof approvalSchema>;
+
 export const importJobSchema = z.object({
   job_id: z.string(),
   status: z.string(),
@@ -1084,6 +1108,59 @@ export const api = {
       z.object({ evaluations: z.array(rulesetEvaluationSchema) }),
     );
     return body.evaluations;
+  },
+
+  // -- agent guardrails (issue #62) ------------------------------------------
+  async getAgentPause(
+    org: string,
+  ): Promise<{ paused: AgentPause | null; instance: AgentPause | null }> {
+    return requestJson(
+      `/api/v1/orgs/${org}/agents/pause`,
+      {},
+      z.object({
+        paused: agentPauseSchema.nullable(),
+        instance: agentPauseSchema.nullable(),
+      }),
+    );
+  },
+
+  async pauseAgents(org: string, reason: string): Promise<AgentPause | null> {
+    const body = await requestJson(
+      `/api/v1/orgs/${org}/agents/pause`,
+      { method: 'POST', body: { reason } },
+      z.object({ paused: agentPauseSchema.nullable() }),
+    );
+    return body.paused;
+  },
+
+  async resumeAgents(org: string): Promise<void> {
+    await requestJson(
+      `/api/v1/orgs/${org}/agents/pause`,
+      { method: 'DELETE' },
+      z.object({ paused: z.null() }),
+    );
+  },
+
+  async listApprovals(slug: string): Promise<Approval[]> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/approvals`,
+      {},
+      z.object({ approvals: z.array(approvalSchema) }),
+    );
+    return body.approvals;
+  },
+
+  async decideApproval(
+    slug: string,
+    id: string,
+    decision: 'approve' | 'reject',
+  ): Promise<Approval> {
+    const body = await requestJson(
+      `/api/v1/repos/${slug}/approvals/${id}`,
+      { method: 'POST', body: { decision } },
+      z.object({ approval: approvalSchema }),
+    );
+    return body.approval;
   },
 
   // -- orgs (issue #26) ------------------------------------------------------

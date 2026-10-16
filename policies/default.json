@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "ci-workflows",
+      "description": "Agents change CI workflows only with a human approval.",
+      "actions": ["push", "changeset.create"],
+      "effect": "require_approval",
+      "when": {
+        "paths": [".github/workflows/**"]
+      }
+    },
+    {
+      "id": "pipelines",
+      "description": "Agents change Yuma pipelines only with a human approval.",
+      "actions": ["pipeline.edit"],
+      "effect": "require_approval"
+    },
+    {
+      "id": "ownership-and-rules",
+      "description": "CODEOWNERS and ruleset files need a human approval.",
+      "actions": ["push", "changeset.create"],
+      "effect": "require_approval",
+      "when": {
+        "paths": [
+          "CODEOWNERS",
+          ".github/CODEOWNERS",
+          "docs/CODEOWNERS",
+          ".yuma/rulesets/**",
+          ".github/rulesets/**"
+        ]
+      }
+    },
+    {
+      "id": "untrusted-dependencies",
+      "description": "Dependencies come from the npm registry or the repo itself unless a human approves.",
+      "actions": ["push", "changeset.create"],
+      "effect": "require_approval",
+      "when": {
+        "registries": ["registry.npmjs.org", "local"]
+      }
+    },
+    {
+      "id": "large-change-files",
+      "description": "More than 50 files in one action needs a human approval.",
+      "actions": ["push", "changeset.create"],
+      "effect": "require_approval",
+      "when": {
+        "max_files": 50
+      }
+    },
+    {
+      "id": "large-change-bytes",
+      "description": "More than 1 MiB of new content in one action needs a human approval.",
+      "actions": ["push", "changeset.create"],
+      "effect": "require_approval",
+      "when": {
+        "max_bytes": 1048576
+      }
+    },
+    {
+      "id": "force-push",
+      "description": "Agents never rewrite history outside their own refs/agents/ work refs.",
+      "actions": ["push", "ref.move"],
+      "effect": "deny",
+      "when": {
+        "force_push": true,
+        "refs": ["**", "!refs/agents/**"]
+      }
+    },
+    {
+      "id": "high-risk-merge",
+      "description": "Agents never merge high risk work. Agent identities cannot merge at all today; this rule holds if that changes.",
+      "actions": ["pr.merge"],
+      "effect": "deny",
+      "when": {
+        "risk": ["high"]
+      }
+    },
+    {
+      "id": "releases",
+      "description": "Publishing a release needs a human approval.",
+      "actions": ["release.publish"],
+      "effect": "require_approval"
+    }
+  ]
+}

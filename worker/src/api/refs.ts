@@ -22,6 +22,7 @@ import {
 import { agentIdOf, type AppEnv } from '../auth/principal';
 import { recordAudit } from '../audit/record';
 import { linkLanded } from '../collab/references';
+import { enforceAgentAction } from '../policy/guardrails';
 
 /**
  * Ref routes (architecture §1.4, issue #33) — moves are compare-and-swap
@@ -153,6 +154,20 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
       });
     }
 
+    // agent guardrails (#62): a tag is a release, any other ref a ref move
+    const move = { ref: name, from: parsed.data.from, to: parsed.data.to };
+    await enforceAgentAction(
+      c.env,
+      principal,
+      repo,
+      {
+        action: name.startsWith(TAG_PREFIX) ? 'release.publish' : 'ref.move',
+        ref: name,
+        force_push: parsed.data.force ?? false,
+      },
+      { exact: move, summary: { ...move, force: parsed.data.force ?? false } },
+    );
+
     const result = await moveRefViaDO(c.env, repo.id, name, {
       ...parsed.data,
       actor: principal,
@@ -253,6 +268,14 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
         target: input.target,
       });
     }
+    const release = { tag: input.name, target_cs: target };
+    await enforceAgentAction(
+      c.env,
+      c.get('principal'),
+      repo,
+      { action: 'release.publish', ref },
+      { exact: { ...release, message: input.message ?? null }, summary: release },
+    );
     try {
       // from: null makes the CAS the single arbiter of "tag already exists"
       await moveRefViaDO(c.env, repo.id, ref, {

@@ -72,6 +72,25 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/agents/pause': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Whether every agent on the instance is paused */
+    get: operations['getInstanceAgentPause'];
+    put?: never;
+    /** Pause every agent: revoke agent tokens, cancel runs (`AGENTS_ADMIN_USER_IDS`) */
+    post: operations['pauseInstanceAgents'];
+    /** Resume agents on the instance */
+    delete: operations['resumeInstanceAgents'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/metrics': {
     parameters: {
       query?: never;
@@ -416,6 +435,25 @@ export interface paths {
     patch: operations['updateOrg'];
     trace?: never;
   };
+  '/api/v1/orgs/{org}/agents/pause': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Org and instance agent pause, and who paused */
+    get: operations['getOrgAgentPause'];
+    put?: never;
+    /** Pause org agents: revoke their tokens, cancel runs, refuse writes */
+    post: operations['pauseOrgAgents'];
+    /** Resume org agents */
+    delete: operations['resumeOrgAgents'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/orgs/{org}/audit': {
     parameters: {
       query?: never;
@@ -463,6 +501,41 @@ export interface paths {
     post?: never;
     /** Remove an org member (and from its teams) */
     delete: operations['deleteOrgMember'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/policy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Agent policy in force (the default pack when unset) */
+    get: operations['getOrgPolicy'];
+    /** Save a new agent policy version */
+    put: operations['putOrgPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/orgs/{org}/policy/versions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Agent policy version history */
+    get: operations['listOrgPolicyVersions'];
+    put?: never;
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -730,6 +803,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/policy/test': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Run an agent policy (or the default pack) against test cases */
+    post: operations['testPolicy'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos': {
     parameters: {
       query?: never;
@@ -864,6 +954,40 @@ export interface paths {
     get: operations['getAncestorDistance'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Agent actions held for a human (`?state=pending|approved|rejected|all`) */
+    get: operations['listApprovals'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/approvals/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve or reject a held agent action */
+    post: operations['decideApproval'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2610,6 +2734,77 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getInstanceAgentPause: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  pauseInstanceAgents: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @default  */
+          reason?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  resumeInstanceAgents: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getMetrics: {
     parameters: {
       query?: {
@@ -3224,6 +3419,83 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  getOrgAgentPause: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  pauseOrgAgents: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @default  */
+          reason?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  resumeOrgAgents: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   searchOrgAudit: {
     parameters: {
       query?: {
@@ -3321,6 +3593,114 @@ export interface operations {
       path: {
         org: string;
         userId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getOrgPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  putOrgPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @constant */
+          version: 1;
+          rules: {
+            id: string;
+            /** @default  */
+            description?: string;
+            actions: (
+              | 'push'
+              | 'changeset.create'
+              | 'ref.move'
+              | 'pr.merge'
+              | 'release.publish'
+              | 'pipeline.run'
+              | 'pipeline.edit'
+              | 'secret.write'
+              | 'issue.ready'
+            )[];
+            /** @enum {string} */
+            effect: 'deny' | 'require_approval';
+            /** @default {} */
+            when?: {
+              paths?: string[];
+              refs?: string[];
+              max_files?: number;
+              max_bytes?: number;
+              /** @constant */
+              force_push?: true;
+              risk?: ('low' | 'medium' | 'high')[];
+              registries?: string[];
+            };
+          }[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listOrgPolicyVersions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        org: string;
       };
       cookie?: never;
     };
@@ -3973,6 +4353,65 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  testPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          policy?: unknown;
+          cases: {
+            name: string;
+            input: {
+              /** @enum {string} */
+              action:
+                | 'push'
+                | 'changeset.create'
+                | 'ref.move'
+                | 'pr.merge'
+                | 'release.publish'
+                | 'pipeline.run'
+                | 'pipeline.edit'
+                | 'secret.write'
+                | 'issue.ready';
+              ref?: string;
+              files?: {
+                path: string;
+                /** @enum {string} */
+                op: 'add' | 'mod' | 'del';
+                size?: number;
+              }[];
+              force_push?: boolean;
+              risk?: ('low' | 'medium' | 'high') | null;
+              dependencies?: {
+                name: string;
+                registry: string;
+              }[];
+            };
+            /** @enum {string} */
+            expect: 'allow' | 'deny' | 'require_approval';
+          }[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   listRepos: {
     parameters: {
       query?: {
@@ -4311,6 +4750,66 @@ export interface operations {
       cookie?: never;
     };
     requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listApprovals: {
+    parameters: {
+      query?: {
+        state?: 'pending' | 'approved' | 'rejected' | 'all';
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  decideApproval: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {string} */
+          decision: 'approve' | 'reject';
+        };
+      };
+    };
     responses: {
       /** @description Success */
       '2XX': {

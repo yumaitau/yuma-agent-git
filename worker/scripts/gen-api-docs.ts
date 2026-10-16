@@ -167,6 +167,22 @@ const PURPOSES: Record<string, string> = {
   'DELETE /api/v1/orgs/:org/variables/:name': 'Delete an org variable',
   'POST /api/v1/admin/secrets/rewrap':
     'Re-wrap secret data keys under the current KEK (`SECRETS_ADMIN_USER_IDS`)',
+  'GET /api/v1/admin/agents/pause': 'Whether every agent on the instance is paused',
+  'POST /api/v1/admin/agents/pause':
+    'Pause every agent: revoke agent tokens, cancel runs (`AGENTS_ADMIN_USER_IDS`)',
+  'DELETE /api/v1/admin/agents/pause': 'Resume agents on the instance',
+  'POST /api/v1/policy/test':
+    'Run an agent policy (or the default pack) against test cases',
+  'GET /api/v1/orgs/:org/policy': 'Agent policy in force (the default pack when unset)',
+  'PUT /api/v1/orgs/:org/policy': 'Save a new agent policy version',
+  'GET /api/v1/orgs/:org/policy/versions': 'Agent policy version history',
+  'GET /api/v1/orgs/:org/agents/pause': 'Org and instance agent pause, and who paused',
+  'POST /api/v1/orgs/:org/agents/pause':
+    'Pause org agents: revoke their tokens, cancel runs, refuse writes',
+  'DELETE /api/v1/orgs/:org/agents/pause': 'Resume org agents',
+  'GET /api/v1/repos/:repo/approvals':
+    'Agent actions held for a human (`?state=pending|approved|rejected|all`)',
+  'POST /api/v1/repos/:repo/approvals/:id': 'Approve or reject a held agent action',
   'POST /api/v1/repos/:repo/connect': 'Link the repo to a GitHub repo via the App',
   'GET /api/v1/repos/:repo/diff': 'Server-side diff between two revisions',
   'POST /api/v1/repos/:repo/export/github': 'Queue a push of a revision to GitHub',

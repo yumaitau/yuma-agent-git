@@ -148,6 +148,28 @@ audit
     for (const [org, head] of Object.entries(result.heads)) console.log(`${org} ${head}`);
   });
 
+const policy = program.command('policy').description('Agent policy tools (#62)');
+policy
+  .command('test')
+  .description(
+    'Run a policy against fixture cases on the server engine; exits 1 on a failure',
+  )
+  .argument('[policy]', 'policy JSON file (default: the server default pack)')
+  .requiredOption('--fixtures <path>', 'a JSON file of cases, or a directory of them')
+  .option('--api <url>', 'server URL (default: from .yag/config.json)')
+  .action(async (file: string | undefined, opts: { fixtures: string; api?: string }) => {
+    const { formatResults, testPolicy } = await import('./policy.js');
+    const config = opts.api ? null : await loadConfig(process.cwd());
+    const result = await testPolicy({
+      api: opts.api ?? config?.api ?? '',
+      token: process.env.YAG_TOKEN ?? config?.token,
+      policy: file,
+      fixtures: opts.fixtures,
+    });
+    for (const line of formatResults(result)) console.log(line);
+    if (result.failed > 0) process.exitCode = 1;
+  });
+
 program
   .command('checkout')
   .argument('<rev>', 'revision: changeset id, ref:main, or a ref name')

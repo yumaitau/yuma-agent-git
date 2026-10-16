@@ -11,6 +11,7 @@ import { loadPipelines } from '../ci/spec';
 import { ciReady } from '../ci/triggers';
 import { contextFor, runRef, triggerOf } from '../ci/context';
 import { errorResponse, readJsonBody } from './errors';
+import { enforceAgentAction } from '../policy/guardrails';
 
 /** Pipeline spec v2 runs (issue #47). Runs read the whole tree, so every route needs the whole repo. */
 export const pipelineRoutes = new Hono<AppEnv>();
@@ -67,6 +68,15 @@ pipelineRoutes.post(`${base}/runs`, async (c) => {
         'manual_not_allowed',
         'Add a manual trigger to run it here',
       );
+    // agent guardrails (#62): a pipeline run can deploy and read secrets
+    const run = { pipeline: file.path, ref, head_cs: cs.id };
+    await enforceAgentAction(
+      c.env,
+      c.get('principal'),
+      loaded.repo,
+      { action: 'pipeline.run', ref },
+      { exact: run, summary: run },
+    );
     const id = await startPipeline(c.env, {
       repoId: loaded.repo.id,
       head: cs.id,
