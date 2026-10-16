@@ -20,6 +20,13 @@ export async function seedSchema(env: TestEnv): Promise<void> {
 
 /** Table names in safe wipe order (children before parents). */
 const WIPE_ORDER = [
+  'usage_alerts',
+  'usage_budgets',
+  'usage_daily',
+  'usage_events',
+  'agent_review_escalations',
+  'review_verdicts',
+  'agent_reviewers',
   'secret_alerts',
   'secret_scans',
   'release_attestations',

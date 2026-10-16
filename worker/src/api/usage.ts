@@ -276,7 +276,7 @@ async function report(
   const rows = raw
     ? await q<Row & { repo_id: string | null }>(
         c.env,
-        `SELECT repo_id, ${raw} AS key, ${RAW_SUMS} FROM usage_events
+        `SELECT repo_id, CAST(${raw} AS TEXT) AS key, ${RAW_SUMS} FROM usage_events
           WHERE ${scope.column} = ? AND at >= ? AND at < ? AND ${raw} IS NOT NULL
           GROUP BY repo_id, ${raw} ORDER BY usd_micros DESC, key LIMIT 1000`,
         [scope.id, fromMs, toMs],
@@ -491,9 +491,9 @@ async function budgetScope(
   named: { org?: string; agent?: string },
   need: 'read' | 'manage',
 ): Promise<{ scope: Budget['scope']; scope_id: string; auditOrg?: string }> {
-  const userId = sessionUser(c);
   if (need === 'manage' && c.get('principal')?.kind === 'agent')
     throw new ApiError(403, 'forbidden', 'Agents cannot change usage budgets.');
+  const userId = sessionUser(c);
   if (named.org !== undefined) {
     const org = await getOrgBySlug(c.env, named.org);
     const me = org ? await orgMembership(c.env, org.id, userId) : null;
@@ -611,7 +611,6 @@ usageRoutes.put('/usage/budgets', async (c) => {
 
 usageRoutes.delete('/usage/budgets/:id', async (c) => {
   try {
-    sessionUser(c);
     const row = await q1(c.env, 'SELECT * FROM usage_budgets WHERE id = ?', [
       c.req.param('id'),
     ]);
