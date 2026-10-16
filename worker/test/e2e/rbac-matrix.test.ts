@@ -124,6 +124,9 @@ const PUBLIC = new Set([
   'POST /mcp',
   'GET /mcp',
   'DELETE /mcp',
+  // notification email unsubscribe (#44): the HMAC-signed token is the credential
+  'GET /notifications/unsubscribe',
+  'POST /notifications/unsubscribe',
   // sign-in (#27): OIDC redirect/callback and passkey assertions
   'GET /auth/oidc/:provider',
   'GET /auth/oidc/:provider/callback',
