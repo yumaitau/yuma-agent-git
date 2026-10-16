@@ -148,7 +148,7 @@ describe('agent identities (#57)', () => {
       token_type: 'Bearer',
       issued_token_type: ACCESS,
       expires_in: 900,
-      scope: 'contents:read contents:write pulls:write',
+      scope: 'contents:read contents:write pulls:write issues:write',
     });
     const token = issued.access_token;
     expect(token.startsWith('yagat_')).toBe(true);
@@ -512,7 +512,7 @@ describe('agent identities (#57)', () => {
     expect(await q(dbEnv, 'SELECT jti FROM agent_tokens')).toEqual([]);
   });
 
-  it('needs ci:run for pipeline runs and contents:write for issue writes', async () => {
+  it('needs ci:run for pipeline runs and issues:write for issue writes', async () => {
     const agentId = await createAgent(owner, {});
     const token = await agentToken({
       subject_token: ownerToken,
@@ -537,21 +537,30 @@ describe('agent identities (#57)', () => {
       resource: 'acme/app',
       scope: 'contents:read',
     });
-    const issue = await call('/api/v1/repos/acme/app/issues', {
-      method: 'POST',
-      headers: bearer(reader),
-      body: { title: 'From a read-only agent' },
+    // contents:write writes code, not issues
+    for (const held of [reader, token]) {
+      const issue = await call('/api/v1/repos/acme/app/issues', {
+        method: 'POST',
+        headers: bearer(held),
+        body: { title: 'From an agent without issues:write' },
+      });
+      expect(issue.status).toBe(403);
+      expect(((await issue.json()) as { error: { code: string } }).error.code).toBe(
+        'insufficient_scope',
+      );
+    }
+    const triager = await agentToken({
+      subject_token: ownerToken,
+      agent_id: agentId,
+      resource: 'acme/app',
+      scope: 'contents:read issues:write',
     });
-    expect(issue.status).toBe(403);
-    expect(((await issue.json()) as { error: { code: string } }).error.code).toBe(
-      'insufficient_scope',
-    );
     expect(
       (
         await call('/api/v1/repos/acme/app/issues', {
           method: 'POST',
-          headers: bearer(token),
-          body: { title: 'From a writing agent' },
+          headers: bearer(triager),
+          body: { title: 'From an issue-writing agent' },
         })
       ).status,
     ).toBe(201);

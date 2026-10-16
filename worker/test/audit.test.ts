@@ -498,6 +498,8 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/tokens': 'token.create',
   'DELETE /api/v1/tokens/:id': 'token.revoke',
   'POST /oauth/token': 'agent.token.issue',
+  'POST /oauth/register': 'mcp.client.register',
+  'POST /oauth/authorize': 'mcp.grant.create',
   'POST /api/v1/agents': 'agent.create',
   'PATCH /api/v1/agents/:id': 'agent.disable',
   'DELETE /api/v1/agents/:id/tokens': 'agent.token.revoke',
@@ -608,6 +610,8 @@ const EXEMPT: Record<string, string> = {
   'POST /auth/passkey/options': 'issues a one-time challenge; sign-in is audited',
   'POST /api/v1/repos/:repo{.+}/agents/mcp':
     'tool calls audit their own state changes (land records ref.move)',
+  'POST /mcp': 'each tool calls an /api route, which audits its own change',
+  'DELETE /mcp': 'ends a protocol session; no repository or credential change',
 };
 
 describe('audit coverage', () => {

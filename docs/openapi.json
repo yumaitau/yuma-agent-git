@@ -7,6 +7,51 @@
   },
   "servers": [{ "url": "/", "description": "The deployment serving this document" }],
   "paths": {
+    "/.well-known/oauth-authorization-server": {
+      "get": {
+        "operationId": "getOAuthServerMetadata",
+        "summary": "RFC 8414 authorization server metadata",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-protected-resource": {
+      "get": {
+        "operationId": "getProtectedResourceMetadata",
+        "summary": "RFC 9728 metadata for the `/mcp` resource",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
+    "/.well-known/oauth-protected-resource/mcp": {
+      "get": {
+        "operationId": "getMcpProtectedResourceMetadata",
+        "summary": "RFC 9728 metadata for `/mcp` (path-inserted form)",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          }
+        }
+      }
+    },
     "/{owner}/{repo}.git/git-receive-pack": {
       "post": {
         "operationId": "gitReceivePack",
@@ -222,7 +267,8 @@
                         "contents:write",
                         "pulls:write",
                         "ci:run",
-                        "releases:write"
+                        "releases:write",
+                        "issues:write"
                       ]
                     }
                   },
@@ -1988,10 +2034,11 @@
     "/api/v1/repos/{owner}/{repo}/agents/mcp": {
       "post": {
         "operationId": "callMcp",
-        "summary": "MCP JSON-RPC 2.0 endpoint",
+        "summary": "Deprecated per-repo MCP JSON-RPC subset; use `/mcp`",
         "security": [{ "bearer": [] }],
         "x-yag-permission": "read; write for `commit`/`land`/`create_task` + `agent:run`",
         "x-yag-rate-bucket": "agent_run",
+        "deprecated": true,
         "parameters": [
           {
             "name": "owner",
@@ -2333,7 +2380,7 @@
           {
             "name": "cs",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "description": "Revision: changeset id, `ref:<name>` or a ref name"
@@ -3752,7 +3799,7 @@
           {
             "name": "cs",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "description": "Revision: changeset id, `ref:<name>` or a ref name"
@@ -6313,7 +6360,7 @@
           {
             "name": "cs",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
               "type": "string",
               "description": "Revision: changeset id, `ref:<name>` or a ref name"
@@ -7120,10 +7167,163 @@
         }
       }
     },
-    "/oauth/token": {
+    "/mcp": {
+      "get": {
+        "operationId": "resumeMcpStream",
+        "summary": "MCP: resume an SSE stream after `Last-Event-ID`",
+        "security": [{ "bearer": [] }],
+        "x-yag-permission": "per tool: the API route it calls",
+        "x-yag-rate-bucket": "agent_run",
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
       "post": {
-        "operationId": "exchangeAgentToken",
-        "summary": "RFC 8693 token exchange: an `agent:run` API token delegates to an agent",
+        "operationId": "postMcpMessage",
+        "summary": "MCP Streamable HTTP: one JSON-RPC message (docs/mcp.md)",
+        "security": [{ "bearer": [] }],
+        "x-yag-permission": "per tool: the API route it calls",
+        "x-yag-rate-bucket": "agent_run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "jsonrpc": { "type": "string", "const": "2.0" },
+                  "id": {
+                    "anyOf": [
+                      { "type": "string" },
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    ]
+                  },
+                  "method": { "type": "string", "minLength": 1 },
+                  "params": {
+                    "type": "object",
+                    "propertyNames": { "type": "string" },
+                    "additionalProperties": {}
+                  },
+                  "result": {},
+                  "error": {}
+                },
+                "required": ["jsonrpc"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMcpSession",
+        "summary": "MCP: end the session",
+        "security": [{ "bearer": [] }],
+        "x-yag-permission": "per tool: the API route it calls",
+        "x-yag-rate-bucket": "agent_run",
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/oauth/authorize": {
+      "get": {
+        "operationId": "startOAuthAuthorization",
+        "summary": "MCP OAuth consent page: pick agent, repos and scopes",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_read",
+        "parameters": [
+          {
+            "name": "response_type",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "code_challenge",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "code_challenge_method",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 2048 }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "resource",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "post": {
+        "operationId": "decideOAuthAuthorization",
+        "summary": "Approve or deny MCP consent; 302 back to the client",
+        "security": [{ "session": [] }],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": { "application/x-www-form-urlencoded": { "schema": {} } }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/oauth/register": {
+      "post": {
+        "operationId": "registerOAuthClient",
+        "summary": "RFC 7591 dynamic registration of a public MCP client",
         "security": [],
         "x-yag-permission": "—",
         "x-yag-rate-bucket": "api_write",
@@ -7134,30 +7334,18 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "grant_type": { "type": "string" },
-                  "subject_token": { "type": "string", "minLength": 1 },
-                  "subject_token_type": {
-                    "type": "string",
-                    "const": "urn:ietf:params:oauth:token-type:access_token"
+                  "redirect_uris": {
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 2000 }
                   },
-                  "agent_id": { "type": "string", "minLength": 1 },
-                  "resource": {
-                    "anyOf": [
-                      { "type": "string" },
-                      { "type": "array", "items": { "type": "string" } }
-                    ]
-                  },
-                  "scope": { "type": "string" },
-                  "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
-                  "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600 }
+                  "client_name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                  "token_endpoint_auth_method": { "type": "string" },
+                  "grant_types": { "type": "array", "items": { "type": "string" } },
+                  "response_types": { "type": "array", "items": { "type": "string" } }
                 },
-                "required": [
-                  "grant_type",
-                  "subject_token",
-                  "subject_token_type",
-                  "agent_id",
-                  "resource"
-                ]
+                "required": ["redirect_uris"]
               }
             }
           }
@@ -7167,6 +7355,90 @@
             "description": "Success",
             "content": { "application/json": { "schema": {} } }
           },
+          "4XX": { "$ref": "#/components/responses/Error" },
+          "5XX": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "operationId": "exchangeAgentToken",
+        "summary": "Token endpoint: RFC 8693 exchange (`agent:run` API token to agent), MCP authorization code (PKCE) and refresh grants",
+        "security": [],
+        "x-yag-permission": "—",
+        "x-yag-rate-bucket": "api_write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": { "type": "string" },
+                      "subject_token": { "type": "string", "minLength": 1 },
+                      "subject_token_type": {
+                        "type": "string",
+                        "const": "urn:ietf:params:oauth:token-type:access_token"
+                      },
+                      "agent_id": { "type": "string", "minLength": 1 },
+                      "resource": {
+                        "anyOf": [
+                          { "type": "string" },
+                          { "type": "array", "items": { "type": "string" } }
+                        ]
+                      },
+                      "scope": { "type": "string" },
+                      "task_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+                      "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600 }
+                    },
+                    "required": [
+                      "grant_type",
+                      "subject_token",
+                      "subject_token_type",
+                      "agent_id",
+                      "resource"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": { "type": "string", "const": "authorization_code" },
+                      "code": { "type": "string", "minLength": 1 },
+                      "redirect_uri": { "type": "string", "minLength": 1 },
+                      "client_id": { "type": "string", "minLength": 1 },
+                      "code_verifier": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+                      },
+                      "resource": { "type": "string" }
+                    },
+                    "required": [
+                      "grant_type",
+                      "code",
+                      "redirect_uri",
+                      "client_id",
+                      "code_verifier"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "grant_type": { "type": "string", "const": "refresh_token" },
+                      "refresh_token": { "type": "string", "minLength": 1 },
+                      "client_id": { "type": "string", "minLength": 1 },
+                      "resource": { "type": "string" }
+                    },
+                    "required": ["grant_type", "refresh_token", "client_id"]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": { "description": "Success" },
           "4XX": { "$ref": "#/components/responses/Error" },
           "5XX": { "$ref": "#/components/responses/Error" }
         }

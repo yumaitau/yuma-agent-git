@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Agent tokens need the new `issues:write` scope to open, edit or comment on
+  issues (`contents:write` no longer covers them); new agents get it by
+  default. `POST /api/v1/repos/:owner/:repo/agents/mcp` is deprecated in
+  favour of `/mcp` and sends `Deprecation` and `Sunset` headers.
+- The OpenAPI document now marks `cs` as required on `getFile`, `getTree` and
+  `getBlame`, matching what those routes always enforced.
 - The whole API and dashboard require sign-in. Anonymous callers get `401`,
   public repositories included; API cache policies are `private`.
 - The CLI explains how to supply a token when the server refuses an anonymous
@@ -15,6 +21,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- MCP server at `/mcp` (#56): Streamable HTTP per MCP 2025-11-25 with
+  sessions and resumable SSE for tool calls, OAuth 2.1 (protected resource and
+  authorisation server metadata, dynamic client registration, PKCE, rotating
+  refresh tokens) mapped onto agent identities, and 32 annotated forge tools
+  built from the OpenAPI contract. Setup for Claude Code, Codex, Factory and
+  Grok is in `docs/mcp.md`.
 - CI secrets, variables, environments and OIDC workload identity (#50).
   Org, repo and environment secrets are envelope-encrypted, write-only and
   masked in logs (including base64, URL-encoded and line-split forms).

@@ -105,6 +105,7 @@ describe('rate limiting (sharded sliding window)', () => {
     expect(bucketFor('GET', '/api/v1/repos/x/file')).toBe('api_read');
     expect(bucketFor('POST', '/api/v1/repos/x/changesets')).toBe('api_write');
     expect(bucketFor('POST', '/api/v1/repos/x/agents/mcp')).toBe('agent_run');
+    expect(bucketFor('POST', '/mcp')).toBe('agent_run');
     expect(bucketFor('POST', '/api/v1/repos/x/fetch-objects')).toBe('object_fetch');
     expect(bucketFor('GET', '/api/v1/repos/x/object/blob/abc')).toBe('object_fetch');
     expect(bucketFor('GET', '/auth/github')).toBe('auth');

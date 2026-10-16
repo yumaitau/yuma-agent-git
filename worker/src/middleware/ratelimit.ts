@@ -118,7 +118,8 @@ export function bucketFor(method: string, path: string): Bucket | null {
     return 'git';
   }
   if (path.startsWith('/auth/')) return 'auth';
-  if (path.includes('/agents/mcp') || path.includes('/agents/tasks')) return 'agent_run';
+  if (path === '/mcp' || path.includes('/agents/mcp') || path.includes('/agents/tasks'))
+    return 'agent_run';
   if (path.includes('/fetch-objects') || path.includes('/object/')) return 'object_fetch';
   return method === 'GET' || method === 'HEAD' ? 'api_read' : 'api_write';
 }

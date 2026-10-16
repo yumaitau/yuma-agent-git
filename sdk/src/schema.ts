@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+  '/.well-known/oauth-authorization-server': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** RFC 8414 authorization server metadata */
+    get: operations['getOAuthServerMetadata'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/.well-known/oauth-protected-resource': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** RFC 9728 metadata for the `/mcp` resource */
+    get: operations['getProtectedResourceMetadata'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/.well-known/oauth-protected-resource/mcp': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** RFC 9728 metadata for `/mcp` (path-inserted form) */
+    get: operations['getMcpProtectedResourceMetadata'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/{owner}/{repo}.git/git-receive-pack': {
     parameters: {
       query?: never;
@@ -792,7 +843,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** MCP JSON-RPC 2.0 endpoint */
+    /**
+     * Deprecated per-repo MCP JSON-RPC subset; use `/mcp`
+     * @deprecated
+     */
     post: operations['callMcp'];
     delete?: never;
     options?: never;
@@ -2370,6 +2424,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/mcp': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** MCP: resume an SSE stream after `Last-Event-ID` */
+    get: operations['resumeMcpStream'];
+    put?: never;
+    /** MCP Streamable HTTP: one JSON-RPC message (docs/mcp.md) */
+    post: operations['postMcpMessage'];
+    /** MCP: end the session */
+    delete: operations['deleteMcpSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/oauth/authorize': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** MCP OAuth consent page: pick agent, repos and scopes */
+    get: operations['startOAuthAuthorization'];
+    put?: never;
+    /** Approve or deny MCP consent; 302 back to the client */
+    post: operations['decideOAuthAuthorization'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/oauth/register': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** RFC 7591 dynamic registration of a public MCP client */
+    post: operations['registerOAuthClient'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/oauth/token': {
     parameters: {
       query?: never;
@@ -2379,7 +2487,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** RFC 8693 token exchange: an `agent:run` API token delegates to an agent */
+    /** Token endpoint: RFC 8693 exchange (`agent:run` API token to agent), MCP authorization code (PKCE) and refresh grants */
     post: operations['exchangeAgentToken'];
     delete?: never;
     options?: never;
@@ -2509,6 +2617,66 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getOAuthServerMetadata: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getProtectedResourceMetadata: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  getMcpProtectedResourceMetadata: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
   gitReceivePack: {
     parameters: {
       query?: never;
@@ -2698,6 +2866,7 @@ export interface operations {
             | 'pulls:write'
             | 'ci:run'
             | 'releases:write'
+            | 'issues:write'
           )[];
           allowed_repos?: string[] | null;
           org?: string;
@@ -4328,7 +4497,7 @@ export interface operations {
   getBlame: {
     parameters: {
       query: {
-        cs?: string;
+        cs: string;
         path: string;
         background?: '1';
         annotate?: '1';
@@ -5225,7 +5394,7 @@ export interface operations {
   getFile: {
     parameters: {
       query: {
-        cs?: string;
+        cs: string;
         path: string;
         format?: 'json' | 'raw';
       };
@@ -6856,8 +7025,8 @@ export interface operations {
   };
   getTree: {
     parameters: {
-      query?: {
-        cs?: string;
+      query: {
+        cs: string;
         path?: string;
         recursive?: '1';
       };
@@ -7531,7 +7700,27 @@ export interface operations {
       };
     };
   };
-  exchangeAgentToken: {
+  resumeMcpStream: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  postMcpMessage: {
     parameters: {
       query?: never;
       header?: never;
@@ -7541,15 +7730,15 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
-          grant_type: string;
-          subject_token: string;
           /** @constant */
-          subject_token_type: 'urn:ietf:params:oauth:token-type:access_token';
-          agent_id: string;
-          resource: string | string[];
-          scope?: string;
-          task_id?: string;
-          expires_in?: number;
+          jsonrpc: '2.0';
+          id?: string | number;
+          method?: string;
+          params?: {
+            [key: string]: unknown;
+          };
+          result?: unknown;
+          error?: unknown;
         };
       };
     };
@@ -7562,6 +7751,162 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  deleteMcpSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  startOAuthAuthorization: {
+    parameters: {
+      query?: {
+        response_type?: string;
+        client_id?: string;
+        redirect_uri?: string;
+        code_challenge?: string;
+        code_challenge_method?: string;
+        state?: string;
+        scope?: string;
+        resource?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  decideOAuthAuthorization: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': unknown;
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  registerOAuthClient: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          redirect_uris: string[];
+          client_name?: string;
+          token_endpoint_auth_method?: string;
+          grant_types?: string[];
+          response_types?: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  exchangeAgentToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json':
+          | {
+              grant_type: string;
+              subject_token: string;
+              /** @constant */
+              subject_token_type: 'urn:ietf:params:oauth:token-type:access_token';
+              agent_id: string;
+              resource: string | string[];
+              scope?: string;
+              task_id?: string;
+              expires_in?: number;
+            }
+          | {
+              /** @constant */
+              grant_type: 'authorization_code';
+              code: string;
+              redirect_uri: string;
+              client_id: string;
+              code_verifier: string;
+              resource?: string;
+            }
+          | {
+              /** @constant */
+              grant_type: 'refresh_token';
+              refresh_token: string;
+              client_id: string;
+              resource?: string;
+            };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       '4XX': components['responses']['Error'];
       '5XX': components['responses']['Error'];
