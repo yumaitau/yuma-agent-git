@@ -173,7 +173,7 @@ Client = `yag` CLI (thin): bounded local object cache in `~/.yag/objects`, worki
 
 ## 3. Auth + GitHub bridge
 
-- **GitHub OAuth** (login) → session token in HttpOnly cookie; sessions in D1.
+- **Sign-in** → OIDC (Google Workspace, Entra ID, any issuer; PKCE + nonce), passkeys, or optional GitHub OAuth → session token in HttpOnly cookie; sessions in D1 record the method and last MFA time. Passkeys or TOTP are the second factor; creating API tokens needs MFA within 12 hours once a factor is enrolled. SCIM 2.0 (`/scim/v2/Users`) provisions and deprovisions users.
 - **GitHub App** (repo bridge) → installation per org/repo; app JWT + installation tokens minted server-side.
 - **Webhooks** → GitHub App events (push, PR, installation) land on `POST /webhooks/github`, HMAC-verified against raw body before parsing.
 - **RBAC**: repo-level roles (admin/write/read) **plus directory-level permissions** (Scion's monorepo security): `path_rules` table grants/denies per path prefix; enforced in commit RPC, file RPC, and blame/history.

@@ -42,6 +42,15 @@ export interface Env {
   /** GitHub OAuth app credentials (issue #12) — set via secrets/.dev.vars. */
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
+  /**
+   * OIDC sign-in providers (issue #27), a JSON array (see auth/oidc.ts). Each
+   * client secret is the Worker secret `OIDC_<ID>_CLIENT_SECRET`.
+   */
+  OIDC_PROVIDERS?: string;
+  /** Secret that encrypts TOTP seeds at rest (issue #27). */
+  TOTP_ENCRYPTION_KEY?: string;
+  /** Comma-separated user ids allowed to mint SCIM provisioning tokens. */
+  SCIM_ADMIN_USER_IDS?: string;
   /** GitHub App credentials (issue #13). */
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;

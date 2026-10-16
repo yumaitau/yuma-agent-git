@@ -51,3 +51,44 @@ it('offers GitHub sign-in when credentials are configured', async () => {
     ),
   ).toBe('/auth/github');
 });
+
+it('lists configured identity providers ahead of GitHub', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        github_configured: true,
+        providers: [{ id: 'google', name: 'Google' }],
+      }),
+    ),
+  );
+  render(
+    <MemoryRouter>
+      <LoginView />
+    </MemoryRouter>,
+  );
+  const google = await screen.findByRole('link', { name: 'Sign in with Google' });
+  expect(google.getAttribute('href')).toBe('/auth/oidc/google');
+  expect(screen.getByRole('link', { name: 'Sign in with GitHub' })).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('does not call setup incomplete when only an OIDC provider is configured', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        github_configured: false,
+        providers: [{ id: 'entra', name: 'Microsoft' }],
+      }),
+    ),
+  );
+  render(
+    <MemoryRouter>
+      <LoginView />
+    </MemoryRouter>,
+  );
+  await screen.findByRole('link', { name: 'Sign in with Microsoft' });
+  expect(screen.queryByText('Sign-in setup is incomplete')).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Sign in with GitHub' })).toBeNull();
+});

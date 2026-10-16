@@ -13,6 +13,7 @@ import { TreeView } from './views/TreeView';
 import { DiffExplorerView } from './views/DiffExplorer';
 import { AgentsView, TaskDetailView } from './views/Agents';
 import { SettingsView } from './views/Settings';
+import { SecurityView } from './views/Security';
 import { Empty } from './ui';
 
 function NotFound(): ReactElement {
@@ -45,6 +46,14 @@ function AppRoutes(): ReactElement {
           element={
             <RequireAuth>
               <SettingsView />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/security"
+          element={
+            <RequireAuth>
+              <SecurityView />
             </RequireAuth>
           }
         />

@@ -8,6 +8,7 @@ import { rateLimitMiddleware } from './middleware/ratelimit';
 import { authRoutes } from './auth/oauth';
 import { githubRoutes } from './bridge/github';
 import { authMiddleware } from './auth/session';
+import { identityRoutes } from './auth/security';
 import { tokensRoutes } from './auth/tokens';
 import { reposRoutes } from './api/repos';
 import { webhooksRoutes } from './api/webhooks';
@@ -30,9 +31,10 @@ app.use('*', cacheTierMiddleware);
 
 app.get('/healthz', (c) => c.json({ ok: true }));
 
-// These modules declare absolute paths (outside /api/v1): OAuth, webhooks,
-// the GitHub App handshake, and token management.
+// These modules declare absolute paths (outside /api/v1): OAuth, OIDC,
+// passkeys, SCIM, webhooks, the GitHub App handshake, and token management.
 app.route('/', authRoutes);
+app.route('/', identityRoutes);
 app.route('/', tokensRoutes);
 app.route('/', webhooksRoutes);
 app.route('/', githubRoutes);
@@ -49,6 +51,7 @@ app.notFound((c) => {
     path.startsWith('/api/') ||
     path.startsWith('/auth/') ||
     path.startsWith('/webhooks/') ||
+    path.startsWith('/scim/') ||
     path.startsWith('/healthz');
   if (!isApiSurface && c.env.ASSETS) {
     return c.env.ASSETS.fetch(c.req.raw);

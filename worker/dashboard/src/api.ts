@@ -391,13 +391,56 @@ export type ImportJob = z.infer<typeof importJobSchema>;
 
 const okSchema = z.object({ ok: z.literal(true) });
 
+const providerSchema = z.object({ id: z.string(), name: z.string() });
+
+export const authStatusSchema = z.object({
+  github_configured: z.boolean(),
+  providers: z.array(providerSchema).optional(),
+});
+export type AuthStatus = z.infer<typeof authStatusSchema>;
+
+export const passkeySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  created_at: z.number(),
+  last_used_at: z.number().nullable(),
+});
+export type Passkey = z.infer<typeof passkeySchema>;
+
+export const securitySchema = z.object({
+  user: z.object({ id: z.string(), login: z.string() }),
+  session: z.object({
+    auth_method: z.string(),
+    mfa_at: z.number().nullable(),
+    mfa_fresh: z.boolean(),
+  }),
+  identities: z.array(
+    z.object({
+      provider: z.string(),
+      email: z.string().nullable(),
+      linked_at: z.number(),
+    }),
+  ),
+  passkeys: z.array(passkeySchema),
+  totp: z.object({ enrolled: z.boolean() }),
+  providers: z.array(providerSchema),
+});
+export type Security = z.infer<typeof securitySchema>;
+
+/** WebAuthn options as the Worker sends them (binary fields base64url). */
+const webauthnOptionsSchema = z.object({ challenge: z.string() }).loose();
+export type WebauthnOptions = z.infer<typeof webauthnOptionsSchema>;
+
+export const totpSetupSchema = z.object({ secret: z.string(), otpauth_uri: z.string() });
+export type TotpSetup = z.infer<typeof totpSetupSchema>;
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
 
 export const api = {
-  async authStatus(): Promise<{ github_configured: boolean }> {
-    return requestJson('/auth/status', {}, z.object({ github_configured: z.boolean() }));
+  async authStatus(): Promise<AuthStatus> {
+    return requestJson('/auth/status', {}, authStatusSchema);
   },
   /** Session probe — true when the cookie yields a principal. */
   async checkSession(): Promise<boolean> {
@@ -681,6 +724,88 @@ export const api = {
 
   async deleteToken(id: string): Promise<void> {
     await requestJson(`/api/v1/tokens/${id}`, { method: 'DELETE' }, okSchema);
+  },
+
+  // -- account security (passkeys, TOTP, linked identities) -------------------
+  async getSecurity(): Promise<Security> {
+    return requestJson('/api/v1/me/security', {}, securitySchema);
+  },
+
+  async passkeyRegistrationOptions(): Promise<WebauthnOptions> {
+    return requestJson(
+      '/api/v1/me/passkeys/options',
+      { method: 'POST', body: {} },
+      webauthnOptionsSchema,
+    );
+  },
+
+  async registerPasskey(label: string, credential: unknown): Promise<Passkey> {
+    const body = await requestJson(
+      '/api/v1/me/passkeys',
+      { method: 'POST', body: { label, credential } },
+      z.object({ passkey: passkeySchema }),
+    );
+    return body.passkey;
+  },
+
+  async deletePasskey(id: string): Promise<void> {
+    await requestJson(
+      `/api/v1/me/passkeys/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+      okSchema,
+    );
+  },
+
+  async startTotp(): Promise<TotpSetup> {
+    return requestJson('/api/v1/me/totp', { method: 'POST', body: {} }, totpSetupSchema);
+  },
+
+  async confirmTotp(code: string): Promise<void> {
+    await requestJson(
+      '/api/v1/me/totp/confirm',
+      { method: 'POST', body: { code } },
+      okSchema,
+    );
+  },
+
+  async deleteTotp(): Promise<void> {
+    await requestJson('/api/v1/me/totp', { method: 'DELETE' }, okSchema);
+  },
+
+  async mfaPasskeyOptions(): Promise<WebauthnOptions> {
+    return requestJson(
+      '/auth/mfa/passkey/options',
+      { method: 'POST', body: {} },
+      webauthnOptionsSchema,
+    );
+  },
+
+  async verifyMfaPasskey(credential: unknown): Promise<void> {
+    await requestJson(
+      '/auth/mfa/passkey',
+      { method: 'POST', body: { credential } },
+      okSchema,
+    );
+  },
+
+  async verifyMfaTotp(code: string): Promise<void> {
+    await requestJson('/auth/mfa/totp', { method: 'POST', body: { code } }, okSchema);
+  },
+
+  async passkeySignInOptions(): Promise<WebauthnOptions> {
+    return requestJson(
+      '/auth/passkey/options',
+      { method: 'POST', body: {} },
+      webauthnOptionsSchema,
+    );
+  },
+
+  async signInWithPasskey(credential: unknown): Promise<void> {
+    await requestJson(
+      '/auth/passkey',
+      { method: 'POST', body: { credential } },
+      okSchema,
+    );
   },
 
   async listMembers(slug: string): Promise<Member[]> {

@@ -217,10 +217,11 @@ export function parseDerivedDataRow(row: unknown): DerivedDataRecord {
 
 export const userRowSchema = z.object({
   id: z.string(),
-  github_id: z.number(),
+  github_id: z.number().nullable(),
   login: z.string(),
   avatar_url: z.string().nullable().optional(),
   created_at: z.number(),
+  active: z.number().optional(),
 });
 export type UserRecord = z.infer<typeof userRowSchema>;
 
@@ -233,6 +234,8 @@ export const sessionRowSchema = z.object({
   user_id: z.string(),
   created_at: z.number(),
   expires_at: z.number(),
+  auth_method: z.string().optional(),
+  mfa_at: z.number().nullable().optional(),
 });
 export type SessionRecord = z.infer<typeof sessionRowSchema>;
 

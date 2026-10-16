@@ -2,6 +2,13 @@
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 
+# Yuma sign-in (issue #27): OIDC providers JSON, one secret per provider id,
+# the TOTP seed encryption key, and who may mint SCIM tokens. See docs/deploy.md.
+OIDC_PROVIDERS=
+OIDC_GOOGLE_CLIENT_SECRET=
+TOTP_ENCRYPTION_KEY=
+SCIM_ADMIN_USER_IDS=
+
 # GitHub App (repo bridge)
 GITHUB_APP_ID=
 GITHUB_APP_PRIVATE_KEY=

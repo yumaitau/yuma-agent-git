@@ -164,6 +164,7 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
         <nav>
           <Link to="/">Repos</Link>
           <Link to="/settings">Settings</Link>
+          <Link to="/security">Security</Link>
         </nav>
         <span className="spacer" />
         <span className="hint">
