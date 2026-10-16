@@ -68,6 +68,9 @@ async function snapshot(): Promise<Record<string, unknown[]>> {
     'code_scanning_alerts',
     'usage_events',
     'usage_daily',
+    // Git over SSH keys (#34)
+    'ssh_keys',
+    'deploy_keys',
   ]) {
     out[table] = await q(testEnv, `SELECT * FROM ${table} ORDER BY 1, 2`);
   }
@@ -171,6 +174,18 @@ async function seedWave4(): Promise<void> {
        severity, message, path, state, last_analysis_id, created_at, updated_at)
      VALUES (?, 'main', 'semgrep', 'sast', 'f1', 'sqli', 'high', 'Tainted', 'a.ts', 'open', 1, 0, 0)`,
     [repoId],
+  );
+  await run(
+    testEnv,
+    `INSERT INTO ssh_keys (id, user_id, title, public_key, fingerprint, created_at)
+     VALUES ('k1', ?, 'laptop', 'ssh-ed25519 AAAA', 'SHA256:user', 0)`,
+    [owner.userId],
+  );
+  await run(
+    testEnv,
+    `INSERT INTO deploy_keys (id, repo_id, title, public_key, fingerprint, created_by, created_at)
+     VALUES ('d1', ?, 'ci', 'ssh-ed25519 BBBB', 'SHA256:deploy', ?, 0)`,
+    [repoId, owner.userId],
   );
 }
 
@@ -334,6 +349,24 @@ describe('backups (#70)', () => {
       withEnv({ BACKUP_ADMIN_USER_IDS: owner.userId, BACKUP_ENCRYPTION_KEY: undefined }),
     );
     expect(unset.status).toBe(503);
+  });
+
+  it('refuses to start while an org lives on a shard database (ADR 0006)', async () => {
+    await run(
+      testEnv,
+      "INSERT INTO orgs (id, slug, display_name, created_at) VALUES ('o1', 'acme', 'Acme', 0)",
+    );
+    await run(
+      testEnv,
+      "INSERT INTO shard_directory (org_id, shard, updated_at) VALUES ('o1', 'DB_SHARD_1', 0)",
+    );
+    const res = await api('/admin/backups', { method: 'POST' });
+    expect(res.status).toBe(503);
+    expect(
+      ((await res.json()) as { error: { message: string } }).error.message,
+    ).toContain('shard');
+    await backupTick(backupEnv());
+    expect(await q1(testEnv, 'SELECT 1 FROM backups')).toBeNull();
   });
 });
 

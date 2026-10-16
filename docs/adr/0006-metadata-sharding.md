@@ -95,8 +95,13 @@ Shard metadata by **org**, on D1, with the existing `DB` as the **directory**.
   only and has no foreign keys, which made it the right first slice.
 - **Cross-shard queries.**
   - _Global user data_ (accounts, sessions, tokens, passkeys, SCIM, user
-    signing keys) stays in the directory: it is read on every request and
-    belongs to no org.
+    signing keys, SSH keys) stays in the directory: it is read on every
+    request and belongs to no org.
+  - _Git over SSH_ (#34, migration 0045): `ssh_keys`, `deploy_keys` and
+    `ssh_tokens` stay in the directory. The gateway looks a key up by
+    fingerprint before it knows the repository, and a fingerprint is unique
+    across the instance, so these tables are global even though a deploy key
+    belongs to one repo.
   - _Notifications_ (#44) are per person, so their inbox stays in the
     directory; the fan-out consumer reads the event from the org's shard and
     writes the inbox rows to the directory.
@@ -145,7 +150,9 @@ Shard metadata by **org**, on D1, with the existing `DB` as the **directory**.
   account storage. An operator creates the database; nothing in this change
   creates one or adds a production binding.
 - **Backups** (#70) page `DB` only today, so rows on a shard are not backed
-  up. Backups must page every shard before any production shard is added.
+  up. Until backups page every shard, a backup refuses to start (`503
+backups_unavailable`, and the cron logs and skips) while any org is on, or
+  moving to, a shard other than `DB`.
 - The content-addressed object store stays global.
 
 ## Review triggers

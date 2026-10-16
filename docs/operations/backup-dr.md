@@ -32,7 +32,9 @@ A backup is `backups/<id>/` in the `BACKUPS` bucket:
 - `d1/<table>/<part>.ndjson`: every row of every table, 500 rows per part,
   tables ordered parents before children (foreign keys). `d1_migrations` and
   `backups` stay out, and so does `usage_daily`: its trigger rebuilds it from
-  `usage_events` as they are restored.
+  `usage_events` as they are restored. This includes the Git over SSH keys
+  (`ssh_keys`, `deploy_keys`, #34) and the shard map (`shard_directory`,
+  #78).
 - `r2/<part>.ndjson`: the key, size, etag and upload time of every object in
   `OBJECTS` (`repos/…/blobs`, `repos/…/trees`, `lfs/…`, `registry/…`, CI logs,
   `ci/artifacts/…`, `ci/cache/…`, agent session transcripts).
@@ -142,3 +144,7 @@ bundle; fetch them with `git lfs fetch --all` against the forge.
   shapes, not this format.
 - No restore drill has been run against a real environment; the
   `scripts/restore-drill.sh` the issue describes does not exist yet.
+- Shard databases (`DB_SHARD_<n>`, ADR 0006) are not paged. A backup refuses
+  to start (`503 backups_unavailable`; the cron logs it and skips) while any
+  org is on, or moving to, a shard other than `DB`, so a backup is never
+  reported complete with an org's rows missing.

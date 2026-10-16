@@ -247,6 +247,17 @@ export async function startBackup(
 ): Promise<BackupRow | null> {
   if (!env.BACKUPS) throw new BackupConfigError('the BACKUPS bucket is not bound');
   await backupKey(env);
+  // Backups page `DB` only. Refuse rather than report a backup as complete
+  // while an org's routed rows sit on a shard database (ADR 0006).
+  if (
+    await q1(
+      env,
+      "SELECT 1 FROM shard_directory WHERE shard != 'DB' OR target IS NOT NULL",
+    )
+  )
+    throw new BackupConfigError(
+      'an org lives on a shard database, and backups do not cover shards yet (ADR 0006)',
+    );
   const running = await q1(
     env,
     "SELECT 1 FROM backups WHERE status = 'running' AND kind != 'restore'",
@@ -439,8 +450,14 @@ export async function backupTick(env: Env, now = Date.now()): Promise<void> {
     "SELECT MAX(started_at) AS started_at FROM backups WHERE kind != 'restore'",
   );
   const due = minutes(env.BACKUP_INTERVAL_MINUTES, 15) * 60_000;
-  if (!last?.started_at || last.started_at <= now - due)
-    await startBackup(env, 'schedule', null, now);
+  if (!last?.started_at || last.started_at <= now - due) {
+    try {
+      await startBackup(env, 'schedule', null, now);
+    } catch (err) {
+      if (!(err instanceof BackupConfigError)) throw err;
+      console.warn(`backup: ${err.message}; no backup taken`);
+    }
+  }
   await advanceBackup(env);
   await expireBackups(env, now);
 }
