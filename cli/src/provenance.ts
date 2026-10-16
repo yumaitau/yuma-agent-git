@@ -106,8 +106,7 @@ export const sourcePredicateSchema = z.looseObject({
 export type SourcePredicate = z.infer<typeof sourcePredicateSchema>;
 
 export type ProvenanceCheck =
-  | { ok: true; keyId: string; predicate: SourcePredicate }
-  | { ok: false; reason: string };
+  { ok: true; keyId: string; predicate: SourcePredicate } | { ok: false; reason: string };
 
 /** Verify one record: signature, predicate shape and that it covers `cs`. */
 export async function verifyProvenance(
@@ -118,7 +117,10 @@ export async function verifyProvenance(
   const result = await verifyEd25519Envelope(record.envelope, keys);
   if (!result.ok) return result;
   if (result.statement.predicateType !== SOURCE_PREDICATE)
-    return { ok: false, reason: `unexpected predicate ${result.statement.predicateType}` };
+    return {
+      ok: false,
+      reason: `unexpected predicate ${result.statement.predicateType}`,
+    };
   const predicate = sourcePredicateSchema.safeParse(result.statement['predicate']);
   if (!predicate.success) return { ok: false, reason: 'malformed source predicate' };
   const head = result.statement.subject[0]?.digest['yagChangeset'];

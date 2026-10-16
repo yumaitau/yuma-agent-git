@@ -912,7 +912,7 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /api/v1/repos/:repo/sessions': { id: 'createSession', body: createSessionSchema },
   'GET /api/v1/repos/:repo/sessions/:id': { id: 'getSession' },
   'GET /api/v1/repos/:repo/sessions/:id/transcript': { id: 'getSessionTranscript' },
-  'POST /api/v1/repos/:repo/sessions/:id/changesets': {
+  'POST /api/v1/repos/:repo/sessions/:id/link': {
     id: 'linkSessionChangesets',
     body: linkSessionSchema,
   },

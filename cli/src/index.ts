@@ -217,7 +217,9 @@ async function ciIdToken(required: boolean): Promise<string | null> {
   const request = process.env.YAG_ID_TOKEN_REQUEST_TOKEN;
   if (!url || !request) {
     if (!required) return null;
-    throw new Error('Run this in a CI job whose pipeline has permissions.id_token: write');
+    throw new Error(
+      'Run this in a CI job whose pipeline has permissions.id_token: write',
+    );
   }
   const res = await fetch(
     `${url}${url.includes('?') ? '&' : '?'}audience=${encodeURIComponent(ATTEST_AUDIENCE)}`,
@@ -418,8 +420,12 @@ release
   });
 
 async function verifyChangeset(cs: string): Promise<void> {
-  const { formatPredicate, provenanceKeysSchema, provenanceRecordSchema, verifyProvenance } =
-    await import('./provenance.js');
+  const {
+    formatPredicate,
+    provenanceKeysSchema,
+    provenanceRecordSchema,
+    verifyProvenance,
+  } = await import('./provenance.js');
   const { api } = await client();
   const keys = provenanceKeysSchema.parse(await api.provenanceKeys());
   const records = await api.provenance(cs);

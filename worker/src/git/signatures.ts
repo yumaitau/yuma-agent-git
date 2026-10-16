@@ -319,13 +319,16 @@ function mpi(buf: Uint8Array, pos: number): { value: Uint8Array; next: number } 
   return { value: buf.subarray(pos + 2, pos + 2 + len), next: pos + 2 + len };
 }
 
-const ED25519_OID = new Uint8Array([0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01]);
+const ED25519_OID = new Uint8Array([
+  0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01,
+]);
 const PGP_HASHES: Record<number, string> = { 8: 'SHA-256', 9: 'SHA-384', 10: 'SHA-512' };
 
 export interface PgpKey {
   fingerprint: string;
   keyId: string;
-  key: { kind: 'rsa'; n: Uint8Array; e: Uint8Array } | { kind: 'ed25519'; pk: Uint8Array };
+  key:
+    { kind: 'rsa'; n: Uint8Array; e: Uint8Array } | { kind: 'ed25519'; pk: Uint8Array };
 }
 
 async function pgpKey(body: Uint8Array): Promise<PgpKey | null> {
@@ -471,7 +474,7 @@ function der(buf: Uint8Array, start = 0): Der {
 
 function kids(node: Der): Der[] {
   const out: Der[] = [];
-  for (let pos = node.vStart; pos < node.end; ) {
+  for (let pos = node.vStart; pos < node.end;) {
     const child = der(node.buf, pos);
     out.push(child);
     pos = child.end;
@@ -639,7 +642,9 @@ async function certVerify(
   return false;
 }
 
-function certAlg(sigAlg: string): { kind: 'ec' | 'rsa'; hash: string } | 'ed25519' | null {
+function certAlg(
+  sigAlg: string,
+): { kind: 'ec' | 'rsa'; hash: string } | 'ed25519' | null {
   if (sigAlg === OID.ed25519) return 'ed25519';
   return SIG_ALGS[sigAlg] ?? null;
 }
@@ -731,7 +736,9 @@ async function verifyX509(
       return { signer: null, reason: 'certificate was not valid at signing time' };
     if (roots.some((r) => equal(r.raw, current.raw))) break;
     if (depth >= 5) return { signer: null, reason: 'certificate chain too long' };
-    const candidates = [...roots, ...certs].filter((c) => equal(c.subject, current.issuer));
+    const candidates = [...roots, ...certs].filter((c) =>
+      equal(c.subject, current.issuer),
+    );
     let parent: Cert | null = null;
     for (const c of candidates) {
       const alg = certAlg(current.sigAlg);
@@ -740,11 +747,17 @@ async function verifyX509(
         break;
       }
     }
-    if (!parent) return { signer: null, reason: 'certificate does not chain to a trusted root' };
+    if (!parent)
+      return { signer: null, reason: 'certificate does not chain to a trusted root' };
     current = parent;
   }
 
-  const signer: X509Signer = { email: null, uri: null, issuer: null, serial: leaf.serial };
+  const signer: X509Signer = {
+    email: null,
+    uri: null,
+    issuer: null,
+    serial: leaf.serial,
+  };
   const san = leaf.exts.get(OID.subjectAltName);
   for (const name of san ? kids(der(san)) : []) {
     if (name.tag === 0x81) signer.email ??= dec.decode(value(name));

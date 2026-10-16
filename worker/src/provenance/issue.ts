@@ -110,7 +110,11 @@ async function pullFacts(env: Env, repoId: string, ids: readonly number[]) {
       [repoId, id],
     );
     if (!pull) continue;
-    const reviews = await q<{ author_id: string; login: string | null; decision: string }>(
+    const reviews = await q<{
+      author_id: string;
+      login: string | null;
+      decision: string;
+    }>(
       env,
       `SELECT r.author_id, u.login, r.decision FROM pull_reviews r
          LEFT JOIN users u ON u.id = r.author_id
@@ -164,7 +168,11 @@ async function changesetFacts(env: Env, repoId: string, ids: string[]) {
   for (const id of ids) {
     const cs = await getChangeset(env, repoId, id);
     if (!cs) continue;
-    const agent = await q1<{ agent_id: string; on_behalf_of: string; task_id: string | null }>(
+    const agent = await q1<{
+      agent_id: string;
+      on_behalf_of: string;
+      task_id: string | null;
+    }>(
       env,
       'SELECT agent_id, on_behalf_of, task_id FROM changeset_agents WHERE repo_id = ? AND changeset_id = ?',
       [repoId, id],
@@ -231,7 +239,9 @@ export async function buildStatement(
   );
   const rev = (cs: string | null) =>
     cs === null ? null : { yagChangeset: cs, gitCommit: shas.get(cs) ?? null };
-  const rulesets = (await rulesetsFor(env, repo)).filter((r) => applies(r, repo, move.ref));
+  const rulesets = (await rulesetsFor(env, repo)).filter((r) =>
+    applies(r, repo, move.ref),
+  );
   const listed = move.to
     ? await newChangesets(env, repo.id, move.from, move.to)
     : { ids: [], total: 0 };

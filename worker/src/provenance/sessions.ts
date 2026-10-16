@@ -133,8 +133,12 @@ export async function createSession(
 ): Promise<SessionRow> {
   const now = Date.now();
   const id = ulid(now);
-  let transcript: { key: string; sha256: string; size: number; redactions: number } | null =
-    null;
+  let transcript: {
+    key: string;
+    sha256: string;
+    size: number;
+    redactions: number;
+  } | null = null;
   if (input.transcript !== undefined) {
     const redactions = scanText(input.transcript).length;
     const bytes = new TextEncoder().encode(
@@ -204,10 +208,11 @@ export async function getSession(
   repoId: string,
   id: string,
 ): Promise<SessionRow | null> {
-  return q1<SessionRow>(env, 'SELECT * FROM agent_sessions WHERE repo_id = ? AND id = ?', [
-    repoId,
-    id,
-  ]);
+  return q1<SessionRow>(
+    env,
+    'SELECT * FROM agent_sessions WHERE repo_id = ? AND id = ?',
+    [repoId, id],
+  );
 }
 
 /** Sessions linked to one changeset, oldest first. */

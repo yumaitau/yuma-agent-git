@@ -35,7 +35,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
  * POST /api/v1/repos/:repo/sessions                    agent session + redacted transcript
  * GET  /api/v1/repos/:repo/sessions/:id                session metadata (readers)
  * GET  /api/v1/repos/:repo/sessions/:id/transcript     redacted transcript (writers)
- * POST /api/v1/repos/:repo/sessions/:id/changesets     link more changesets (its creator)
+ * POST /api/v1/repos/:repo/sessions/:id/link           link more changesets (its creator)
  * GET|POST /api/v1/me/signing-keys, DELETE /:id       SSH and OpenPGP commit signing keys
  *
  * Records are signed with the Ed25519 key ring in PROVENANCE_SIGNING_KEYS
@@ -44,7 +44,7 @@ import { apiError, errorResponse, readJsonBody } from './errors';
 export const provenanceRoutes = new Hono<AppEnv>();
 export const provenanceKeysRoutes = new Hono<AppEnv>();
 
-const REPO = '/repos/:repo{.+}';
+const REPO = '/repos/:repo{[^/]+/[^/]+}';
 
 export const provenanceQuery = z.object({
   cs: z
@@ -93,9 +93,7 @@ function actorKey(principal: Principal): string {
 }
 
 const statementShape = z.looseObject({
-  subject: z
-    .array(z.object({ digest: z.record(z.string(), z.string()) }))
-    .min(1),
+  subject: z.array(z.object({ digest: z.record(z.string(), z.string()) })).min(1),
 });
 
 /**
@@ -259,7 +257,9 @@ provenanceRoutes.get(`${REPO}/sessions/:id/transcript`, async (c) => {
     if (!loaded.ok) return loaded.response;
     const row = await getSession(c.env, loaded.repo.id, c.req.param('id'));
     if (!row) return apiError(c, 404, 'session_not_found', 'No such session');
-    const object = row.transcript_key ? await c.env.OBJECTS.get(row.transcript_key) : null;
+    const object = row.transcript_key
+      ? await c.env.OBJECTS.get(row.transcript_key)
+      : null;
     if (!object)
       return apiError(c, 404, 'transcript_not_found', 'This session has no transcript');
     return new Response(object.body, {
@@ -275,7 +275,7 @@ provenanceRoutes.get(`${REPO}/sessions/:id/transcript`, async (c) => {
   }
 });
 
-provenanceRoutes.post(`${REPO}/sessions/:id/changesets`, async (c) => {
+provenanceRoutes.post(`${REPO}/sessions/:id/link`, async (c) => {
   try {
     const loaded = await loadWholeRepo(c, 'write', c.req.param('repo'));
     if (!loaded.ok) return loaded.response;
@@ -326,7 +326,11 @@ function keyView(row: KeyRow) {
 function sessionUser(c: Context<AppEnv>): string {
   const principal = principalOf(c);
   if (principal.kind !== 'user')
-    throw new ApiError(403, 'session_required', 'Manage signing keys from a signed-in session');
+    throw new ApiError(
+      403,
+      'session_required',
+      'Manage signing keys from a signed-in session',
+    );
   return principal.userId;
 }
 
@@ -339,7 +343,9 @@ provenanceRoutes.get('/me/signing-keys', async (c) => {
         WHERE user_id = ? ORDER BY created_at`,
       [userId],
     );
-    return c.json({ keys: rows.map(keyView) }, 200, { 'cache-control': 'private, no-store' });
+    return c.json({ keys: rows.map(keyView) }, 200, {
+      'cache-control': 'private, no-store',
+    });
   } catch (err) {
     return errorResponse(c, err);
   }
@@ -352,7 +358,12 @@ provenanceRoutes.post('/me/signing-keys', async (c) => {
     if (mfa) return mfa;
     const parsed = addSigningKeySchema.safeParse(await readJsonBody(c));
     if (!parsed.success)
-      return apiError(c, 400, 'invalid_request', 'Send kind (ssh or gpg), title and public_key');
+      return apiError(
+        c,
+        400,
+        'invalid_request',
+        'Send kind (ssh or gpg), title and public_key',
+      );
     const input = parsed.data;
     let fingerprint: string;
     let keyIds: string[] = [];
@@ -427,7 +438,11 @@ provenanceRoutes.delete('/me/signing-keys/:id', async (c) => {
     if (!removed) return apiError(c, 404, 'signing_key_not_found', 'No such signing key');
     await recordAudit(c, {
       action: 'signing_key.remove',
-      target: { user_id: userId, key_id: c.req.param('id'), fingerprint: removed.fingerprint },
+      target: {
+        user_id: userId,
+        key_id: c.req.param('id'),
+        fingerprint: removed.fingerprint,
+      },
     });
     return c.body(null, 204);
   } catch (err) {

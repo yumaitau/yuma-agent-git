@@ -107,7 +107,11 @@ export async function signStatement(
 ): Promise<{ envelope: Envelope; keyId: string }> {
   const keys = await provenanceKeys(env);
   const body = new TextEncoder().encode(JSON.stringify(statement));
-  const sig = await crypto.subtle.sign('Ed25519', keys.sign, pae(DSSE_PAYLOAD_TYPE, body));
+  const sig = await crypto.subtle.sign(
+    'Ed25519',
+    keys.sign,
+    pae(DSSE_PAYLOAD_TYPE, body),
+  );
   return {
     envelope: {
       payloadType: DSSE_PAYLOAD_TYPE,
