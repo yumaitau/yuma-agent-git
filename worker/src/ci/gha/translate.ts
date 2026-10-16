@@ -1,4 +1,13 @@
-import { isNode, LineCounter, parseDocument, stringify, type Document } from 'yaml';
+import {
+  isMap,
+  isNode,
+  isScalar,
+  isSeq,
+  LineCounter,
+  parseDocument,
+  stringify,
+  type Document,
+} from 'yaml';
 import { parseSpec, type PipelineFile } from '../spec';
 
 /**
@@ -67,7 +76,7 @@ interface Defaults {
 
 const isObj = (v: unknown): v is Obj =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
-const isScalar = (v: unknown): v is string | number | boolean =>
+const isValue = (v: unknown): v is string | number | boolean =>
   typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 const list = (v: unknown): unknown[] =>
   Array.isArray(v) ? v : v === undefined || v === null ? [] : [v];
@@ -86,9 +95,16 @@ class Translation {
     private readonly lines: LineCounter,
   ) {}
 
+  /** Line of the key (or list item) at `path`, else of its nearest parent. */
   private line(path: Key[]): number {
-    for (let n = path.length; n >= 0; n--) {
-      const node = this.doc.getIn(path.slice(0, n), true);
+    for (let n = path.length; n > 0; n--) {
+      const parent = this.doc.getIn(path.slice(0, n - 1), true);
+      const last = path[n - 1];
+      const node = isMap(parent)
+        ? parent.items.find((p) => isScalar(p.key) && p.key.value === last)?.key
+        : isSeq(parent)
+          ? parent.items[Number(last)]
+          : undefined;
       if (isNode(node) && node.range) return this.lines.linePos(node.range[0]).line;
     }
     return 1;
@@ -167,7 +183,7 @@ class Translation {
       return out;
     }
     for (const [k, v] of Object.entries(raw)) {
-      if (isScalar(v)) out.set(k, String(v));
+      if (isValue(v)) out.set(k, String(v));
       else this.note('unsupported', [...at, k], `with.${k} must be a single value`);
     }
     return out;
@@ -470,7 +486,7 @@ function services(t: Translation, raw: unknown, at: Key[]): Obj | undefined {
           [...path, 'env', k],
           'Service variables must be literal values',
         );
-      env[k] = isScalar(v) ? String(v) : '';
+      env[k] = isValue(v) ? String(v) : '';
     }
     for (const key of Object.keys(svc)) {
       if (key === 'image' || key === 'env') continue;
@@ -519,7 +535,7 @@ function action(
       v ?? '',
     )?.[1];
     const value = ref === undefined ? undefined : env[ref];
-    return isScalar(value) && !hasExpression(value) ? String(value) : v;
+    return isValue(value) && !hasExpression(value) ? String(value) : v;
   };
   const literal = (key: string): string | undefined => {
     const v = resolved(key);
@@ -683,7 +699,7 @@ function action(
         t.note('unsupported', withAt, 'Set username and password');
         return null;
       }
-      return `printf '%s' "${t.text(password, withAt, true)}" | docker login ${registry ? `"${t.text(registry, withAt, true)}" ` : ''}-u "${t.text(user, withAt, true)}" --password-stdin`;
+      return `printf '%s' "${t.text(password, [...withAt, 'password'], true)}" | docker login ${registry ? `"${t.text(registry, [...withAt, 'registry'], true)}" ` : ''}-u "${t.text(user, [...withAt, 'username'], true)}" --password-stdin`;
     }
     case 'docker/setup-buildx-action':
     case 'docker/setup-qemu-action':
@@ -837,7 +853,7 @@ function job(
             );
           else if (
             !Array.isArray(values) ||
-            !values.every(isScalar) ||
+            !values.every(isValue) ||
             values.some(hasExpression)
           )
             t.note(
@@ -987,7 +1003,7 @@ function stepOf(
       continue;
     }
     exports.push(
-      `export ${name}="${t.text(isScalar(value) ? String(value) : '', [...at, 'env', name], true)}"`,
+      `export ${name}="${t.text(isValue(value) ? String(value) : '', [...at, 'env', name], true)}"`,
     );
   }
   const wd = step['working-directory'] ?? inherited.defaults.wd;

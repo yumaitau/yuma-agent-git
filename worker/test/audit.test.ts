@@ -540,6 +540,7 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/retry': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs': 'ci.run.create',
   'POST /api/v1/repos/:repo{.+}/ci/pipelines/runs/:id/cancel': 'ci.run.cancel',
+  'PUT /api/v1/repos/:repo{.+}/ci/actions': 'ci.actions.update',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent.task.create',
   'POST /api/v1/agents/tasks/:id/cancel': 'agent.task.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/superfans': 'agent.superfan.start',
@@ -679,6 +680,7 @@ const EXEMPT: Record<string, string> = {
   'PUT /api/v1/repos/:repo{.+}/blob': 'content-addressed blob upload; same as changesets',
   'POST /api/v1/repos/:repo{.+}/fetch-objects': 'read-only batch fetch',
   'POST /api/v1/policy/test': 'pure policy evaluation; nothing is stored',
+  'POST /api/v1/ci/actions/check': 'pure workflow translation; nothing is stored',
   'POST /api/v1/repos/:repo{[^/]+/[^/]+}/releases/generate-notes':
     'returns draft notes; nothing is stored',
   'POST /api/v1/repos/:repo{[^/]+/[^/]+}/attestations/verify':

@@ -538,7 +538,8 @@ const SPECS: ToolSpec[] = [
     name: 'pipeline_run',
     title: 'Start pipeline',
     route: 'POST /api/v1/repos/:repo/ci/pipelines/runs',
-    description: 'Start a pipeline from `.yuma/pipelines/` with a manual trigger.',
+    description:
+      'Start a pipeline from `.yuma/pipelines/` (or an opted-in `.github/workflows/` file) with a manual trigger.',
     scope: 'ci:run',
   },
 ];

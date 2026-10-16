@@ -14,13 +14,13 @@ import {
   summarise,
   WORKFLOW_DIR,
 } from '../ci/gha/analyse';
-import { enforceAgentAction } from '../policy/guardrails';
 import { apiError, errorResponse, readJsonBody } from './errors';
 
 /**
  * GitHub Actions compatibility (issue #49):
  *   GET  /api/v1/repos/:repo/ci/actions   report for `.github/workflows` at a revision
- *   PUT  /api/v1/repos/:repo/ci/actions   opt in or out of running them (admin, audited)
+ *   PUT  /api/v1/repos/:repo/ci/actions   opt in or out of running them (admin, audited;
+ *                                         agents are never admins)
  *   POST /api/v1/ci/actions/check         report for workflow texts sent by the caller
  * Workflows are CI scripts, so repo routes need the whole repository.
  */
@@ -96,15 +96,6 @@ actionsRoutes.put(base, async (c) => {
     if (!loaded.ok) return loaded.response;
     const { enabled } = parse(actionsSettingsBody, await readJsonBody(c));
     const repoId = loaded.repo.id;
-    // agent guardrails (#62): turning workflows into pipelines changes what CI runs
-    const change = { setting: 'ci.actions', enabled };
-    await enforceAgentAction(
-      c.env,
-      c.get('principal'),
-      loaded.repo,
-      { action: 'pipeline.edit' },
-      { exact: change, summary: change },
-    );
     await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO ci_actions_settings (repo_id, enabled, updated_by, updated_at) VALUES (?, ?, ?, ?)

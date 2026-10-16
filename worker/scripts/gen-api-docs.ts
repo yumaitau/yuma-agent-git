@@ -223,6 +223,12 @@ const PURPOSES: Record<string, string> = {
     'Pipeline runs with their jobs and spec errors (`?head=`)',
   'POST /api/v1/repos/:repo/ci/pipelines/runs': 'Start a pipeline with a manual trigger',
   'POST /api/v1/repos/:repo/ci/pipelines/runs/:id/cancel': 'Cancel a pipeline run',
+  'GET /api/v1/repos/:repo/ci/actions':
+    'GitHub Actions compatibility report for `.github/workflows` at `?head=` (default branch): per-workflow status, reasons by line and the translated pipeline',
+  'PUT /api/v1/repos/:repo/ci/actions':
+    'Opt in or out of running translated `.github/workflows` as pipelines when the repo has no `.yuma/pipelines` (admin)',
+  'POST /api/v1/ci/actions/check':
+    'Compatibility report for workflow files sent in the body; nothing is stored (`yag actions check`)',
   'GET /ci/oidc/.well-known/openid-configuration': 'CI OIDC discovery document (public)',
   'GET /ci/oidc/jwks': 'CI OIDC signing keys, current and previous (public)',
   'GET /ci/oidc/token': 'ID token for a running job (`?audience=`), GitHub-style GET',
