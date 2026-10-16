@@ -256,6 +256,23 @@ const SPECS: ToolSpec[] = [
     idempotent: true,
   },
   {
+    name: 'provenance_get',
+    title: 'Get signed provenance',
+    route: 'GET /api/v1/repos/:repo/provenance',
+    description:
+      'Forge-signed provenance records for a changeset (`cs`) or ref, with the commit signature check and linked agent sessions.',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
+    name: 'session_record',
+    title: 'Record agent session',
+    route: 'POST /api/v1/repos/:repo/sessions',
+    description:
+      'Record this agent session (model, harness, tools, JSON lines transcript) and link the changesets it produced, so landing them carries the session in signed provenance. Secrets in the transcript are redacted before storage.',
+    scope: 'contents:write',
+  },
+  {
     name: 'pr_list',
     title: 'List pull requests',
     route: 'GET /api/v1/repos/:repo/pulls',
