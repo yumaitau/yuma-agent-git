@@ -543,6 +543,21 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/scim/tokens': 'scim_token.create',
   'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
   'POST /:owner/:repo{[^/]+\\.git}/git-receive-pack': 'ref.move',
+  'POST /api/v1/repos/:repo{.+}/issues': 'issue.create',
+  'PATCH /api/v1/repos/:repo{.+}/issues/:number': 'issue.update',
+  'DELETE /api/v1/repos/:repo{.+}/issues/:number': 'issue.delete',
+  'POST /api/v1/repos/:repo{.+}/issues/:number/comments': 'issue.comment',
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/labels': 'issue.update',
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/assignees': 'issue.update',
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/lock': 'issue.update',
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/pin': 'issue.update',
+  'POST /api/v1/repos/:repo{.+}/issues/:number/sub-issues': 'issue.update',
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/sub-issues': 'issue.update',
+  'DELETE /api/v1/repos/:repo{.+}/issues/:number/sub-issues/:child': 'issue.update',
+  'POST /api/v1/repos/:repo{.+}/labels': 'label.create',
+  'DELETE /api/v1/repos/:repo{.+}/labels/:name': 'label.delete',
+  'POST /api/v1/repos/:repo{.+}/milestones': 'milestone.create',
+  'PATCH /api/v1/repos/:repo{.+}/milestones/:id': 'milestone.update',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':

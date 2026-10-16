@@ -18,15 +18,17 @@ import type { Principal } from './principal';
  *      a matching rule decides the perms it lists; other perms fall through
  *   3. effective repo role (issue #26) = max of direct membership, team
  *      grants (parent teams included) and the org base role; org owners are
- *      admin on every org repo. admin → everything, write → read/write/history,
- *      read → read/history. Resolved from D1 on every call, never cached, so a
- *      membership change applies on the next request.
+ *      admin on every org repo. admin → everything, write → read/write/history/
+ *      triage, triage → read/history/triage, read → read/history. Resolved
+ *      from D1 on every call, never cached, so a membership change applies on
+ *      the next request.
  *   4. repo creator → admin
  *   5. default deny
  */
 
-export type Perm = 'read' | 'write' | 'history' | 'admin';
-export type Role = 'admin' | 'write' | 'read';
+/** `triage` (issue #38): label, assign, close and lock issues; never code. */
+export type Perm = 'read' | 'write' | 'history' | 'triage' | 'admin';
+export type Role = 'admin' | 'write' | 'triage' | 'read';
 
 export type RepoWithCreator = RepoRecord & { created_by?: string | null };
 
@@ -38,7 +40,7 @@ const pathRuleInputSchema = z.object({
 });
 
 const PRINCIPAL_RE =
-  /^(\*|role:(admin|write|read)|user:[A-Za-z0-9_-]+|agent:[A-Za-z0-9_-]+)$/;
+  /^(\*|role:(admin|write|triage|read)|user:[A-Za-z0-9_-]+|agent:[A-Za-z0-9_-]+)$/;
 
 /** Normalize a rule prefix: NFC, no traversal, always slash-terminated. */
 export function normalizePathPrefix(raw: string): string {
@@ -101,7 +103,7 @@ function coversPath(prefix: string, path: string): boolean {
   return path === prefix.slice(0, -1) || path.startsWith(prefix);
 }
 
-const ROLE_RANK: Record<Role, number> = { read: 1, write: 2, admin: 3 };
+const ROLE_RANK: Record<Role, number> = { read: 1, triage: 2, write: 3, admin: 4 };
 
 /**
  * `user_teams(team_id, depth)`: the teams a user is in plus their ancestors
@@ -116,7 +118,9 @@ export const USER_TEAMS_CTE = `user_teams(team_id, depth) AS (
    WHERE t.${C.teams.parentTeamId} IS NOT NULL AND ut.depth < 5
 )`;
 
-const roleRowSchema = z.object({ role: z.enum(['admin', 'write', 'read', 'none']) });
+const roleRowSchema = z.object({
+  role: z.enum(['admin', 'write', 'triage', 'read', 'none']),
+});
 
 export async function roleOf(
   env: Env,
@@ -240,7 +244,7 @@ function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
     if (principal.repoId !== null && principal.repoId !== repo.id)
       return { allowed: false };
     const writes = principal.scopes.includes('repo:write');
-    if (perm === 'write' || perm === 'admin') {
+    if (perm === 'write' || perm === 'triage' || perm === 'admin') {
       if (!writes) return { allowed: false };
     } else if (!writes && !principal.scopes.includes('repo:read')) {
       return { allowed: false };
@@ -284,6 +288,8 @@ function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
   // 3. effective repo role
   if (ctx.role === 'admin') return { allowed: true };
   if (ctx.role === 'write') return { allowed: perm !== 'admin' };
+  if (ctx.role === 'triage')
+    return { allowed: perm === 'read' || perm === 'history' || perm === 'triage' };
   if (ctx.role === 'read') return { allowed: perm === 'read' || perm === 'history' };
 
   // 4. repo creator is admin

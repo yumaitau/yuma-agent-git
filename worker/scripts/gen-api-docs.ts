@@ -116,6 +116,34 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:repo/path-rules': 'List directory-level permission rules',
   'POST /api/v1/repos/:repo/path-rules': 'Add a path rule',
   'DELETE /api/v1/repos/:repo/path-rules/:id': 'Delete a path rule',
+  'GET /api/v1/repos/:repo/issues':
+    'List issues (`?state=&label=a,b&assignee=&milestone=&before=`) plus pinned issues',
+  'POST /api/v1/repos/:repo/issues':
+    'Open an issue; labels, assignees, milestone and parent apply with `triage`',
+  'GET /api/v1/repos/:repo/issues/:number':
+    'Issue with comments, timeline, sub-issues and milestone',
+  'PATCH /api/v1/repos/:repo/issues/:number':
+    'Edit, close (with reason) or reopen (author or `triage`); milestone needs `triage`',
+  'DELETE /api/v1/repos/:repo/issues/:number':
+    'Delete an issue (its number is not reused)',
+  'POST /api/v1/repos/:repo/issues/:number/comments':
+    'Comment on an issue (`triage` when locked)',
+  'PUT /api/v1/repos/:repo/issues/:number/labels': "Replace an issue's labels",
+  'PUT /api/v1/repos/:repo/issues/:number/assignees':
+    'Replace assignees (logins, `user:`, `team:` or `agent:` principals)',
+  'PUT /api/v1/repos/:repo/issues/:number/lock': 'Lock or unlock comments (`{on}`)',
+  'PUT /api/v1/repos/:repo/issues/:number/pin': 'Pin or unpin (at most 3 per repo)',
+  'POST /api/v1/repos/:repo/issues/:number/sub-issues': 'Add a sub-issue (`{number}`)',
+  'PUT /api/v1/repos/:repo/issues/:number/sub-issues': 'Reorder sub-issues (`{order}`)',
+  'DELETE /api/v1/repos/:repo/issues/:number/sub-issues/:child': 'Remove a sub-issue',
+  'GET /api/v1/repos/:repo/issue-templates':
+    'Issue templates and forms from `.yuma/` and `.github/ISSUE_TEMPLATE`',
+  'GET /api/v1/repos/:repo/labels': 'List labels',
+  'POST /api/v1/repos/:repo/labels': 'Create a label',
+  'DELETE /api/v1/repos/:repo/labels/:name': 'Delete a label and remove it from issues',
+  'GET /api/v1/repos/:repo/milestones': 'List milestones with open and closed counts',
+  'POST /api/v1/repos/:repo/milestones': 'Create a milestone',
+  'PATCH /api/v1/repos/:repo/milestones/:id': 'Edit, close or reopen a milestone',
   'GET /api/v1/repos/:repo/pulls': 'List pull requests (50 per page)',
   'POST /api/v1/repos/:repo/pulls': 'Open a pull request',
   'GET /api/v1/repos/:repo/pulls/:id': 'Pull request, reviews and merge gate',
@@ -229,6 +257,7 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
       parts.push('write (whole repo); admin if `publish`');
     } else parts.push(`? (${arg})`);
   } else if (/loadAdminRepo\d*\(/.test(src)) parts.push('admin');
+  else if (/loadTriageRepo\d*\(/.test(src)) parts.push('triage');
   else if (/loadWritableRepo(ById)?\d*\(/.test(src)) parts.push('write');
   else if (/loadReadableRepo(ById)?\d*\(/.test(src)) parts.push('read');
   else if (/\bcan\d*\([^;]*?"write"\)/.test(src)) parts.push('write');
@@ -271,6 +300,10 @@ async function loadWorker(): Promise<WorkerModule> {
     bundle: true,
     platform: 'node',
     format: 'esm',
+    // CommonJS dependencies (yaml) `require()` Node built-ins.
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire('/');",
+    },
     write: false,
     logLevel: 'error',
   });

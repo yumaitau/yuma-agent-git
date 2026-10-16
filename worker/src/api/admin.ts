@@ -60,7 +60,7 @@ adminRoutes.get('/api/v1/repos/:repo{.+}/members', async (c) => {
 const memberSchema = z.object({
   user_id: z.string().min(1).optional(),
   user_login: z.string().min(1).optional(),
-  role: z.enum(['admin', 'write', 'read']),
+  role: z.enum(['admin', 'write', 'triage', 'read']),
 });
 
 adminRoutes.put('/api/v1/repos/:repo{.+}/members', async (c) => {

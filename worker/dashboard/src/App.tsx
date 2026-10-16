@@ -3,6 +3,8 @@ import type { ReactElement } from 'react';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { setUnauthorizedHandler } from './api';
 import { CiView, HistoryView, PullsView, PullView } from './views/Collaboration';
+import { IssuesView, NewIssueView } from './views/Issues';
+import { IssueView } from './views/IssueView';
 import { Layout } from './Layout';
 import { RequireAuth } from './RequireAuth';
 import { HomeView } from './views/Home';
@@ -53,6 +55,9 @@ function AppRoutes(): ReactElement {
                 <Route path="/orgs" element={<OrgSettingsView />} />
                 <Route path="/orgs/:org" element={<OrgSettingsView />} />
                 <Route path="/r/:owner/:name/history" element={<HistoryView />} />
+                <Route path="/r/:owner/:name/issues" element={<IssuesView />} />
+                <Route path="/r/:owner/:name/issues/new" element={<NewIssueView />} />
+                <Route path="/r/:owner/:name/issues/:number" element={<IssueView />} />
                 <Route path="/r/:owner/:name/pulls" element={<PullsView />} />
                 <Route path="/r/:owner/:name/pulls/:id" element={<PullView />} />
                 <Route path="/r/:owner/:name/ci" element={<CiView />} />

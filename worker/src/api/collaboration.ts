@@ -22,6 +22,8 @@ import {
 } from '../ci/config';
 import { enqueueRun } from '../ci/runs';
 import { recordAudit } from '../audit/record';
+import { nextNumber } from '../collab/issues';
+import { linkLanded, linkReferences } from '../collab/references';
 
 export const collaborationRoutes = new Hono<AppEnv>();
 const base = '/repos/:repo{.+}';
@@ -81,12 +83,14 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
       );
     if (!(await getChangeset(c.env, loaded.repo.id, body.head_cs)))
       throw new ApiError(404, 'changeset_not_found', 'Proposed revision not found');
+    const number = await nextNumber(c.env, loaded.repo.id);
     const result = await c.env.DB.prepare(
-      `INSERT INTO pull_requests (repo_id,title,body,author_id,base_ref,base_cs,head_cs,state,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO pull_requests (repo_id,number,title,body,author_id,base_ref,base_cs,head_cs,state,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
         loaded.repo.id,
+        number,
         body.title,
         body.body,
         c.get('principal')!.userId,
@@ -104,6 +108,8 @@ collaborationRoutes.post(`${base}/pulls`, async (c) => {
       repo: loaded.repo,
       target: { pull_id: pull.id, base_ref: pull.base_ref, head_cs: pull.head_cs },
     });
+    const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
+    await linkReferences(c, loaded.repo, source, pull.body);
     const ci = await autoCheck(c.env, pull, c.get('principal')!.userId);
     return c.json({ pull, ci }, 201);
   } catch (err) {
@@ -161,8 +167,23 @@ for (const action of ['update', 'review', 'merge'] as const) {
           },
         });
       }
+      const source = { kind: 'pull' as const, repo: loaded.repo.slug, ref: pull.number };
+      // `Closes #N` closes issues only once the pull lands on the default branch.
+      if (
+        response.ok &&
+        action === 'merge' &&
+        pull.base_ref === loaded.repo.default_branch
+      ) {
+        const merged = await getPull(c.env, loaded.repo.id, pull.id);
+        await linkLanded(c, loaded.repo, merged.base_cs, merged.head_cs, {
+          source,
+          body: merged.body,
+        });
+      }
       if (response.ok && action === 'update') {
         const data = (await response.json()) as { pull: Pull };
+        if (data.pull.body !== pull.body)
+          await linkReferences(c, loaded.repo, source, data.pull.body);
         const ci =
           data.pull.head_cs !== pull.head_cs ||
           (pull.state === 'draft' && data.pull.state === 'open')

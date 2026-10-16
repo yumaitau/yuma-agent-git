@@ -17,6 +17,7 @@ import { q, run } from '../db/client';
 import { loadReadableRepo as loadReadable, loadWholeRepo } from '../auth/guards';
 import { hasScope, type AppEnv } from '../auth/principal';
 import { recordAudit } from '../audit/record';
+import { linkLanded } from '../collab/references';
 
 /**
  * Ref routes (architecture §1.4, issue #33) — moves are compare-and-swap
@@ -154,6 +155,8 @@ refsRoutes.put(`/repos/${REPO}/refs/:name{.+}`, async (c) => {
         force: parsed.data.force ?? false,
       },
     });
+    if (name === repo.default_branch && result.to)
+      await linkLanded(c, repo, result.from, result.to);
     return c.json(result, 200, { 'cache-control': NO_STORE });
   } catch (err) {
     return errorResponse(c, err);

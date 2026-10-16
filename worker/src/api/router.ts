@@ -10,6 +10,7 @@ import { mcpRoutes } from '../agents/mcp';
 import { diffRoutes } from './diff';
 import { exportRoutes } from './export';
 import { importRoutes } from './imports';
+import { issuesRoutes } from './issues';
 import { objectsRoutes } from './objects';
 import { orgsRoutes } from './orgs';
 import { readRoutes } from './read';
@@ -21,6 +22,7 @@ export const apiRouter = new Hono<{ Bindings: Env }>();
 apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1' }));
 
 apiRouter.route('/', collaborationRoutes);
+apiRouter.route('/', issuesRoutes);
 apiRouter.route('/', agentsRoutes);
 apiRouter.route('/', auditRoutes);
 apiRouter.route('/', ancestryRoutes);
