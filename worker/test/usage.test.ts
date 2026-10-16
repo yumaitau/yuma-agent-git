@@ -317,6 +317,90 @@ describe('usage accounting (#61)', () => {
     ).toBe('pull_not_found');
   });
 
+  it('keeps a correction from lifting a budget', async () => {
+    const factory = await agent('factory', 'contents:write', 'acme');
+    const day = Date.UTC(2026, 0, 5);
+    await recordUsage(dbEnv, [
+      {
+        id: 'builtin-1',
+        repo: { id: repoId, owner_kind: 'org', owner_id: 'o1' },
+        agent_id: factory.id,
+        kind: 'tokens',
+        source: 'workers_ai',
+        model: 'gpt-x',
+        input_tokens: 1_000,
+        usd_micros: 5_000,
+        at: day,
+      },
+    ]);
+    const correct = (body: Record<string, unknown>, headers = factory.bearer) =>
+      call('POST', '/usage', { repo: 'acme/app', ...body }, headers);
+    // the metered agent and a repo writer who does not own the repo cannot
+    // correct an event they did not report
+    for (const headers of [factory.bearer, owner.headers])
+      expect(
+        await errorCode(
+          await correct(
+            {
+              correction_of: 'builtin-1',
+              input_tokens: -1_000_000_000_000,
+              usd_micros: -1_000_000_000_000,
+            },
+            headers,
+          ),
+          403,
+        ),
+      ).toBe('forbidden');
+    // its reporter can correct an event, but not below zero
+    const own = await json<{ event: { id: string } }>(
+      await correct({ model: 'gpt-x', input_tokens: 100, usd_micros: 50 }),
+      201,
+    );
+    for (const body of [
+      { input_tokens: -101 },
+      { usd_micros: -51 },
+      { input_tokens: -1_000_000_000_000, usd_micros: -1_000_000_000_000 },
+    ])
+      expect(
+        await errorCode(await correct({ correction_of: own.event.id, ...body }), 400),
+      ).toBe('invalid_request');
+    const fix = await json<{ event: { id: string } }>(
+      await correct({ correction_of: own.event.id, input_tokens: -60, usd_micros: -30 }),
+      201,
+    );
+    expect(
+      await errorCode(
+        await correct({ correction_of: own.event.id, input_tokens: -41 }),
+        400,
+      ),
+    ).toBe('invalid_request');
+    expect(await errorCode(await correct({ correction_of: fix.event.id }), 400)).toBe(
+      'invalid_request',
+    );
+    // the repo's org admin can correct any event; it keeps the event's agent and day
+    await json(
+      await correct(
+        { correction_of: 'builtin-1', input_tokens: -1_000, usd_micros: -5_000 },
+        ada.headers,
+      ),
+      201,
+    );
+    expect(
+      await q1(
+        dbEnv,
+        "SELECT agent_id, source, at FROM usage_events WHERE correction_of = 'builtin-1'",
+      ),
+    ).toEqual({ agent_id: factory.id, source: 'reported', at: day });
+    expect(
+      await q1(
+        dbEnv,
+        `SELECT SUM(input_tokens) AS tokens, SUM(usd_micros) AS usd FROM usage_daily
+          WHERE agent_id = ?`,
+        [factory.id],
+      ),
+    ).toEqual({ tokens: 40, usd: 20 });
+  });
+
   it('reports cost per merged pull request', async () => {
     await recordUsage(dbEnv, [
       {

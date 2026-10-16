@@ -54,7 +54,10 @@ export function orgOf(
   return repo?.owner_kind === 'org' ? (repo.owner_id ?? null) : null;
 }
 
-function priced(event: UsageEvent, at: number): { usd: number | null; version: string } {
+export function priced(
+  event: UsageEvent,
+  at: number,
+): { usd: number | null; version: string } {
   const version = priceVersionAt(at);
   if (event.usd_micros !== undefined && event.usd_micros !== null)
     return { usd: event.usd_micros, version: version.version };

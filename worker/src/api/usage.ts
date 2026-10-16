@@ -4,7 +4,7 @@ import type { AppEnv } from '../auth/principal';
 import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { canDelegate, getAgent } from '../auth/agents';
 import { canManageOwner, parseBody, requireOrgSso, sessionUser } from '../auth/owners';
-import { q, q1 } from '../db/client';
+import { q, q1, type RepoRecord } from '../db/client';
 import { ApiError } from '../core/errors';
 import { ulid } from '../core/ids';
 import { recordAudit } from '../audit/record';
@@ -12,8 +12,10 @@ import {
   budgetRowSchema,
   budgetUsed,
   periodStart,
+  priced,
   recordUsage,
   type Budget,
+  type UsageEvent,
 } from '../usage/record';
 import { apiError, errorResponse, readJsonBody } from './errors';
 import { getOrgBySlug, orgMembership } from './orgs';
@@ -59,7 +61,11 @@ export const reportUsageSchema = z
     ticket: z.string().trim().min(1).max(128).optional(),
     /** Pull request number in `repo`. */
     pull: z.int().min(1).optional(),
-    /** An earlier event in the same repo this one corrects. */
+    /**
+     * An earlier event in the same repo this one corrects: one you reported, or
+     * any as the repo's owner. It keeps that event's agent, kind, model and day,
+     * and cannot take its counts or cost below zero.
+     */
     correction_of: z.string().min(1).max(128).optional(),
     /** When the work happened (ms); defaults to now. */
     at: z.int().min(0).optional(),
@@ -159,50 +165,130 @@ usageRoutes.post('/usage', async (c) => {
           );
     if (input.pull !== undefined && !pull)
       return apiError(c, 404, 'pull_not_found', 'Pull request not found');
-    if (
-      input.correction_of !== undefined &&
-      !(await q1(c.env, 'SELECT 1 FROM usage_events WHERE id = ? AND repo_id = ?', [
-        input.correction_of,
-        loaded.repo.id,
-      ]))
-    )
-      return apiError(
-        c,
-        404,
-        'usage_event_not_found',
-        'No such usage event in this repo.',
-      );
-    const [event] = await recordUsage(
-      c.env,
-      [
-        {
-          repo: loaded.repo,
-          agent_id: agentId,
-          task_id: input.task_id ?? null,
-          run_id: input.run_id ?? null,
-          ticket: input.ticket ?? null,
-          pull_id: pull?.id ?? null,
-          kind: input.kind,
-          source: 'reported',
-          model: input.model ?? null,
-          billing: input.billing,
-          input_tokens: input.input_tokens,
-          output_tokens: input.output_tokens,
-          cached_tokens: input.cached_tokens,
-          quantity: input.quantity,
-          usd_micros: input.usd_micros ?? null,
-          correction_of: input.correction_of ?? null,
-          reported_by: `${principal.kind}:${principal.kind === 'agent' ? principal.agentId : principal.userId}`,
-          at: input.at,
-        },
-      ],
-      new URL(c.req.url).origin,
-    );
+    const reportedBy = `${principal.kind}:${principal.kind === 'agent' ? principal.agentId : principal.userId}`;
+    let usage: UsageEvent = {
+      repo: loaded.repo,
+      agent_id: agentId,
+      task_id: input.task_id ?? null,
+      run_id: input.run_id ?? null,
+      ticket: input.ticket ?? null,
+      pull_id: pull?.id ?? null,
+      kind: input.kind,
+      source: 'reported',
+      model: input.model ?? null,
+      billing: input.billing,
+      input_tokens: input.input_tokens,
+      output_tokens: input.output_tokens,
+      cached_tokens: input.cached_tokens,
+      quantity: input.quantity,
+      usd_micros: input.usd_micros ?? null,
+      correction_of: null,
+      reported_by: reportedBy,
+      at: input.at,
+    };
+    if (input.correction_of !== undefined) {
+      const corrected = await correctionOf(c, loaded.repo, input.correction_of, usage);
+      if (corrected instanceof Response) return corrected;
+      usage = corrected;
+    }
+    const [event] = await recordUsage(c.env, [usage], new URL(c.req.url).origin);
     return c.json({ event }, 201);
   } catch (err) {
     return errorResponse(c, err);
   }
 });
+
+/**
+ * A correction of an earlier event in the repo. Its reporter may correct it,
+ * and so may the repo's owner (an org owner or admin), never another agent. The
+ * correction keeps the event's agent, org, kind, model and day, so it lands in
+ * the same budget rollups, and it cannot take any count or the cost of the
+ * event and its earlier corrections below zero.
+ */
+async function correctionOf(
+  c: Context<AppEnv>,
+  repo: RepoRecord,
+  id: string,
+  usage: UsageEvent,
+): Promise<UsageEvent | Response> {
+  const principal = c.get('principal')!;
+  const original = await q1<{
+    agent_id: string | null;
+    kind: UsageEvent['kind'];
+    model: string | null;
+    billing: 'metered' | 'subscription';
+    reported_by: string | null;
+    correction_of: string | null;
+    at: number;
+  }>(
+    c.env,
+    `SELECT agent_id, kind, model, billing, reported_by, correction_of, at FROM usage_events
+      WHERE id = ? AND repo_id = ?`,
+    [id, repo.id],
+  );
+  if (!original)
+    return apiError(c, 404, 'usage_event_not_found', 'No such usage event in this repo.');
+  const owner =
+    repo.owner_kind && repo.owner_id
+      ? { owner_kind: repo.owner_kind, owner_id: repo.owner_id }
+      : null;
+  if (
+    original.reported_by !== usage.reported_by &&
+    (principal.kind === 'agent' ||
+      !owner ||
+      !(await canManageOwner(c.env, owner, principal.userId)))
+  )
+    return apiError(
+      c,
+      403,
+      'forbidden',
+      "Only the event's reporter or the repo's owner can correct it.",
+    );
+  if (original.correction_of !== null)
+    return apiError(
+      c,
+      400,
+      'invalid_request',
+      'Correct the original event, not a correction.',
+    );
+  if (usage.agent_id !== null && usage.agent_id !== original.agent_id)
+    return apiError(c, 400, 'invalid_request', "A correction keeps the event's agent.");
+  const correction: UsageEvent = {
+    ...usage,
+    agent_id: original.agent_id,
+    kind: original.kind,
+    model: original.model,
+    billing: original.billing,
+    correction_of: id,
+    at: original.at,
+  };
+  correction.usd_micros = priced(correction, original.at).usd;
+  const left = await q1<
+    Record<'input' | 'output' | 'cached' | 'quantity' | 'usd', number>
+  >(
+    c.env,
+    `SELECT SUM(input_tokens) AS input, SUM(output_tokens) AS output,
+       SUM(cached_tokens) AS cached, SUM(quantity) AS quantity,
+       COALESCE(SUM(usd_micros), 0) AS usd
+       FROM usage_events WHERE id = ? OR correction_of = ?`,
+    [id, id],
+  );
+  const after = [
+    left!.input + (correction.input_tokens ?? 0),
+    left!.output + (correction.output_tokens ?? 0),
+    left!.cached + (correction.cached_tokens ?? 0),
+    left!.quantity + (correction.quantity ?? 0),
+    left!.usd + (correction.usd_micros ?? 0),
+  ];
+  if (after.some((n) => n < 0))
+    return apiError(
+      c,
+      400,
+      'invalid_request',
+      'A correction cannot take a usage event below zero.',
+    );
+  return correction;
+}
 
 type Scope = { column: 'repo_id' | 'org_id' | 'agent_id'; id: string };
 
