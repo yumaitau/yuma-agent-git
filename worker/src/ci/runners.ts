@@ -13,11 +13,9 @@ import { commitShas } from '../git/upload-pack';
 import { storeArtifact } from './artifacts';
 import { parsePolicy, type CiRun } from './config';
 import { parseContext } from './context';
-import { prepareJob } from './inject';
+import { guardAgentJob, prepareJob } from './inject';
 import { advancePipelines } from './planner';
 import { emitCiRun } from './runs';
-import { guardAgentAction } from '../policy/guardrails';
-import { pauseFor, pauseMessage } from '../policy/pause';
 import { labelsSchema, runnerServices } from './spec';
 
 /**
@@ -371,45 +369,16 @@ async function claim(env: Env, runner: RunnerRow, job: CiRun, origin: string) {
   }
   if (!repo || !commit) return null;
   const policy = parsePolicy(JSON.parse(job.config));
-  const context = parseContext(job.context);
-  if (context?.agent_id) {
-    // agent guardrails (#62): the kill switch ends a job an agent started,
-    // and a deploy waits for the policy (held: stays queued until approved)
-    const pause = await pauseFor(env, repo);
-    if (pause) {
-      await finishRun(env, job.id, 'cancelled', pauseMessage(pause));
+  // agent guardrails (#62): the kill switch ends a job an agent started,
+  // and a deploy waits for the policy (held: stays queued until approved)
+  const guard = await guardAgentJob(env, repo, job, policy, parseContext(job.context));
+  if (guard.outcome !== 'allow') {
+    if (guard.outcome === 'deny') {
+      const state = guard.code === 'agents_paused' ? 'cancelled' : 'failed';
+      await finishRun(env, job.id, state, guard.message);
       await advancePipelines(env);
-      return null;
     }
-    if (policy.environment) {
-      const deploy = {
-        run: job.id,
-        job: job.job_key ?? null,
-        environment: policy.environment,
-        head_cs: job.head_cs,
-      };
-      const agent: Principal = {
-        kind: 'agent',
-        userId: job.requested_by,
-        agentId: context.agent_id,
-        jti: `ci-run:${job.id}`,
-        taskId: null,
-        scopes: [],
-        repoIds: [job.repo_id],
-      };
-      const guard = await guardAgentAction(
-        env,
-        agent,
-        repo,
-        { action: 'deploy', ...(context.ref ? { ref: context.ref } : {}) },
-        { exact: deploy, summary: deploy },
-      );
-      if (guard.outcome === 'deny') {
-        await finishRun(env, job.id, 'failed', guard.message);
-        await advancePipelines(env);
-      }
-      if (guard.outcome !== 'allow') return null;
-    }
+    return null;
   }
   const now = Date.now();
   const deadline = now + policy.timeout_seconds * 1000;

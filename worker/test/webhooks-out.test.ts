@@ -336,6 +336,19 @@ describe('repository webhooks', () => {
     expect(req.headers.get('x-yag-delivery')).toBe(delivery!.id);
   });
 
+  it('a queue redelivery of an event creates no second delivery', async () => {
+    await createHook({ url: 'https://hooks.example.com/yag', events: ['issues'] });
+    expect((await api(`${repoPath}/issues`, 'POST', { title: 'Twice' })).status).toBe(
+      201,
+    );
+    const message = sends[0]!;
+    await drain();
+    sends = [message]; // at-least-once: the consumer sees the same message again
+    await drain();
+    expect(received).toHaveLength(1);
+    expect(await q(testEnv, 'SELECT id FROM webhook_deliveries_out')).toHaveLength(1);
+  });
+
   it('retries with backoff, fails after 24 hours and redelivers by hand', async () => {
     const { hook } = await createHook({
       url: 'https://hooks.example.com/flaky',

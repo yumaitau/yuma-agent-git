@@ -196,8 +196,8 @@ guardrailsRoutes.post('/policy/test', async (c) => {
 export const pauseSchema = z.object({ reason: z.string().trim().max(500).default('') });
 
 /**
- * Pause agents in `scope` (an org id or `_instance`): revoke tokens, stop runs
- * and agent-started runner jobs, end MCP sessions.
+ * Pause agents in `scope` (an org id or `_instance`): revoke agent and app
+ * tokens, stop runs and agent-started CI jobs, end MCP sessions.
  */
 async function pause(
   c: Context<AppEnv>,
@@ -248,6 +248,18 @@ async function pause(
                 AND ${C.agentTasks.repoId} IN (${orgRepos})`,
             )
             .bind(now, org),
+      // app installation tokens (#75) are agent principals too
+      org === null
+        ? db.prepare('DELETE FROM app_tokens')
+        : db
+            .prepare(
+              `DELETE FROM app_tokens WHERE installation_id IN (
+                SELECT i.id FROM app_installations i JOIN apps a ON a.id = i.app_id
+                 WHERE (a.owner_kind = 'org' AND a.owner_id = ?)
+                    OR i.id IN (SELECT installation_id FROM app_installation_repos
+                                 WHERE repo_id IN (${orgRepos})))`,
+            )
+            .bind(org, org),
       // MCP sessions (#56) of the paused agents end; clients must reconnect
       org === null
         ? db.prepare("DELETE FROM mcp_sessions WHERE holder LIKE 'agent:%'")
@@ -263,17 +275,27 @@ async function pause(
             .bind(org, org),
     ],
   );
-  // self-hosted runner jobs (#48) that agents started stop; a running job's
-  // runner sees the cancel on its next heartbeat
-  const jobs = await q<{ id: string }>(
+  // CI jobs that agents started stop: a self-hosted (#48) job's runner sees
+  // the cancel on its next heartbeat, a built-in one's VM is destroyed
+  const jobs = await q<{ id: string; state: string; runs_on: string | null }>(
     c.env,
-    `SELECT id FROM ci_runs WHERE state IN ('queued', 'running') AND runs_on IS NOT NULL
+    `SELECT id, state, runs_on FROM ci_runs WHERE state IN ('queued', 'running')
         AND json_extract(context, '$.agent_id') IS NOT NULL
         ${org === null ? '' : `AND repo_id IN (${orgRepos})`}`,
     org === null ? [] : [org],
   );
-  for (const job of jobs)
+  for (const job of jobs) {
     await finishRun(c.env, job.id, 'cancelled', 'Agents were paused');
+    if (job.runs_on !== null || job.state !== 'running' || !c.env.CI_RUNNER) continue;
+    await c.env.CI_RUNNER.get(c.env.CI_RUNNER.idFromName(job.id))
+      .fetch('https://runner/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ run_id: job.id }),
+      })
+      .catch(() =>
+        console.warn('guardrails: runner VM stop failed; the deadline ends it'),
+      );
+  }
   if (jobs.length) await advancePipelines(c.env);
   return getPause(c.env, scope);
 }

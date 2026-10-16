@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import type { RepoRecord } from '../db/client';
 import { q } from '../db/client';
+import { ulid } from '../core/ids';
 import type { AuditActor } from '../audit/record';
 
 /**
@@ -25,6 +26,8 @@ export const WEBHOOK_EVENTS = [
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export const forgeEventSchema = z.object({
+  /** Fixes the delivery ids, so a redelivered queue message sends nothing twice; absent on messages queued before it. */
+  id: z.string().optional(),
   event: z.enum(WEBHOOK_EVENTS),
   action: z.string().nullable(),
   repo_id: z.string(),
@@ -41,9 +44,14 @@ export const forgeEventSchema = z.object({
 });
 export type ForgeEvent = z.infer<typeof forgeEventSchema>;
 
+/** App permissions that read a repository; every event needs one (#75). */
+export const APP_READ_SCOPES = ['contents:read', 'contents:write'];
+
 /**
  * Active hooks that may receive events for a repository: its own, its org's,
- * and those of apps installed on it. Binds the repo id, then the org id.
+ * and those of apps installed on it that could read it with an installation
+ * token (an active installer and a read permission). Binds the repo id, then
+ * the org id.
  */
 export const HOOKS_FOR_REPO = `active = 1 AND (
   (scope = 'repo' AND owner_id = ?1)
@@ -51,7 +59,11 @@ export const HOOKS_FOR_REPO = `active = 1 AND (
   OR (scope = 'app' AND owner_id IN (
     SELECT i.app_id FROM app_installations i
       JOIN app_installation_repos r ON r.installation_id = i.id
-     WHERE r.repo_id = ?1)))`;
+      JOIN users u ON u.id = i.installed_by AND u.active = 1
+      JOIN apps a ON a.id = i.app_id
+     WHERE r.repo_id = ?1 AND EXISTS (
+       SELECT 1 FROM json_each(a.permissions) p
+        WHERE p.value IN (${APP_READ_SCOPES.map((s) => `'${s}'`).join(', ')})))))`;
 
 export function hookBinds(repo: Pick<RepoRecord, 'id' | 'owner_kind' | 'owner_id'>) {
   return [repo.id, repo.owner_kind === 'org' ? repo.owner_id : null];
@@ -81,6 +93,7 @@ export async function emitEvent(
     );
     if (!hooks.some((h) => parseEvents(h.events).includes(input.event))) return;
     const event: ForgeEvent = {
+      id: ulid(),
       event: input.event,
       action: input.action,
       repo_id: repo.id,

@@ -26,6 +26,7 @@ import {
   type Outcome,
 } from '../policy/rulesets';
 import { commitChanges } from '../core/commit';
+import { agentKey, changeFacts, enforceAgentAction } from '../policy/guardrails';
 import { recordAgentProvenance } from '../auth/agents';
 import { USER_TEAMS_CTE } from '../auth/rbac';
 import {
@@ -492,7 +493,9 @@ export async function mutatePullLocked(
       'UPDATE pull_requests SET head_cs=?, base_cs=?, revision=?, updated_at=? WHERE id=?',
       [prepared.result, prepared.target, pull.revision + 1, Date.now(), pull.id],
     );
-    return { pull: await getPull(env, pull.repo_id, pull.id) };
+    const updated = await getPull(env, pull.repo_id, pull.id);
+    await reanchorThreads(env, updated);
+    return { pull: updated };
   }
   const principal = principalSchema
     .nullable()
@@ -578,6 +581,20 @@ export async function mutatePullLocked(
     const repo = await getRepo(env, pull.repo_id);
     if (!repo) throw new ApiError(404, 'repo_not_found', 'Repository not found');
     const { changes, threadIds } = await suggestionChanges(env, pull, ids as number[]);
+    // agent guardrails (#62): a suggestion commit is a changeset like any other
+    if (agentKey(principal) !== null) {
+      const files = changes.map((ch) => ch.path);
+      await enforceAgentAction(
+        env,
+        principal,
+        repo,
+        { action: 'changeset.create', ...(await changeFacts(env, repo.id, changes)) },
+        {
+          exact: { pull: pull.id, first_parent: pull.head_cs, changes },
+          summary: { pull: pull.number, first_parent: pull.head_cs, files },
+        },
+      );
+    }
     await enforcePushRules(
       env,
       repo,

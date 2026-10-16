@@ -15,6 +15,7 @@ import {
   type Obj,
 } from './git-helpers';
 import { createRepo, getRef } from '../src/db/repos';
+import { commitChanges } from '../src/core/commit';
 import { q, run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
 import { commitShas } from '../src/git/upload-pack';
@@ -503,6 +504,62 @@ describe('agent guardrails (#62)', () => {
     expect(landed.status).toBe(201);
   });
 
+  it('holds an agent applying a review suggestion to a CI workflow', async () => {
+    const mainCs = (await getRef(dbEnv, repoId, 'main'))!.head;
+    const head = (
+      await commitChanges(dbEnv, repoId, {
+        first_parent: mainCs,
+        message: 'ci',
+        author: { name: 'Ada', email: 'ada@example.com' },
+        changes: [{ path: WORKFLOW, op: 'add', content_b64: b64('on: push\n') }],
+      })
+    ).changeset.id;
+    const opened = await call('/api/v1/repos/acme/app/pulls', {
+      method: 'POST',
+      headers: owner.headers,
+      body: { title: 'CI', head_cs: head },
+    });
+    expect(opened.status).toBe(201);
+    const pull = ((await opened.json()) as { pull: { id: number; revision: number } })
+      .pull;
+    const posted = await call(`/api/v1/repos/acme/app/pulls/${pull.id}/threads`, {
+      method: 'POST',
+      headers: bearer(agentToken),
+      body: {
+        path: WORKFLOW,
+        head_cs: head,
+        revision: pull.revision,
+        line: 1,
+        body: '```suggestion\non: [push, pull_request]\n```',
+      },
+    });
+    expect(posted.status).toBe(201);
+    const { thread } = (await posted.json()) as {
+      thread: { comments: { id: number }[] };
+    };
+    const apply = () =>
+      call(`/api/v1/repos/acme/app/pulls/${pull.id}/suggestions/apply`, {
+        method: 'POST',
+        headers: bearer(agentToken),
+        body: {
+          comment_ids: [thread.comments[0]!.id],
+          head_cs: head,
+          revision: pull.revision,
+        },
+      });
+    const held = await apply();
+    expect(held.status).toBe(403);
+    const error = await errorOf(held);
+    expect(error).toMatchObject({
+      code: 'approval_required',
+      policy: { matches: [{ rule: 'ci-workflows' }] },
+    });
+    expect((await decide((error.approval as { id: string }).id, 'approve')).status).toBe(
+      200,
+    );
+    expect((await apply()).status).toBe(200);
+  });
+
   it('judges built-in agent runs through their tools', async () => {
     const mainCs = (await getRef(dbEnv, repoId, 'main'))!.head;
     const ctx = {
@@ -536,6 +593,50 @@ describe('agent guardrails (#62)', () => {
     expect((await decide(pending!.id, 'approve')).status).toBe(200);
     const done = await executeTool(dbEnv, ctx, 'commit', input);
     expect(done).toMatchObject({ changed_files: [{ path: WORKFLOW }] });
+  });
+
+  it('judges agent settings runs and retries as pipeline runs', async () => {
+    await run(
+      dbEnv,
+      'INSERT INTO agent_policies (org_id, version, document, created_by, created_at) VALUES (?, 1, ?, ?, ?)',
+      [
+        orgId,
+        JSON.stringify({
+          version: 1,
+          rules: [{ id: 'no-runs', actions: ['pipeline.run'], effect: 'deny' }],
+        }),
+        owner.userId,
+        Date.now(),
+      ],
+    );
+    const created = await call('/api/v1/agents', {
+      method: 'POST',
+      headers: owner.headers,
+      body: {
+        name: 'Runner',
+        kind: 'factory',
+        max_scopes: ['contents:read', 'contents:write', 'ci:run'],
+      },
+    });
+    const issued = await exchange(((await created.json()) as { id: string }).id);
+    const token = ((await issued.json()) as { access_token: string }).access_token;
+    const mainCs = (await getRef(dbEnv, repoId, 'main'))!.head;
+    await run(
+      dbEnv,
+      `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by,
+                            state, publish, month, reserved_micros, created_at)
+       VALUES ('old-run', ?, ?, 1, '{}', ?, 'passed', 0, '2026-10', 0, 0)`,
+      [repoId, mainCs, owner.userId],
+    );
+    for (const path of ['/ci/runs', '/ci/runs/old-run/retry']) {
+      const res = await call(`/api/v1/repos/acme/app${path}`, {
+        method: 'POST',
+        headers: bearer(token),
+        body: {},
+      });
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).code).toBe('policy_denied');
+    }
   });
 
   it('holds agent tags as releases', async () => {

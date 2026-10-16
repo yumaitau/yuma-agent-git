@@ -168,6 +168,42 @@ describe('line-level review threads (#39)', () => {
     });
   });
 
+  it('keeps threads on the same code when the branch is updated from the target', async () => {
+    const pull = await openPull();
+    const t = await thread(pull, { line: 42, body: '```suggestion\nline 42!\n```' });
+    // the target moves with an unrelated file; update-branch merges it in
+    const docs = await commitChanges(testEnv, repo.id, {
+      first_parent: base,
+      message: 'docs',
+      author,
+      changes: [{ path: 'README.md', op: 'add', content_b64: btoa('docs\n') }],
+    });
+    await setRef(testEnv, repo.id, 'main', docs.changeset.id);
+    const before = await current(pull);
+    await json(
+      await call('POST', `/pulls/${pull.id}/update-branch`, {
+        head_cs: before.head_cs,
+        revision: before.revision,
+      }),
+    );
+    const updated = await current(pull);
+    expect(updated.revision).toBe(before.revision + 1);
+    const [moved] = await threads(pull);
+    expect(moved).toMatchObject({
+      start_line: 42,
+      outdated: false,
+      anchor_cs: updated.head_cs,
+      revision: updated.revision,
+    });
+    await json(
+      await call('POST', `/pulls/${pull.id}/suggestions/apply`, {
+        comment_ids: [t.comments[0]!.id],
+        head_cs: updated.head_cs,
+        revision: updated.revision,
+      }),
+    );
+  });
+
   it('marks a comment outdated when its line changes, and keeps it readable', async () => {
     const pull = await openPull();
     await thread(pull, { line: 42, start_line: 41, body: 'Rename these' });

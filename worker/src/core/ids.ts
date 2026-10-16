@@ -6,15 +6,15 @@
  */
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
-export function ulid(now: number = Date.now()): string {
+/** `rand` (16 bytes) makes the id deterministic; omitted, it is random. */
+export function ulid(now: number = Date.now(), rand?: Uint8Array): string {
   let time = '';
   let t = now;
   for (let i = 0; i < 10; i++) {
     time = CROCKFORD[t % 32] + time;
     t = Math.floor(t / 32);
   }
-  const rand = new Uint8Array(16);
-  crypto.getRandomValues(rand);
+  rand ??= crypto.getRandomValues(new Uint8Array(16));
   let random = '';
   for (let i = 0; i < 16; i++) {
     random += CROCKFORD[rand[i] % 32];

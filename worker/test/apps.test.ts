@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { env } from 'cloudflare:test';
 import { cleanDb, loginAs, makeApp, seedSchema, type TestEnv } from './helpers';
 import type { Env } from '../src/env';
-import { createRepo, setRef } from '../src/db/repos';
+import { createRepo, getRepoBySlug, setRef } from '../src/db/repos';
+import { emitEvent } from '../src/webhooks/events';
 import { commitChanges } from '../src/core/commit';
-import { q, q1 } from '../src/db/client';
+import { q, q1, run } from '../src/db/client';
 import { b64urlEncode, sha256Bytes } from '../src/auth/encoding';
 import { pemToDer } from '../src/bridge/github';
 
@@ -366,6 +367,95 @@ describe('apps and installation tokens', () => {
       { action: 'app.token.issue', actor_kind: 'agent' },
       { action: 'app.uninstall', actor_kind: 'user' },
     ]);
+  });
+
+  it('the agent kill switch stops installation tokens and their grant', async () => {
+    const app = await newApp(['contents:read']);
+    const installation = await install(app.app.id);
+    const { access_token } = await json<{ access_token: string }>(
+      installationToken(app, installation),
+      200,
+    );
+    const bearer = { authorization: `Bearer ${access_token}` };
+    await run(
+      testEnv,
+      "INSERT INTO agent_pauses (scope_id, paused_by, reason, paused_at) VALUES ('_instance', ?, '', ?)",
+      [owner.userId, Date.now()],
+    );
+    expect(
+      (await call('/api/v1/repos/team/project/refs', 'GET', undefined, bearer)).status,
+    ).toBe(401);
+    const refused = await json<{ error: { code: string } }>(
+      installationToken(app, installation),
+      403,
+    );
+    expect(refused.error.code).toBe('agents_paused');
+    await run(testEnv, 'DELETE FROM agent_pauses');
+    expect(
+      (await call('/api/v1/repos/team/project/refs', 'GET', undefined, bearer)).status,
+    ).toBe(200);
+    // pausing through the API also revokes the tokens
+    const admin = new Proxy(bindings(), {
+      get(target, key, receiver) {
+        if (key === 'AGENTS_ADMIN_USER_IDS') return owner.userId;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const paused = await makeApp(admin)(
+      new Request('https://forge.test/api/v1/admin/agents/pause', {
+        method: 'POST',
+        headers: { ...owner.headers, 'content-type': 'application/json' },
+        body: '{}',
+      }),
+    );
+    expect(paused.status).toBe(200);
+    expect(await q(testEnv, 'SELECT token_hash FROM app_tokens')).toEqual([]);
+  });
+
+  it('app webhooks need a read permission and an active installer', async () => {
+    const refused = await json<{ error: { code: string } }>(
+      call('/api/v1/apps', 'POST', {
+        name: 'Snoop',
+        permissions: ['issues:write'],
+        webhook: { url: 'https://snoop.example.com/hook', events: ['push'] },
+      }),
+      400,
+    );
+    expect(refused.error.code).toBe('insufficient_permissions');
+    const created = await json<{ app: { id: string } }>(
+      call('/api/v1/apps', 'POST', {
+        name: 'Tracker',
+        permissions: ['contents:read'],
+        webhook: { url: 'https://tracker.example.com/hook', events: ['issues'] },
+      }),
+      201,
+    );
+    await install(created.app.id);
+    const sends: unknown[] = [];
+    const e = new Proxy(bindings(), {
+      get(target, key, receiver) {
+        if (key === 'EVENTS_QUEUE')
+          return { send: async (b: unknown) => void sends.push(b) };
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const repo = (await getRepoBySlug(testEnv, 'team/project'))!;
+    const emit = () =>
+      emitEvent(e, repo, {
+        event: 'issues',
+        action: 'opened',
+        actor: { kind: 'user', id: owner.userId },
+        data: {},
+      });
+    await emit();
+    expect(sends).toHaveLength(1);
+    // an app without read access, or whose installer left, gets nothing
+    await run(testEnv, `UPDATE apps SET permissions = '["issues:write"]'`);
+    await emit();
+    await run(testEnv, `UPDATE apps SET permissions = '["contents:read"]'`);
+    await run(testEnv, 'UPDATE users SET active = 0 WHERE id = ?', [owner.userId]);
+    await emit();
+    expect(sends).toHaveLength(1);
   });
 
   it("an app's webhook receives events for the repositories it is installed on", async () => {

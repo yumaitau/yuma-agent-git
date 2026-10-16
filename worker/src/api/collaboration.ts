@@ -444,6 +444,16 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
     if (scoped) return scoped;
     const rev = input.head ?? `ref:${loaded.repo.default_branch}`;
     const cs = await resolveRevision(c.env, loaded.repo.id, rev);
+    const ref = await runRef(c.env, loaded.repo.id, rev, cs.id);
+    // agent guardrails (#62): a run can deploy and read secrets
+    const dispatch = { head_cs: cs.id, ref, publish: input.publish };
+    await enforceAgentAction(
+      c.env,
+      c.get('principal'),
+      loaded.repo,
+      { action: 'pipeline.run', ...(ref ? { ref } : {}) },
+      { exact: dispatch, summary: dispatch },
+    );
     const started = await requestRun(
       c.env,
       loaded.repo,
@@ -452,7 +462,7 @@ collaborationRoutes.post(`${base}/ci/runs`, async (c) => {
       input.publish,
       {
         event: 'workflow_dispatch',
-        ref: await runRef(c.env, loaded.repo.id, rev, cs.id),
+        ref,
         pull_id: null,
         fork: false,
         actor_kind: actorKindOf(c.get('principal')),
@@ -528,6 +538,14 @@ collaborationRoutes.post(`${base}/ci/runs/:id/retry`, async (c) => {
             job.head_cs,
           ),
         );
+    const retry = { retry_of: job.id, head_cs: job.head_cs, ref: context.ref };
+    await enforceAgentAction(
+      c.env,
+      c.get('principal'),
+      loaded.repo,
+      { action: 'pipeline.run', ...(context.ref ? { ref: context.ref } : {}) },
+      { exact: retry, summary: retry },
+    );
     const started = await requestRun(
       c.env,
       loaded.repo,

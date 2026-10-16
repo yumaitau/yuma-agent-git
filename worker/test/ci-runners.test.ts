@@ -8,6 +8,8 @@ import { q, q1, run } from '../src/db/client';
 import { createApiToken } from '../src/auth/tokens';
 import { parseSpec } from '../src/ci/spec';
 import { MAX_STEP_LOG_BYTES, sweepRunners } from '../src/ci/runners';
+import { prepareJob } from '../src/ci/inject';
+import { parsePolicy } from '../src/ci/config';
 import type { CiRun, PipelineRun } from '../shared/collaboration';
 
 const testEnv = env as unknown as TestEnv;
@@ -605,12 +607,16 @@ describe('runner administration', () => {
 });
 
 describe('agent guardrails on runner jobs (#62)', () => {
-  /** The queued linux job, marked as started by an agent identity. */
-  async function agentJob(environment: string | null = null): Promise<string> {
+  /** The queued linux job (or built-in `cloud` job), marked as started by an agent identity. */
+  async function agentJob(
+    environment: string | null = null,
+    key = 'build',
+  ): Promise<string> {
     await startPipeline();
     const build = (await q1<{ id: string }>(
       testEnv,
-      "SELECT id FROM ci_runs WHERE job_key = 'build' AND state = 'queued'",
+      "SELECT id FROM ci_runs WHERE job_key = ? AND state = 'queued'",
+      [key],
     ))!.id;
     await run(
       testEnv,
@@ -654,7 +660,7 @@ describe('agent guardrails on runner jobs (#62)', () => {
     expect((await runRow(next)).state).toBe('cancelled');
   });
 
-  it('a deploy by an agent waits for the policy, then runs once approved', async () => {
+  async function holdDeploys(): Promise<void> {
     const org = (await q1<{ id: string }>(
       testEnv,
       "SELECT id FROM orgs WHERE slug = 'yuma'",
@@ -674,6 +680,40 @@ describe('agent guardrails on runner jobs (#62)', () => {
         Date.now(),
       ],
     );
+  }
+
+  it('built-in pool jobs get no credentials while a deploy is held or agents are paused', async () => {
+    await holdDeploys();
+    const id = await agentJob('prod', 'cloud');
+    const job = await runRow(id);
+    const policy = parsePolicy(JSON.parse(job.config));
+    await expect(
+      prepareJob(ci(), job, policy, Date.now() + 60_000),
+    ).rejects.toMatchObject({ code: 'approval_required' });
+    const listed = await call('/api/v1/repos/yuma/app/approvals');
+    const { approvals } = (await listed.json()) as { approvals: { id: string }[] };
+    expect(
+      (
+        await call(`/api/v1/repos/yuma/app/approvals/${approvals[0]!.id}`, 'POST', {
+          decision: 'approve',
+        })
+      ).status,
+    ).toBe(200);
+    await prepareJob(ci(), job, policy, Date.now() + 60_000);
+
+    // the kill switch cancels queued built-in agent jobs and refuses credentials
+    expect((await call('/api/v1/orgs/yuma/agents/pause', 'POST', {})).status).toBe(200);
+    expect(await runRow(id)).toMatchObject({
+      state: 'cancelled',
+      error: 'Agents were paused',
+    });
+    await expect(
+      prepareJob(ci(), job, policy, Date.now() + 60_000),
+    ).rejects.toMatchObject({ code: 'agents_paused' });
+  });
+
+  it('a deploy by an agent waits for the policy, then runs once approved', async () => {
+    await holdDeploys();
     const { credential } = await register(['linux']);
     const id = await agentJob('prod');
     expect(await claim(credential)).toBeNull();

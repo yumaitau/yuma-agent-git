@@ -4,6 +4,7 @@ import { q, q1, run } from '../db/client';
 import { getRepo } from '../db/repos';
 import { ulid } from '../core/ids';
 import { hmacHex } from '../audit/stream';
+import { sha256Bytes } from '../auth/encoding';
 import { decryptSecrets } from '../secrets/crypto';
 import { HOOKS_FOR_REPO, hookBinds, parseEvents, type ForgeEvent } from './events';
 import { buildPayload } from './payloads';
@@ -201,9 +202,10 @@ export const hookAad = (id: string): string => `webhook|${id}`;
 function insertDelivery(
   env: Env,
   row: Omit<DeliveryRow, 'attempts' | 'response_code' | 'error' | 'last_attempt_at'>,
+  verb = 'INSERT',
 ): D1PreparedStatement {
   return env.DB.prepare(
-    `INSERT INTO webhook_deliveries_out
+    `${verb} INTO webhook_deliveries_out
        (id, webhook_id, event, action, repo_id, payload, status, next_attempt_at, created_at, redelivery_of)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
@@ -220,7 +222,11 @@ function insertDelivery(
   );
 }
 
-/** One delivery per subscribed hook, written in one batch. Returns their ids. */
+/**
+ * One delivery per subscribed hook, written in one batch. Returns their ids.
+ * An id is derived from the event and the hook, so a queue redelivery finds
+ * the rows the first try wrote and attempts those again instead of new ones.
+ */
 export async function fanOut(env: Env, event: ForgeEvent): Promise<string[]> {
   const repo = await getRepo(env, event.repo_id);
   if (!repo) return [];
@@ -237,21 +243,28 @@ export async function fanOut(env: Env, event: ForgeEvent): Promise<string[]> {
       built.set(hook.format, await buildPayload(env, event, hook.format));
     const payload = built.get(hook.format);
     if (!payload) continue;
-    const id = ulid(now);
+    const seed = new TextEncoder().encode(`${event.id}|${hook.id}`);
+    const id = event.id
+      ? ulid(event.at, (await sha256Bytes(seed)).slice(0, 16))
+      : ulid(now);
     ids.push(id);
     inserts.push(
-      insertDelivery(env, {
-        id,
-        webhook_id: hook.id,
-        event: payload.name,
-        action: event.action,
-        repo_id: repo.id,
-        payload: payload.body,
-        status: 'pending',
-        next_attempt_at: now,
-        created_at: now,
-        redelivery_of: null,
-      }),
+      insertDelivery(
+        env,
+        {
+          id,
+          webhook_id: hook.id,
+          event: payload.name,
+          action: event.action,
+          repo_id: repo.id,
+          payload: payload.body,
+          status: 'pending',
+          next_attempt_at: now,
+          created_at: now,
+          redelivery_of: null,
+        },
+        'INSERT OR IGNORE',
+      ),
     );
   }
   if (inserts.length > 0) await env.DB.batch(inserts);

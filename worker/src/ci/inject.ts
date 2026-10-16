@@ -1,9 +1,13 @@
 import type { Env } from '../env';
+import type { RepoRecord } from '../db/client';
 import { getRepo } from '../db/repos';
 import { ApiError } from '../core/errors';
+import type { Principal } from '../auth/principal';
+import { guardAgentAction, type Guard } from '../policy/guardrails';
+import { pauseFor, pauseMessage } from '../policy/pause';
 import { resolveForJob } from '../secrets/store';
 import type { CiPolicy, CiRun } from './config';
-import { parseContext } from './context';
+import { parseContext, type RunContext } from './context';
 import { jobTrust } from './environments';
 import { createRequestToken, issuerFor, MAX_LIFETIME_SECONDS, mintIdToken } from './oidc';
 
@@ -18,6 +22,49 @@ export interface JobAccess {
   files: { path: string; content: string }[];
   /** One log line describing what was injected (names only) or withheld. */
   summary: string;
+}
+
+/**
+ * Agent guardrails (#62) for a job an agent started, in either pool: the kill
+ * switch, and the `deploy` policy for a job that names an environment. The
+ * approval binds the job and revision, not the run, so a built-in run that
+ * was held passes when started again once a human approves.
+ */
+export async function guardAgentJob(
+  env: Env,
+  repo: RepoRecord,
+  job: CiRun,
+  policy: CiPolicy,
+  context: RunContext | null,
+): Promise<Guard> {
+  if (!context?.agent_id) return { outcome: 'allow' };
+  if (!policy.environment) {
+    const pause = await pauseFor(env, repo);
+    if (!pause) return { outcome: 'allow' };
+    const message = pauseMessage(pause);
+    return { outcome: 'deny', code: 'agents_paused', message, details: {} };
+  }
+  const agent: Principal = {
+    kind: 'agent',
+    userId: job.requested_by,
+    agentId: context.agent_id,
+    jti: `ci-run:${job.id}`,
+    taskId: null,
+    scopes: [],
+    repoIds: [job.repo_id],
+  };
+  const deploy = {
+    job: job.job_key ?? null,
+    environment: policy.environment,
+    head_cs: job.head_cs,
+  };
+  return guardAgentAction(
+    env,
+    agent,
+    repo,
+    { action: 'deploy', ...(context.ref ? { ref: context.ref } : {}) },
+    { exact: deploy, summary: { run: job.id, ...deploy } },
+  );
 }
 
 /**
@@ -37,8 +84,14 @@ export async function prepareJob(
     policy.permissions.id_token === 'write' ||
     policy.environment !== null;
   const context = parseContext(job.context);
-  const trust = await jobTrust(env, job, policy, context);
   const repo = await getRepo(env, job.repo_id);
+  if (repo) {
+    // checked again here: a built-in job reaches this point with no claim guard
+    const guard = await guardAgentJob(env, repo, job, policy, context);
+    if (guard.outcome !== 'allow')
+      throw new ApiError(403, guard.code, guard.message, guard.details);
+  }
+  const trust = await jobTrust(env, job, policy, context);
   if (!trust.ok || !context || !repo)
     return {
       ...none,

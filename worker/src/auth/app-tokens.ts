@@ -3,6 +3,7 @@ import type { Env } from '../env';
 import { q, q1 } from '../db/client';
 import { sha256Hex } from '../core/hashing';
 import type { Principal } from './principal';
+import { INSTANCE_SCOPE } from '../policy/pause';
 
 /** App installation tokens (issue #75): see apps.ts. Kept apart so token resolution has no app imports. */
 export const APP_TOKEN_PREFIX = 'yagis_';
@@ -18,7 +19,34 @@ const appTokenRowSchema = z.object({
   auth_method: z.string().nullable(),
 });
 
-/** Resolve a raw `yagis_` token; null when unknown, expired, uninstalled or the installer is inactive. */
+/**
+ * Agents paused (#62) on the instance, the app owner's org or the org of a
+ * repo installation `i` holds; `a` is its app.
+ */
+const PAUSED = `EXISTS (
+  SELECT 1 FROM agent_pauses p
+   WHERE p.scope_id = '${INSTANCE_SCOPE}'
+      OR (a.owner_kind = 'org' AND p.scope_id = a.owner_id)
+      OR p.scope_id IN (
+           SELECT r.owner_id FROM app_installation_repos ir
+             JOIN repos r ON r.id = ir.repo_id
+            WHERE ir.installation_id = i.id AND r.owner_kind = 'org'))`;
+
+/** Whether the kill switch stops installation `id`. */
+export async function installationPaused(env: Env, id: string): Promise<boolean> {
+  const row = await q1(
+    env,
+    `SELECT 1 FROM app_installations i JOIN apps a ON a.id = i.app_id
+      WHERE i.id = ? AND ${PAUSED}`,
+    [id],
+  );
+  return row !== null;
+}
+
+/**
+ * Resolve a raw `yagis_` token; null when unknown, expired, uninstalled, the
+ * installer is inactive or agents are paused.
+ */
 export async function resolveAppToken(
   env: Env,
   raw: string,
@@ -29,8 +57,9 @@ export async function resolveAppToken(
     `SELECT t.installation_id, t.scopes, i.app_id, i.installed_by, i.auth_method
        FROM app_tokens t
        JOIN app_installations i ON i.id = t.installation_id
+       JOIN apps a ON a.id = i.app_id
        JOIN users u ON u.id = i.installed_by
-      WHERE t.token_hash = ? AND t.expires_at > ? AND u.active = 1`,
+      WHERE t.token_hash = ? AND t.expires_at > ? AND u.active = 1 AND NOT ${PAUSED}`,
     [await hashAppToken(raw), now],
   );
   if (!row) return null;

@@ -8,12 +8,13 @@ import { ApiError } from '../core/errors';
 import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import { createHook, hookInputSchema } from '../api/hooks';
 import { recordAudit } from '../audit/record';
+import { APP_READ_SCOPES } from '../webhooks/events';
 import { AGENT_SCOPES } from './agents';
 import { b64urlDecode, b64urlEncode } from './encoding';
 import { loadWholeRepo } from './guards';
 import type { AppEnv } from './principal';
 import { requireRecentMfa } from './session';
-import { APP_TOKEN_PREFIX, hashAppToken } from './app-tokens';
+import { APP_TOKEN_PREFIX, hashAppToken, installationPaused } from './app-tokens';
 import {
   canManageOwner,
   parseBody,
@@ -138,6 +139,12 @@ appsRoutes.post('/api/v1/apps', async (c) => {
     const mfa = await requireRecentMfa(c);
     if (mfa) return mfa;
     const input = parseBody(createAppSchema, await readJsonBody(c));
+    if (input.webhook && !input.permissions.some((p) => APP_READ_SCOPES.includes(p)))
+      throw new ApiError(
+        400,
+        'insufficient_permissions',
+        'An app webhook needs contents:read: it sends what the app could read',
+      );
     const owner = await resolveOwner(c, userId, input.org);
     const pair = (await crypto.subtle.generateKey(
       {
@@ -465,6 +472,8 @@ export async function appTokenGrant(
   );
   if (!install)
     return apiError(c, 400, 'invalid_grant', 'installation not found for this app');
+  if (await installationPaused(c.env, install.id))
+    return apiError(c, 403, 'agents_paused', 'agents are paused for this installation');
   const permissions = z.array(z.string()).parse(JSON.parse(app.permissions));
   const scopes = input.scope
     ? [...new Set(input.scope.split(' ').filter((s) => s !== ''))]
