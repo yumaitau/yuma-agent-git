@@ -129,9 +129,63 @@ Not supported yet: annotated tag objects (push a lightweight tag), submodules,
 a commit that replaces a file with a directory of the same name (or the
 reverse), empty commit messages, and commits touching more than 5,000 files.
 
+## Git LFS
+
+Large files work with stock `git lfs` (issue #35, `worker/src/git/lfs.ts`).
+Git LFS finds the server at `<remote>/info/lfs` on its own and uses the same
+credentials as Git.
+
+- `POST …/info/lfs/objects/batch` answers `download` and `upload` with the
+  `basic` transfer and `sha256` objects. Download needs read on the whole
+  repository, upload needs write; the 401, 404, 403, `path_restricted` and
+  `sso_required` answers match Git's, as JSON with a `message` Git LFS
+  prints. Agent uploads go through the guardrails as a `push`.
+- Each action carries an `Authorization: RemoteAuth …` header: an HMAC
+  (keyed by `CACHE_SIGNING_KEY`) over the repository, operation, oid and size,
+  valid for 15 minutes. Without `CACHE_SIGNING_KEY` the batch API answers 503.
+- Transfers stream through the Worker into R2 at `lfs/<repo id>/<oid>`, the
+  layout the GitHub importer (#72) writes. The upload is stored with the oid
+  as R2's SHA-256 checksum and a fixed length, so a wrong hash or size stores
+  nothing and links nothing. `lfs_objects` links each object to the
+  repositories that uploaded or imported it.
+- Quotas are checked when an upload is requested: `LFS_REPO_QUOTA_BYTES`
+  (10 GiB) per repository and `LFS_ORG_QUOTA_BYTES` (100 GiB) per org. Over
+  quota is `507 lfs_quota_exceeded`. `GET /api/v1/repos/:owner/:repo/lfs`
+  reports objects, bytes and quotas; repository admins remove an object with
+  `DELETE /api/v1/repos/:owner/:repo/lfs/objects/:oid`.
+- Locks (`git lfs lock`, `unlock`, `locks`, and `locks/verify` on push): write
+  to lock, read to list. Unlocking someone else's lock needs admin and
+  `--force`. Locks are advisory: pushes are not refused for them.
+
+Single objects are limited by the Worker request body limit of the account's
+plan (100 MB on most plans); presigned R2 URLs that skip the Worker need R2
+S3 credentials and are not built.
+
+## Forks
+
+`POST /api/v1/repos/:owner/:repo/forks` (issue #36, `worker/src/api/forks.ts`)
+creates `<login>/<name>` (or `slug`) with the upstream's visibility, its
+branches and tags, and nothing else. A fork's id starts with its network
+root's id (`worker/src/core/network.ts`), and content (changesets, trees,
+blobs, Git IDs, derived data, LFS objects) is stored under the root, so
+forking costs the same for any size of repository and clones of a fork work
+straight away.
+
+Content addresses are shared across a network, as on GitHub: anyone who can
+read one repository in a network can read any object of the network by its
+id. Listings, clones and pull requests only start from refs the caller can
+read.
+
+A pull request from a fork names it: `POST …/pulls` with `head_repo` and a
+`head_cs` some branch or tag of that fork points at. Read on the upstream is
+enough. CI for such a pull request runs as a fork: no secrets, variables,
+OIDC tokens, environments or trusted self-hosted runners. Updating a fork pull
+request's head still needs write on the upstream.
+
 ## Testing
 
 - `npm test -w worker -- test/git-upload-pack.test.ts test/git-receive-pack.test.ts test/fuzz`
+- `npm test -w worker -- test/lfs.test.ts test/forks.test.ts`
 - `YAG_GIT_SMOKE=1 npm test -w yag` runs stock `git` against `wrangler dev`
   with a throwaway local store (`cli/test/git-http.test.ts`): clone,
   incremental fetch, `--depth 1`, `--filter=blob:none`, pushes of new and merge
