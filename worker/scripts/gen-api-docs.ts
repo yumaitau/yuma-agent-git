@@ -550,6 +550,27 @@ const PURPOSES: Record<string, string> = {
     'Dismiss (with a reason) or reopen a code scanning alert; people only',
   'GET /api/v1/repos/:repo/pulls/:id/security':
     'Code scanning findings and vulnerable dependencies a pull request adds',
+  'GET /notifications/unsubscribe':
+    'Signed link from a notification email: shows a button, changes nothing',
+  'POST /notifications/unsubscribe':
+    'Signed link (also RFC 8058 one-click): stop notification email or mute a thread',
+  'GET /api/v1/notifications':
+    "Caller's notification inbox (agents: their own), newest first, with the unread count",
+  'PATCH /api/v1/notifications/:id':
+    'Mark a notification read or unread, done or not done',
+  'POST /api/v1/notifications/read': 'Mark the whole inbox read',
+  'GET /api/v1/notifications/settings':
+    'Notification email mode, digest hour (Australia/Sydney), weekends and reasons',
+  'PUT /api/v1/notifications/settings': 'Change notification preferences',
+  'GET /api/v1/repos/:repo/subscription':
+    "Caller's watch level: watching, participating or ignored",
+  'PUT /api/v1/repos/:repo/subscription': 'Watch, ignore or reset a repo',
+  'GET /api/v1/repos/:repo/pulls/:id/subscription':
+    "Caller's subscription to a pull request: subscribed, muted or none",
+  'PUT /api/v1/repos/:repo/pulls/:id/subscription': 'Subscribe to or mute a pull request',
+  'GET /api/v1/repos/:repo/issues/:number/subscription':
+    "Caller's subscription to an issue: subscribed, muted or none",
+  'PUT /api/v1/repos/:repo/issues/:number/subscription': 'Subscribe to or mute an issue',
   'GET /api/v1/orgs/:org/rulesets': 'List org rulesets',
   'POST /api/v1/orgs/:org/rulesets': 'Create an org ruleset',
   'PUT /api/v1/orgs/:org/rulesets/:id': 'Replace an org ruleset',

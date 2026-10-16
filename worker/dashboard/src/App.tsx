@@ -14,6 +14,7 @@ import { WebhooksView } from './views/Webhooks';
 import { SecretScanningView } from './views/SecretScanning';
 import { SecurityAlertsView } from './views/SecurityAlerts';
 import { SearchView } from './views/Search';
+import { InboxView } from './views/Inbox';
 import { ReleasesView } from './views/Releases';
 import { MirrorsView } from './views/Mirrors';
 import { UsageView } from './views/Usage';
@@ -64,6 +65,7 @@ function AppRoutes(): ReactElement {
               <Routes>
                 <Route path="/" element={<HomeView />} />
                 <Route path="/search" element={<SearchView />} />
+                <Route path="/inbox" element={<InboxView />} />
                 <Route path="/settings" element={<SettingsView />} />
                 <Route path="/security" element={<SecurityView />} />
                 <Route path="/orgs" element={<OrgSettingsView />} />

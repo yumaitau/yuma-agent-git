@@ -23,6 +23,7 @@ import { hooksRoutes } from './hooks';
 import { issuesRoutes } from './issues';
 import { mergeQueueRoutes } from './mergeQueue';
 import { mirrorsRoutes } from './mirrors';
+import { notificationsRoutes } from './notifications';
 import { objectsRoutes } from './objects';
 import { openapiRoutes } from './openapi';
 import { orgsRoutes } from './orgs';
@@ -49,6 +50,8 @@ export const apiRouter = new Hono<{ Bindings: Env }>();
 
 apiRouter.get('/', (c) => c.json({ ok: true, service: 'yuma-agent-git', api: 'v1' }));
 
+// notifications (#44) first: its thread subscription paths end in `/subscription`
+apiRouter.route('/', notificationsRoutes);
 apiRouter.route('/', collaborationRoutes);
 apiRouter.route('/', ciStorageRoutes);
 apiRouter.route('/', ciLimitsRoutes);

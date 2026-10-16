@@ -3,6 +3,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from './api';
 import type { Org, Repo } from './api';
+import { call } from './collaboration';
 import { Field } from './ui';
 
 /**
@@ -120,6 +121,29 @@ function OrgSwitcher(): ReactElement {
   );
 }
 
+/** Notification bell (issue #44): the unread count, refreshed on navigation. */
+function Bell(): ReactElement {
+  const { pathname } = useLocation();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    call<{ unread_count: number }>('/notifications?state=unread&limit=1')
+      .then((r) => setUnread(r.unread_count))
+      .catch(() => setUnread(0));
+  }, [pathname]);
+
+  return (
+    <Link
+      to="/inbox"
+      className="btn"
+      aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}
+    >
+      Inbox
+      {unread > 0 && <span className="chip info">{unread > 99 ? '99+' : unread}</span>}
+    </Link>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }): ReactElement {
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -211,6 +235,7 @@ export function Layout({ children }: { children: ReactNode }): ReactElement {
         <span className="hint">
           <kbd>/</kbd> filter · <kbd>g</kbd> <kbd>t</kbd> tree picker
         </span>
+        {authed && <Bell />}
         {authed ? (
           <button onClick={() => void signOut()}>Sign out</button>
         ) : (

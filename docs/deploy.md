@@ -76,6 +76,20 @@ npx wrangler secret put SECRETS_KEK --env prod -c worker/wrangler.jsonc < secret
 npx wrangler secret put SECRETS_ADMIN_USER_IDS --env prod -c worker/wrangler.jsonc   # may run the KEK re-wrap
 ```
 
+Notification email (issue #44) is optional; the in-app inbox works without it.
+`NOTIFY_SIGNING_KEY` signs the unsubscribe link in every message, so nothing is
+sent until it is set. Then either PaperBoy over HTTPS (all three values), or a
+Cloudflare Email Routing `send_email` binding named `EMAIL` plus a
+`NOTIFY_EMAIL_FROM` var. Daily digests go out on the minute cron once each
+user's Australia/Sydney digest hour (07:00 by default) passes:
+
+```sh
+npx wrangler secret put NOTIFY_SIGNING_KEY --env prod -c worker/wrangler.jsonc   # random, 32+ bytes
+npx wrangler secret put PAPERBOY_API_URL --env prod -c worker/wrangler.jsonc     # https:// only
+npx wrangler secret put PAPERBOY_API_KEY --env prod -c worker/wrangler.jsonc
+npx wrangler secret put PAPERBOY_FROM --env prod -c worker/wrangler.jsonc
+```
+
 Local development uses `worker/.dev.vars` (copy `.dev.vars.example`).
 
 ## 3. GitHub login and optional migration bridge

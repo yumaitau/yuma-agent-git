@@ -739,6 +739,18 @@ const EXEMPT: Record<string, string> = {
   'POST /api/v1/repos/:repo{.+}/work/:number/heartbeat':
     'extends a lease the caller already holds; the claim and its expiry are audited',
   'POST /mcp': 'each tool calls an /api route, which audits its own change',
+  // notifications (#44): the caller's own inbox and preferences; no repository change
+  'POST /api/v1/notifications/read': "marks the caller's own inbox read",
+  'PATCH /api/v1/notifications/:id': "read or done mark on the caller's own notification",
+  'PUT /api/v1/notifications/settings': "the caller's own notification preferences",
+  'PUT /api/v1/repos/:repo{.+}/subscription':
+    "the caller's own watch level; grants nothing",
+  'PUT /api/v1/repos/:repo{.+}/pulls/:id/subscription':
+    "the caller's own thread subscription",
+  'PUT /api/v1/repos/:repo{.+}/issues/:number/subscription':
+    "the caller's own thread subscription",
+  'POST /notifications/unsubscribe':
+    'signed email link that only turns email off or mutes a thread for its recipient',
   'DELETE /mcp': 'ends a protocol session; no repository or credential change',
   'POST /api/v1/usage':
     'append-only usage ledger row naming its reporter; budget changes and alerts are audited',

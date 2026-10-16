@@ -9,6 +9,7 @@ import { appendAudit } from '../audit/record';
 import { settings, type CiPolicy, type CiRun } from './config';
 import { parseContext, type RunContext } from './context';
 import { enqueueRun } from './runs';
+import { emitEvent } from '../webhooks/events';
 
 /**
  * Deployment environments (issue #50). A pipeline that names an environment
@@ -168,10 +169,40 @@ export async function requestRun(
           now,
         ],
       );
-      return { approval: (await approvalById(env, repo.id, id))! };
+      const approval = (await approvalById(env, repo.id, id))!;
+      await emitApproval(env, repo, approval, rules);
+      return { approval };
     }
   }
   return { run: await enqueueRun(env, repo.id, head, actor, publish, context) };
+}
+
+/** The `environment_approval` event (#44): a run waits for the environment's reviewers. */
+async function emitApproval(
+  env: Env,
+  repo: RepoRecord,
+  row: ApprovalRow,
+  rules: EnvironmentRules,
+): Promise<void> {
+  if (row.state !== 'pending') return;
+  await emitEvent(env, repo, {
+    event: 'environment_approval',
+    action: 'requested',
+    actor: { kind: 'user', id: row.requested_by },
+    origin: parseContext(row.context)?.origin ?? null,
+    data: {
+      approval: {
+        id: row.id,
+        environment: row.environment,
+        head_cs: row.head_cs,
+        requested_by: row.requested_by,
+        pipeline_run_id: row.pipeline_run_id,
+        job_key: row.job_key,
+        created_at: row.created_at,
+      },
+      reviewers: rules.reviewers.map((r) => ({ type: r.type, id: r.id })),
+    },
+  });
 }
 
 export function approvalById(
@@ -345,13 +376,14 @@ export async function jobGate(
     [pipeline.id, jobKey],
   );
   if (!row) {
-    await run(
-      env,
+    const id = crypto.randomUUID();
+    const inserted = await env.DB.prepare(
       `INSERT OR IGNORE INTO environment_approvals
        (id, repo_id, environment, head_cs, publish, context, requested_by, state, not_before, expires_at, created_at, pipeline_run_id, job_key)
        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        crypto.randomUUID(),
+    )
+      .bind(
+        id,
         pipeline.repo_id,
         name,
         pipeline.head_cs,
@@ -363,8 +395,11 @@ export async function jobGate(
         now,
         pipeline.id,
         jobKey,
-      ],
-    );
+      )
+      .run();
+    const repo = inserted.meta.changes ? await getRepo(env, pipeline.repo_id) : null;
+    const created = repo && (await approvalById(env, repo.id, id));
+    if (repo && created) await emitApproval(env, repo, created, rules);
     return { wait: true };
   }
   if (row.state === 'rejected') return { skip: `Deployment to ${name} was rejected` };

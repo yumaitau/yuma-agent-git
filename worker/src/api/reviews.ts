@@ -407,6 +407,14 @@ reviewsRoutes.put(`${base}/reviewers`, async (c) => {
           ),
         ],
       );
+      if (added.length)
+        await emitEvent(c.env, loaded.repo, {
+          event: 'pull_request',
+          action: 'review_requested',
+          actor: actorOf(c.get('principal')),
+          origin: new URL(c.req.url).origin,
+          data: { pull_request: loaded.pull, requested_reviewers: added },
+        });
     }
     return c.json(await reviewRequests(c, loaded.pull));
   } catch (err) {

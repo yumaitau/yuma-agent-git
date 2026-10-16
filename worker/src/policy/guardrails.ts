@@ -22,6 +22,7 @@ import {
 } from './engine';
 import { pauseFor, pauseMessage } from './pause';
 import { budgetStop } from '../usage/record';
+import { emitEvent } from '../webhooks/events';
 
 /**
  * Agent guardrails (issue #62): the kill switch, the org policy and human
@@ -187,7 +188,7 @@ export async function guardAgentAction(
   if (approval === null) {
     const id = ulid();
     const now = Date.now();
-    await appendAudit(
+    const created = await appendAudit(
       env,
       {
         action: 'policy.approval.request',
@@ -219,11 +220,22 @@ export async function guardAgentAction(
           now,
         ),
       ],
-    ).catch(async (err: unknown) => {
-      // a concurrent identical request inserted first: use its row
-      if (!String(err).includes('UNIQUE constraint failed: approvals')) throw err;
-    });
+    )
+      .then(() => true)
+      .catch(async (err: unknown) => {
+        // a concurrent identical request inserted first: use its row
+        if (!String(err).includes('UNIQUE constraint failed: approvals')) throw err;
+        return false;
+      });
     approval = (await find())!;
+    // repo admins decide; notifications (#44) tell them
+    if (created)
+      await emitEvent(env, repo, {
+        event: 'agent_approval',
+        action: 'requested',
+        actor,
+        data: { approval: { id, action: input.action, summary: payload.summary } },
+      });
   }
   if (approval.decision === 'approved')
     return { outcome: 'allow', approval: approval.id };

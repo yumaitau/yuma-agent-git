@@ -53,6 +53,13 @@ import {
   updateIssue,
   updateMilestone,
 } from './issues';
+import {
+  listNotificationsQuery,
+  notificationSettingsInput,
+  threadSubscriptionInput,
+  updateNotification,
+  watchInput,
+} from './notifications';
 import { fetchObjectsSchema } from './objects';
 import { createChangesetSchema } from './changesets';
 import { alertListQuery, updateAlertSchema } from './secret-scanning';
@@ -212,6 +219,9 @@ const idTokenQuery = z.object({
   lifetime: lifetimeSchema.optional().describe('Seconds, 60 to 3600'),
   run_id: z.string().optional(),
 });
+const unsubscribeQuery = z.object({
+  token: z.string().describe('Signed token from a notification email'),
+});
 const evaluationsQuery = z.object({
   before: z.int().min(1).optional().describe('Evaluation id cursor (`next_cursor`)'),
 });
@@ -247,6 +257,32 @@ export const API_CONTRACT: Record<string, RouteContract> = {
   'POST /auth/mfa/passkey': { id: 'passkeyStepUp', body: assertionSchema },
   'POST /auth/mfa/totp': { id: 'totpStepUp', body: codeSchema },
   'POST /webhooks/github': { id: 'receiveGithubWebhook', rawBody: 'application/json' },
+  // notifications (#44): the signed email link needs no sign-in
+  'GET /notifications/unsubscribe': { id: 'showUnsubscribe', query: unsubscribeQuery },
+  'POST /notifications/unsubscribe': { id: 'unsubscribe', query: unsubscribeQuery },
+  'GET /api/v1/notifications': { id: 'listNotifications', query: listNotificationsQuery },
+  'POST /api/v1/notifications/read': { id: 'markNotificationsRead' },
+  'GET /api/v1/notifications/settings': { id: 'getNotificationSettings' },
+  'PUT /api/v1/notifications/settings': {
+    id: 'updateNotificationSettings',
+    body: notificationSettingsInput,
+  },
+  'PATCH /api/v1/notifications/:id': {
+    id: 'updateNotification',
+    body: updateNotification,
+  },
+  'GET /api/v1/repos/:repo/subscription': { id: 'getRepoSubscription' },
+  'PUT /api/v1/repos/:repo/subscription': { id: 'setRepoSubscription', body: watchInput },
+  'GET /api/v1/repos/:repo/pulls/:id/subscription': { id: 'getPullSubscription' },
+  'PUT /api/v1/repos/:repo/pulls/:id/subscription': {
+    id: 'setPullSubscription',
+    body: threadSubscriptionInput,
+  },
+  'GET /api/v1/repos/:repo/issues/:number/subscription': { id: 'getIssueSubscription' },
+  'PUT /api/v1/repos/:repo/issues/:number/subscription': {
+    id: 'setIssueSubscription',
+    body: threadSubscriptionInput,
+  },
   'GET /ci/oidc/.well-known/openid-configuration': { id: 'getCiOidcConfiguration' },
   'GET /ci/oidc/jwks': { id: 'getCiOidcJwks' },
   'GET /.well-known/yag-provenance-keys': { id: 'getProvenanceKeys' },

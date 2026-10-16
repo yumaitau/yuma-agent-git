@@ -25,6 +25,8 @@ import { backupTick, restoreTick } from './backup/backup';
 import { recordStorageUsage } from './usage/record';
 import { sweepDependencies } from './security/deps/graph';
 import { syncAdvisories } from './security/deps/osv';
+import { notifyQueue } from './queues/notify';
+import { sendDigests } from './notify/digest';
 
 export { app };
 export { CiRunnerDO } from './ci/runner';
@@ -40,7 +42,7 @@ export default {
     return app.fetch(request, env, ctx);
   },
 
-  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs and dependency matches, sync OSV advisories hourly. */
+  /** Cron (`* * * * *`): flush counters, expire agent refs and tokens, sweep CI runs, pipelines and webhook deliveries, queue due mirror syncs and dependency matches, sync OSV advisories hourly, send notification digests. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await flushMetrics(env);
     await expireAgentRefs(env);
@@ -66,6 +68,10 @@ export default {
     );
     await restoreTick(env).catch((err: unknown) =>
       console.warn('Restore will be retried by the next sweep', err),
+    );
+    // Notification digests (#44) once each user's Australia/Sydney digest hour passes.
+    await sendDigests(env).catch((err: unknown) =>
+      console.warn('Notification digests will be retried by the next sweep', err),
     );
     // Package registry (#53): retention, unused blobs, stale uploads and tokens.
     await registryCleanup(env).catch((err: unknown) =>
@@ -145,6 +151,8 @@ export default {
         return webhooksQueue(batch, env);
       case 'mirror-sync':
         return mirrorQueue(batch as MessageBatch<MirrorMessage>, env);
+      case 'notifications':
+        return notifyQueue(batch, env);
       default:
         console.error(`queue: unknown queue ${batch.queue}, acking`);
         batch.ackAll();

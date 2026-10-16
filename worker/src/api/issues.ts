@@ -93,19 +93,21 @@ function forbidden(message: string): ApiError {
   return new ApiError(403, 'forbidden', message);
 }
 
-/** The `issues` webhook event (#75). */
+/** The `issues` (or `issue_comment`) webhook event (#75). */
 async function emitIssue(
   c: Context<AppEnv>,
   repo: RepoWithCreator,
   action: string,
   issue: Issue,
+  extra: Record<string, unknown> = {},
+  event: 'issues' | 'issue_comment' = 'issues',
 ): Promise<void> {
   await emitEvent(c.env, repo, {
-    event: 'issues',
+    event,
     action,
     actor: actorOf(principalOf(c)),
     origin: new URL(c.req.url).origin,
-    data: { issue },
+    data: { issue, ...extra },
   });
 }
 
@@ -288,7 +290,7 @@ async function setAssignees(
   repo: RepoWithCreator,
   issue: IssueRow,
   inputs: readonly string[],
-): Promise<void> {
+): Promise<string[]> {
   const wanted = await resolveAssignees(c, repo, inputs);
   const current = (
     await q<{ principal: string }>(
@@ -299,7 +301,7 @@ async function setAssignees(
   ).map((r) => r.principal);
   const added = wanted.filter((p) => !current.includes(p));
   const removed = current.filter((p) => !wanted.includes(p));
-  if (added.length + removed.length === 0) return;
+  if (added.length + removed.length === 0) return [];
   const actor = actorKey(principalOf(c));
   const db = c.env.DB;
   await recordAudit(
@@ -325,6 +327,7 @@ async function setAssignees(
       touch(c, issue),
     ],
   );
+  return added;
 }
 
 const MAX_SUB_ISSUES = 100;
@@ -842,6 +845,8 @@ issuesRoutes.post(`${base}/issues/:number/comments`, async (c) => {
         WHERE issue_id = ? ORDER BY id DESC LIMIT 1`,
       [issue.id],
     );
+    const [hydrated] = await hydrateIssues(c.env, [issue]);
+    await emitIssue(c, repo, 'created', hydrated!, { comment }, 'issue_comment');
     return c.json({ comment }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -868,8 +873,10 @@ issuesRoutes.put(`${base}/issues/:number/assignees`, async (c) => {
     if (!loaded.ok) return loaded.response;
     const issue = await loadIssue(c, loaded.repo);
     const { assignees } = parse(assigneesInput, await readJsonBody(c));
-    await setAssignees(c, loaded.repo, issue, assignees);
+    const added = await setAssignees(c, loaded.repo, issue, assignees);
     const [hydrated] = await hydrateIssues(c.env, [issue]);
+    if (added.length)
+      await emitIssue(c, loaded.repo, 'assigned', hydrated!, { assignees: added });
     return c.json({ issue: hydrated });
   } catch (err) {
     return errorResponse(c, err);
