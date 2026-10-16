@@ -15,6 +15,7 @@ import {
   sessionCookie,
 } from './session';
 import type { AppEnv } from './principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * Passkeys (issue #27): WebAuthn registration and assertion verified on the
@@ -520,6 +521,10 @@ webauthnRoutes.post('/api/v1/me/passkeys', async (c) => {
     );
     // the user just proved possession: this session now counts as MFA
     await markSessionMfa(c.env, c.req.header('cookie'), now);
+    await recordAudit(c, {
+      action: 'mfa.passkey.add',
+      target: { user_id: user.id, passkey_id: row.id, label: row.label },
+    });
     return c.json({ passkey: passkeyMetadata(row) }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -538,6 +543,10 @@ webauthnRoutes.delete('/api/v1/me/passkeys/:id', async (c) => {
       [c.req.param('id'), user.id],
     );
     if (!removed) return apiError(c, 404, 'passkey_not_found', 'no such passkey');
+    await recordAudit(c, {
+      action: 'mfa.passkey.remove',
+      target: { user_id: user.id, passkey_id: c.req.param('id') },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
@@ -587,6 +596,10 @@ webauthnRoutes.post('/auth/mfa/passkey', async (c) => {
     }
     await assertCredential(c, parsed.data, cred, expected);
     await markSessionMfa(c.env, c.req.header('cookie'));
+    await recordAudit(c, {
+      action: 'auth.mfa',
+      target: { user_id: user.id, method: 'passkey' },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
@@ -634,6 +647,11 @@ webauthnRoutes.post('/auth/passkey', async (c) => {
     const session = await createSession(c.env, user.id, now, {
       method: 'passkey',
       mfaAt: now,
+    });
+    await recordAudit(c, {
+      action: 'auth.login',
+      actor: { kind: 'user', id: user.id },
+      target: { user_id: user.id, login: user.login, method: 'passkey' },
     });
     return c.json({ ok: true }, 200, {
       'set-cookie': sessionCookie(c.req.url, session.token),

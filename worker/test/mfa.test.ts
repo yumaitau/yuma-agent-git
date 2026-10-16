@@ -116,6 +116,11 @@ describe('totp', () => {
     expect((await post('/auth/mfa/totp', cookie, { code })).status).toBe(200);
     expect((await post('/auth/mfa/totp', cookie, { code })).status).toBe(400);
     expect((await post('/api/v1/tokens', cookie, label)).status).toBe(201);
+    const audited = await q<{ action: string }>(
+      testEnv,
+      "SELECT action FROM audit_events WHERE action IN ('mfa.totp.enroll', 'auth.mfa') ORDER BY id",
+    );
+    expect(audited.map((e) => e.action)).toEqual(['mfa.totp.enroll', 'auth.mfa']);
 
     // removing the authenticator needs recent MFA, then works
     await ageMfa(cookie, null);
@@ -267,6 +272,12 @@ describe('passkeys', () => {
       "SELECT auth_method, mfa_at FROM sessions WHERE auth_method = 'passkey'",
     );
     expect(session?.mfa_at).not.toBeNull();
+    const login = await q1<{ actor_id: string; target: string }>(
+      testEnv,
+      "SELECT actor_id, target FROM audit_events WHERE action = 'auth.login'",
+    );
+    expect(login?.actor_id).toBe(userId);
+    expect(JSON.parse(login?.target ?? '{}')).toMatchObject({ method: 'passkey' });
 
     // the security summary reflects it
     const summary = await app('/api/v1/me/security', { headers: { cookie: newCookie } });

@@ -6,6 +6,7 @@ import { apiError, errorResponse, readJsonBody } from '../api/errors';
 import { b64urlDecode, b64urlEncode } from './encoding';
 import { markSessionMfa, requireRecentMfa } from './session';
 import type { AppEnv } from './principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * TOTP second factor (issue #27, RFC 6238): HMAC-SHA1, 6 digits, 30-second
@@ -194,6 +195,7 @@ totpRoutes.post('/api/v1/me/totp/confirm', async (c) => {
       [now, step, user.id],
     );
     await markSessionMfa(c.env, c.req.header('cookie'), now);
+    await recordAudit(c, { action: 'mfa.totp.enroll', target: { user_id: user.id } });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
@@ -207,6 +209,7 @@ totpRoutes.delete('/api/v1/me/totp', async (c) => {
     const mfa = await requireRecentMfa(c);
     if (mfa) return mfa;
     await run(c.env, 'DELETE FROM totp_secrets WHERE user_id = ?', [user.id]);
+    await recordAudit(c, { action: 'mfa.totp.remove', target: { user_id: user.id } });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
@@ -237,6 +240,10 @@ totpRoutes.post('/auth/mfa/totp', async (c) => {
       )) !== null;
     if (!claimed) return apiError(c, 400, 'invalid_code', 'that code did not match');
     await markSessionMfa(c.env, c.req.header('cookie'));
+    await recordAudit(c, {
+      action: 'auth.mfa',
+      target: { user_id: user.id, method: 'totp' },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

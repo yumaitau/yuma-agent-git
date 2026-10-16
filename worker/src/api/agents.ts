@@ -285,6 +285,11 @@ agentsRoutes.delete('/repos/:repo{.+}/agents/superfans/:component', async (c) =>
       new Request('https://superfan/stop', { method: 'POST' }),
     );
     const body = (await res.json()) as { stopped: boolean };
+    await recordAudit(c, {
+      action: 'agent.superfan.stop',
+      repo: loaded.repo,
+      target: { component: component.data },
+    });
     return c.json({ ok: true, component: component.data, stopped: body.stopped });
   } catch (err) {
     return errorResponse(c, err);

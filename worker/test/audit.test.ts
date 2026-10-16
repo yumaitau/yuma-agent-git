@@ -309,6 +309,114 @@ describe('audit events', () => {
   });
 });
 
+describe('audit events from orgs, refs and tags (#26, #33)', () => {
+  it('chains org events under the org slug and lets org owners and admins read them', async () => {
+    const owner = await loginAs(testEnv, 903, 'orgowner');
+    const created = await expectOneEvent(
+      'org.create',
+      () =>
+        call('/api/v1/orgs', {
+          method: 'POST',
+          as: owner,
+          body: JSON.stringify({ slug: 'yuma', base_role: 'read' }),
+        }),
+      201,
+    );
+    expect(created).toMatchObject({ org_id: 'yuma', actor_id: owner.userId });
+    expect(created.parsed).toEqual({ org: 'yuma', base_role: 'read' });
+
+    const set = await expectOneEvent('org.member.set', () =>
+      call('/api/v1/orgs/yuma/members', {
+        method: 'PUT',
+        as: owner,
+        body: JSON.stringify({ user_id: member.userId, role: 'member' }),
+      }),
+    );
+    expect(set.parsed).toEqual({
+      org: 'yuma',
+      user_id: member.userId,
+      role: 'member',
+      was: null,
+    });
+    await expectOneEvent(
+      'team.create',
+      () =>
+        call('/api/v1/orgs/yuma/teams', {
+          method: 'POST',
+          as: owner,
+          body: JSON.stringify({ slug: 'core' }),
+        }),
+      201,
+    );
+    await expectOneEvent(
+      'repo.create',
+      () =>
+        call('/api/v1/repos', {
+          method: 'POST',
+          as: owner,
+          body: JSON.stringify({ slug: 'yuma/app' }),
+        }),
+      201,
+    );
+    const grant = await expectOneEvent('team.repo.set', () =>
+      call('/api/v1/orgs/yuma/teams/core/repos', {
+        method: 'PUT',
+        as: owner,
+        body: JSON.stringify({ repo: 'yuma/app', role: 'write' }),
+      }),
+    );
+    expect(grant).toMatchObject({ org_id: 'yuma' });
+    expect(grant.repo_id).not.toBeNull();
+
+    // org owner reads the org chain without being an instance audit admin
+    const read = await call('/api/v1/orgs/yuma/audit', { as: owner }, testEnv);
+    expect(read.status).toBe(200);
+    const body = (await read.json()) as { events: { action: string }[] };
+    expect(body.events.map((e) => e.action)).toContain('org.create');
+    // plain members and other orgs stay closed
+    expect((await call('/api/v1/orgs/yuma/audit', { as: member }, testEnv)).status).toBe(
+      403,
+    );
+    expect((await call('/api/v1/orgs/acme/audit', { as: owner }, testEnv)).status).toBe(
+      403,
+    );
+  });
+
+  it('records tag creation and repo settings changes', async () => {
+    await call('/api/v1/repos', {
+      method: 'POST',
+      body: JSON.stringify({ slug: 'acme/tags' }),
+    });
+    const init = await call('/api/v1/repos/acme/tags/initialize', { method: 'POST' });
+    expect(init.status).toBe(201);
+    const head = (await (await call('/api/v1/repos/acme/tags/refs/main')).json()) as {
+      head: string;
+    };
+    const tag = await expectOneEvent(
+      'tag.create',
+      () =>
+        call('/api/v1/repos/acme/tags/tags', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'v1.0.0', target: head.head, message: 'first' }),
+        }),
+      201,
+    );
+    expect(tag.parsed).toEqual({
+      tag: 'v1.0.0',
+      target_cs: head.head,
+      annotated: true,
+      signed: false,
+    });
+    const settings = await expectOneEvent('repo.settings.update', () =>
+      call('/api/v1/repos/acme/tags', {
+        method: 'PUT',
+        body: JSON.stringify({ default_branch: 'main' }),
+      }),
+    );
+    expect(settings.parsed).toMatchObject({ default_branch: 'main' });
+  });
+});
+
 // Every write route must either record an audit event or say why not. Adding
 // a POST/PUT/PATCH/DELETE route without updating this table fails the suite.
 const AUDITED: Record<string, AuditAction> = {
@@ -325,7 +433,9 @@ const AUDITED: Record<string, AuditAction> = {
   'DELETE /api/v1/repos/:repo{.+}/members/:userId': 'member.remove',
   'POST /api/v1/repos/:repo{.+}/path-rules': 'path_rule.create',
   'DELETE /api/v1/repos/:repo{.+}/path-rules/:id': 'path_rule.delete',
-  'PUT /api/v1/repos/:repo{.+}/refs/:name{.+}': 'ref.move',
+  'PUT /api/v1/repos/:repo{[^/]+/[^/]+}/refs/:name{.+}': 'ref.move',
+  'POST /api/v1/repos/:repo{[^/]+/[^/]+}/tags': 'tag.create',
+  'PUT /api/v1/repos/:owner/:name': 'repo.settings.update',
   'POST /api/v1/repos/:repo{.+}/pulls': 'pull.create',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/update': 'pull.update',
   'POST /api/v1/repos/:repo{.+}/pulls/:id/review': 'pull.review',
@@ -335,7 +445,29 @@ const AUDITED: Record<string, AuditAction> = {
   'POST /api/v1/repos/:repo{.+}/ci/runs/:id/cancel': 'ci.run.cancel',
   'POST /api/v1/repos/:repo{.+}/agents/tasks': 'agent.task.create',
   'POST /api/v1/agents/tasks/:id/cancel': 'agent.task.cancel',
-  'POST /api/v1/agents/superfans': 'agent.superfan.start',
+  'POST /api/v1/repos/:repo{.+}/agents/superfans': 'agent.superfan.start',
+  'DELETE /api/v1/repos/:repo{.+}/agents/superfans/:component': 'agent.superfan.stop',
+  'POST /api/v1/orgs': 'org.create',
+  'PATCH /api/v1/orgs/:org': 'org.update',
+  'PUT /api/v1/orgs/:org/members': 'org.member.set',
+  'DELETE /api/v1/orgs/:org/members/:userId': 'org.member.remove',
+  'POST /api/v1/orgs/:org/teams': 'team.create',
+  'PUT /api/v1/orgs/:org/teams/:team/members': 'team.member.set',
+  'DELETE /api/v1/orgs/:org/teams/:team/members/:userId': 'team.member.remove',
+  'PUT /api/v1/orgs/:org/teams/:team/repos': 'team.repo.set',
+  'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo{.+}': 'team.repo.remove',
+  'POST /auth/passkey': 'auth.login',
+  'POST /auth/mfa/totp': 'auth.mfa',
+  'POST /auth/mfa/passkey': 'auth.mfa',
+  'POST /api/v1/me/passkeys': 'mfa.passkey.add',
+  'DELETE /api/v1/me/passkeys/:id': 'mfa.passkey.remove',
+  'POST /api/v1/me/totp/confirm': 'mfa.totp.enroll',
+  'DELETE /api/v1/me/totp': 'mfa.totp.remove',
+  'POST /scim/v2/Users': 'scim.user.create',
+  'PATCH /scim/v2/Users/:id': 'scim.user.update',
+  'DELETE /scim/v2/Users/:id': 'scim.user.deprovision',
+  'POST /api/v1/scim/tokens': 'scim_token.create',
+  'DELETE /api/v1/scim/tokens/:id': 'scim_token.revoke',
 };
 const EXEMPT: Record<string, string> = {
   'POST /webhooks/github':
@@ -344,6 +476,11 @@ const EXEMPT: Record<string, string> = {
     'content-addressed write; invisible until an audited ref move points at it',
   'PUT /api/v1/repos/:repo{.+}/blob': 'content-addressed blob upload; same as changesets',
   'POST /api/v1/repos/:repo{.+}/fetch-objects': 'read-only batch fetch',
+  'POST /api/v1/me/passkeys/options': 'issues a one-time challenge; enrolment is audited',
+  'POST /api/v1/me/totp':
+    'stores an unconfirmed seed that cannot sign in; confirm is audited',
+  'POST /auth/mfa/passkey/options': 'issues a one-time challenge; step-up is audited',
+  'POST /auth/passkey/options': 'issues a one-time challenge; sign-in is audited',
   'POST /api/v1/repos/:repo{.+}/agents/mcp':
     'tool calls audit their own state changes (land records ref.move)',
 };

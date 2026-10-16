@@ -5,6 +5,7 @@ import type { Env } from '../env';
 import { q, q1 } from '../db/client';
 import { apiError, errorResponse } from './errors';
 import { configuredSink } from '../audit/stream';
+import { getOrgBySlug, orgMembership } from './orgs';
 
 /**
  * Audit search and export (issue #65), audit admins only:
@@ -13,13 +14,17 @@ import { configuredSink } from '../audit/stream';
  *       oldest first (the order `yag audit verify` needs)
  *   GET /api/v1/audit/stream   SIEM delivery status
  *
- * Until org roles (#26) land, audit admins are the user ids in
- * `AUDIT_ADMIN_USER_IDS`. Tokens also need the `audit:read` scope and must not
- * be bound to a repo.
+ * Audit admins are the user ids in `AUDIT_ADMIN_USER_IDS` (every chain and
+ * the stream), plus owners and admins of an org (#26) for that org's chain.
+ * Tokens also need the `audit:read` scope and must not be bound to a repo.
  */
 export const auditRoutes = new Hono<AppEnv>();
 
-export function canReadAudit(env: Env, principal: Principal): boolean {
+export async function canReadAudit(
+  env: Env,
+  principal: Principal,
+  orgSlug?: string,
+): Promise<boolean> {
   if (
     principal.kind === 'token' &&
     (principal.repoId !== null || !principal.scopes.includes('audit:read'))
@@ -27,13 +32,17 @@ export function canReadAudit(env: Env, principal: Principal): boolean {
     return false;
   }
   const admins = (env.AUDIT_ADMIN_USER_IDS ?? '').split(',').map((id) => id.trim());
-  return admins.includes(principal.userId);
+  if (admins.includes(principal.userId)) return true;
+  if (orgSlug === undefined) return false;
+  const org = await getOrgBySlug(env, orgSlug);
+  const me = org ? await orgMembership(env, org.id, principal.userId) : null;
+  return me?.role === 'owner' || me?.role === 'admin';
 }
 
-function guard(c: Context<AppEnv>): Response | null {
+async function guard(c: Context<AppEnv>, orgSlug?: string): Promise<Response | null> {
   const principal = c.get('principal');
   if (!principal) return apiError(c, 401, 'unauthorized', 'authentication required');
-  if (!canReadAudit(c.env, principal)) {
+  if (!(await canReadAudit(c.env, principal, orgSlug))) {
     return apiError(c, 403, 'forbidden', 'audit admin required');
   }
   return null;
@@ -116,7 +125,7 @@ function csvLine(row: AuditRecord): string {
 
 auditRoutes.get('/orgs/:org/audit', async (c) => {
   try {
-    const denied = guard(c);
+    const denied = await guard(c, c.req.param('org'));
     if (denied) return denied;
     const parsed = querySchema.safeParse(c.req.query());
     if (!parsed.success) {
@@ -194,7 +203,7 @@ auditRoutes.get('/orgs/:org/audit', async (c) => {
 
 auditRoutes.get('/audit/stream', async (c) => {
   try {
-    const denied = guard(c);
+    const denied = await guard(c);
     if (denied) return denied;
     const sink = configuredSink(c.env);
     const state = sink

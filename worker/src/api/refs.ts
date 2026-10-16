@@ -267,6 +267,16 @@ refsRoutes.post(`/repos/${REPO}/tags`, async (c) => {
         ],
       );
     }
+    await recordAudit(c, {
+      action: 'tag.create',
+      repo,
+      target: {
+        tag: input.name,
+        target_cs: target,
+        annotated: input.message !== undefined,
+        signed: input.signature !== undefined,
+      },
+    });
     return c.json(
       {
         tag: {

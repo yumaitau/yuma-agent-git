@@ -19,6 +19,18 @@ All notable changes to this project are documented here. The format follows
   migrations), a deterministic commit-graph fuzzer, and a generated API reference
   (`docs/api.md`) checked against the router in CI.
 - `yag clone --token`.
+- Organisations and teams (#26): org-owned repos, nested teams with repo grants,
+  org base roles, and an org settings page in the dashboard.
+- Yuma-owned sign-in (#27): OIDC providers, passkeys, authenticator-app MFA with
+  step-up, and SCIM 2.0 user provisioning. SAML and SCIM groups are not built yet.
+- Hash-chained audit log (#65) with search, CSV/NDJSON export, `yag audit verify`
+  and an HMAC-signed SIEM stream. Org, team, tag, MFA and SCIM actions are audited,
+  and org owners and admins can read their org's chain.
+- Arbitrary branches and tags (#33), including annotated tags and agent work refs
+  under `refs/agents/<token-id>/` that only that agent can write.
+- Deterministic Git commit, tree and blob ids for every changeset (#30).
+- Forge strategy decision record (`docs/adr/0001-forge-strategy.md`, #25).
+- Dashboard theme in the Yuma IT brand.
 
 ### Fixed
 

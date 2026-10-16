@@ -36,7 +36,30 @@ export type AuditAction =
   | 'ci.run.cancel'
   | 'agent.task.create'
   | 'agent.task.cancel'
-  | 'agent.superfan.start';
+  | 'agent.superfan.start'
+  | 'agent.superfan.stop'
+  | 'repo.settings.update'
+  | 'tag.create'
+  | 'org.create'
+  | 'org.update'
+  | 'org.member.set'
+  | 'org.member.remove'
+  | 'team.create'
+  | 'team.member.set'
+  | 'team.member.remove'
+  | 'team.repo.set'
+  | 'team.repo.remove'
+  | 'auth.mfa'
+  | 'identity.link'
+  | 'mfa.passkey.add'
+  | 'mfa.passkey.remove'
+  | 'mfa.totp.enroll'
+  | 'mfa.totp.remove'
+  | 'scim.user.create'
+  | 'scim.user.update'
+  | 'scim.user.deprovision'
+  | 'scim_token.create'
+  | 'scim_token.revoke';
 
 export interface AuditActor {
   kind: 'user' | 'token' | 'agent' | 'system' | 'anonymous';

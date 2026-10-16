@@ -22,6 +22,7 @@ import { getRepoBySlug } from '../db/repos';
 import { ulid } from '../core/ids';
 import { ApiError } from '../core/errors';
 import { errorResponse, readJsonBody } from './errors';
+import { recordAudit } from '../audit/record';
 
 /**
  * Organisations, teams and org-level roles (issue #26). Session-only, like
@@ -227,6 +228,11 @@ orgsRoutes.post('/orgs', async (c) => {
         [org.id, userId],
       );
     });
+    await recordAudit(c, {
+      action: 'org.create',
+      orgId: org.slug,
+      target: { org: org.slug, base_role: org.base_role },
+    });
     return c.json({ org, role: 'owner' }, 201);
   } catch (err) {
     return errorResponse(c, err);
@@ -281,6 +287,15 @@ orgsRoutes.patch('/orgs/:org', async (c) => {
         WHERE ${C.orgs.id} = ?`,
       [next.display_name, next.base_role, next.members_can_create_repos ? 1 : 0, org.id],
     );
+    await recordAudit(c, {
+      action: 'org.update',
+      orgId: org.slug,
+      target: {
+        org: org.slug,
+        base_role: next.base_role,
+        members_can_create_repos: next.members_can_create_repos,
+      },
+    });
     return c.json({ org: next });
   } catch (err) {
     return errorResponse(c, err);
@@ -340,6 +355,16 @@ orgsRoutes.put('/orgs/:org/members', async (c) => {
        DO UPDATE SET ${C.orgMembers.role} = excluded.${C.orgMembers.role}`,
       [org.id, userId, input.role],
     );
+    await recordAudit(c, {
+      action: 'org.member.set',
+      orgId: org.slug,
+      target: {
+        org: org.slug,
+        user_id: userId,
+        role: input.role,
+        was: current?.role ?? null,
+      },
+    });
     return c.json({ ok: true, user_id: userId, role: input.role });
   } catch (err) {
     return errorResponse(c, err);
@@ -371,6 +396,11 @@ orgsRoutes.delete('/orgs/:org/members/:userId', async (c) => {
         `DELETE FROM ${T.orgMembers} WHERE ${C.orgMembers.orgId} = ? AND ${C.orgMembers.userId} = ?`,
         [org.id, userId],
       );
+    });
+    await recordAudit(c, {
+      action: 'org.member.remove',
+      orgId: org.slug,
+      target: { org: org.slug, user_id: userId, was: current.role },
     });
     return c.json({ ok: true });
   } catch (err) {
@@ -452,6 +482,11 @@ orgsRoutes.post('/orgs/:org/teams', async (c) => {
        VALUES (?, ?, ?, ?, ?)`,
       [team.id, team.org_id, team.slug, team.parent_team_id, team.created_at],
     );
+    await recordAudit(c, {
+      action: 'team.create',
+      orgId: org.slug,
+      target: { org: org.slug, team: team.slug, parent: parent?.slug ?? null },
+    });
     return c.json(
       {
         team: {
@@ -529,6 +564,11 @@ orgsRoutes.put('/orgs/:org/teams/:team/members', async (c) => {
        ON CONFLICT (${C.teamMembers.teamId}, ${C.teamMembers.userId}) DO NOTHING`,
       [team.id, userId],
     );
+    await recordAudit(c, {
+      action: 'team.member.set',
+      orgId: org.slug,
+      target: { org: org.slug, team: team.slug, user_id: userId },
+    });
     return c.json({ ok: true, user_id: userId });
   } catch (err) {
     return errorResponse(c, err);
@@ -544,6 +584,11 @@ orgsRoutes.delete('/orgs/:org/teams/:team/members/:userId', async (c) => {
       `DELETE FROM ${T.teamMembers} WHERE ${C.teamMembers.teamId} = ? AND ${C.teamMembers.userId} = ?`,
       [team.id, c.req.param('userId')],
     );
+    await recordAudit(c, {
+      action: 'team.member.remove',
+      orgId: org.slug,
+      target: { org: org.slug, team: team.slug, user_id: c.req.param('userId') },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);
@@ -577,6 +622,11 @@ orgsRoutes.put('/orgs/:org/teams/:team/repos', async (c) => {
        DO UPDATE SET ${C.teamRepos.role} = excluded.${C.teamRepos.role}`,
       [team.id, repo.id, input.role],
     );
+    await recordAudit(c, {
+      action: 'team.repo.set',
+      repo,
+      target: { org: org.slug, team: team.slug, role: input.role },
+    });
     return c.json({ ok: true, repo: repo.slug, role: input.role });
   } catch (err) {
     return errorResponse(c, err);
@@ -593,6 +643,11 @@ orgsRoutes.delete('/orgs/:org/teams/:team/repos/:repo{.+}', async (c) => {
       `DELETE FROM ${T.teamRepos} WHERE ${C.teamRepos.teamId} = ? AND ${C.teamRepos.repoId} = ?`,
       [team.id, repo.id],
     );
+    await recordAudit(c, {
+      action: 'team.repo.remove',
+      repo,
+      target: { org: org.slug, team: team.slug },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

@@ -5,6 +5,7 @@ import { cleanDb, loginAs, makeApp, seedSchema } from './helpers';
 import type { TestEnv } from './helpers';
 import { can } from '../src/auth/rbac';
 import { getRepoBySlug } from '../src/db/repos';
+import { createApiToken } from '../src/auth/tokens';
 
 const testEnv = env as unknown as TestEnv;
 const dbEnv = testEnv as unknown as Env;
@@ -354,6 +355,60 @@ describe('organisations, teams and org-level roles', () => {
       200,
     )) as { can_admin: boolean };
     expect(body.can_admin).toBe(true);
+  });
+
+  it('org-derived roles work with ref, tag and agent-namespace rules (#33)', async () => {
+    await setupOrg();
+    await expectStatus(
+      call(owner, 'POST', '/api/v1/orgs/yuma/teams', { slug: 'platform' }),
+      201,
+    );
+    await call(owner, 'PUT', '/api/v1/orgs/yuma/teams/platform/repos', {
+      repo: 'yuma/core',
+      role: 'write',
+    });
+    await call(owner, 'PUT', '/api/v1/orgs/yuma/teams/platform/members', {
+      user_login: 'max',
+    });
+    const { changeset } = (await expectStatus(
+      call(member, 'POST', '/api/v1/repos/yuma/core/changesets', commitBody('a.txt')),
+      201,
+    )) as { changeset: { id: string } };
+    // team write moves branches and tags
+    await expectStatus(
+      call(member, 'PUT', '/api/v1/repos/yuma/core/refs/main', {
+        from: null,
+        to: changeset.id,
+      }),
+      200,
+    );
+    await expectStatus(
+      call(member, 'POST', '/api/v1/repos/yuma/core/tags', {
+        name: 'v1',
+        target: changeset.id,
+      }),
+      201,
+    );
+    // an org owner (admin by org role) still cannot write an agent's namespace
+    const agent = await createApiToken(dbEnv, member.userId, {
+      label: 'agent',
+      scopes: ['repo:read', 'repo:write', 'agent:run'],
+    });
+    await expectStatus(
+      call(owner, 'PUT', `/api/v1/repos/yuma/core/refs/refs/agents/${agent.id}/t`, {
+        from: null,
+        to: changeset.id,
+      }),
+      403,
+    );
+    const asAgent = { ...member, headers: { authorization: `Bearer ${agent.raw}` } };
+    await expectStatus(
+      call(asAgent, 'PUT', `/api/v1/repos/yuma/core/refs/refs/agents/${agent.id}/t`, {
+        from: null,
+        to: changeset.id,
+      }),
+      200,
+    );
   });
 
   it('only owners, admins and allowed members create org repos', async () => {

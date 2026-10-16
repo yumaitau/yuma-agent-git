@@ -126,6 +126,48 @@ const PURPOSES: Record<string, string> = {
   'GET /api/v1/repos/:repo/refs/:name': 'One ref',
   'PUT /api/v1/repos/:repo/refs/:name': 'Compare-and-swap move a ref',
   'GET /api/v1/repos/:repo/tree': 'List a directory at a revision',
+  'PUT /api/v1/repos/:owner/:name': 'Change the default branch or ref naming mode',
+  'GET /api/v1/repos/:repo/tags': 'List tags with annotations (keyset paged)',
+  'POST /api/v1/repos/:repo/tags': 'Create a lightweight or annotated tag',
+  'GET /auth/oidc/:provider': 'Start OIDC sign-in (302 to the identity provider)',
+  'GET /auth/oidc/:provider/callback': 'OIDC callback: sign in or link, then 302',
+  'POST /auth/passkey/options': 'Passkey sign-in challenge',
+  'POST /auth/passkey': 'Sign in with a passkey (sets `yag_session`)',
+  'POST /auth/mfa/passkey/options': 'Passkey step-up challenge',
+  'POST /auth/mfa/passkey': 'Step up this session with a passkey',
+  'POST /auth/mfa/totp': 'Step up this session with an authenticator code',
+  'GET /api/v1/me/security': 'Sign-in method, MFA freshness and enrolled factors',
+  'POST /api/v1/me/passkeys/options': 'Passkey registration challenge',
+  'POST /api/v1/me/passkeys': 'Register a passkey',
+  'DELETE /api/v1/me/passkeys/:id': 'Remove a passkey',
+  'POST /api/v1/me/totp': 'Start authenticator app enrolment',
+  'POST /api/v1/me/totp/confirm': 'Confirm authenticator enrolment with a code',
+  'DELETE /api/v1/me/totp': 'Remove the authenticator app (recent MFA)',
+  'GET /scim/v2/Users': 'SCIM: list users (`userName eq` filter)',
+  'POST /scim/v2/Users': 'SCIM: provision a user',
+  'GET /scim/v2/Users/:id': 'SCIM: one user',
+  'PATCH /scim/v2/Users/:id': 'SCIM: activate or deactivate a user',
+  'DELETE /scim/v2/Users/:id': 'SCIM: deprovision a user',
+  'GET /api/v1/scim/tokens': 'List SCIM tokens (SCIM admins)',
+  'POST /api/v1/scim/tokens': 'Create a SCIM token (raw value returned once)',
+  'DELETE /api/v1/scim/tokens/:id': 'Revoke a SCIM token',
+  'GET /api/v1/orgs/:org/audit': 'Search or export the org audit chain',
+  'GET /api/v1/audit/stream': 'SIEM stream delivery status',
+  'POST /api/v1/orgs': 'Create an org (caller becomes owner)',
+  'GET /api/v1/orgs': 'Orgs the caller belongs to',
+  'GET /api/v1/orgs/:org': 'One org and the caller role',
+  'PATCH /api/v1/orgs/:org': 'Org settings (owners)',
+  'GET /api/v1/orgs/:org/members': 'List org members',
+  'PUT /api/v1/orgs/:org/members': 'Add or change an org member',
+  'DELETE /api/v1/orgs/:org/members/:userId': 'Remove an org member (and from its teams)',
+  'GET /api/v1/orgs/:org/teams': 'List teams',
+  'POST /api/v1/orgs/:org/teams': 'Create a team (optional parent)',
+  'GET /api/v1/orgs/:org/teams/:team': 'Team, members and repo grants',
+  'PUT /api/v1/orgs/:org/teams/:team/members': 'Add a team member',
+  'DELETE /api/v1/orgs/:org/teams/:team/members/:userId': 'Remove a team member',
+  'PUT /api/v1/orgs/:org/teams/:team/repos': 'Grant the team a repo role',
+  'DELETE /api/v1/orgs/:org/teams/:team/repos/:repo': 'Remove a team repo grant',
+  'GET /api/v1/orgs/:org/repos': 'Org repos the caller can read',
 };
 
 const METHOD_ORDER = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -148,12 +190,14 @@ function samplePath(path: string): string {
  */
 function classify(path: string, src: string): { auth: string; perm: string | null } {
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
+  if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
   if (!path.startsWith('/api/')) return { auth: 'none', perm: '—' };
 
   let auth = 'any';
   if (
     (/c\.get\("user"\)/.test(src) && /session required/.test(src)) ||
-    /requireSession\d*\(/.test(src)
+    /requireSession\d*\(/.test(src) ||
+    /(sessionUserId|loadOrg)\d*\(/.test(src)
   ) {
     auth = 'session';
   }
@@ -176,6 +220,14 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
     parts.push('read; write for `commit`/`land`/`create_task`');
   } else if (/\bcan\d*\([^;]*?"admin"\)/.test(src)) parts.push('admin on any repo');
 
+  const org = /loadOrg\d*\(\s*c,\s*"(member|manage|owner)"\)/.exec(src);
+  if (org) {
+    parts.push(
+      { member: 'org member', manage: 'org owner or admin', owner: 'org owner' }[
+        org[1] as 'member' | 'manage' | 'owner'
+      ],
+    );
+  }
   if (/guardPathRead\d*\(/.test(src)) parts.push('path:read');
   if (/guardPathHistory\d*\(/.test(src)) parts.push('path:history');
   if (/"agent:run"/.test(src)) parts.push('`agent:run`');

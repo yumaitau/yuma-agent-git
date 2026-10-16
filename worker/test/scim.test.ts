@@ -200,6 +200,16 @@ describe('scim users', () => {
     const session = await createSession(testEnv, created.id);
     expect((await scim(`/Users/${created.id}`, 'DELETE')).status).toBe(204);
     expect((await scim(`/Users/${created.id}`)).status).toBe(404);
+    const audit = await q<{ action: string; actor_kind: string; actor_id: string }>(
+      testEnv,
+      "SELECT action, actor_kind, actor_id FROM audit_events WHERE action LIKE 'scim.%' ORDER BY id",
+    );
+    expect(audit.map((e) => e.action)).toEqual([
+      'scim.user.create',
+      'scim.user.deprovision',
+    ]);
+    expect(audit[0]).toMatchObject({ actor_kind: 'system' });
+    expect(audit[0]?.actor_id).toMatch(/^scim:/);
     expect(await readSession(testEnv, `yag_session=${session.token}`)).toBeNull();
     const user = await q1<{ active: number }>(
       testEnv,

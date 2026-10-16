@@ -151,6 +151,11 @@ reposRoutes.put('/api/v1/repos/:owner/:name', async (c) => {
       mode,
       repo.id,
     ]);
+    await recordAudit(c, {
+      action: 'repo.settings.update',
+      repo,
+      target: { default_branch: branch, refs_mode: mode },
+    });
     return c.json({ repo: { ...repo, default_branch: branch, refs_mode: mode } }, 200, {
       'cache-control': 'private, no-store',
     });

@@ -15,7 +15,8 @@ import {
   randomHex,
   requireRecentMfa,
 } from './session';
-import type { AppEnv } from './principal';
+import type { AppEnv, AppVariables } from './principal';
+import { recordAudit, type AuditActor } from '../audit/record';
 
 /**
  * SCIM 2.0 user provisioning (issue #27, RFC 7643/7644 subset): create, read,
@@ -27,7 +28,16 @@ import type { AppEnv } from './principal';
  * users listed in `SCIM_ADMIN_USER_IDS` who passed MFA in the last 12 hours.
  */
 
-export const scimRoutes = new Hono<AppEnv>();
+type ScimEnv = {
+  Bindings: AppEnv['Bindings'];
+  Variables: AppVariables & { scimTokenId?: string };
+};
+export const scimRoutes = new Hono<ScimEnv>();
+
+/** SCIM calls carry no user principal: the acting party is the SCIM token. */
+function scimActor(c: Context<ScimEnv>): AuditActor {
+  return { kind: 'system', id: `scim:${c.get('scimTokenId') ?? 'unknown'}` };
+}
 
 const SCIM_TOKEN_PREFIX = 'yscim_';
 const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
@@ -75,6 +85,7 @@ scimRoutes.use('/scim/v2/*', async (c, next) => {
     Date.now(),
     token.id,
   ]);
+  c.set('scimTokenId', token.id);
   await next();
 });
 
@@ -208,6 +219,15 @@ scimRoutes.post('/scim/v2/Users', async (c) => {
     const userId = existing?.user_id ?? (await createUser(c.env, userName)).id;
     await linkIdentity(c.env, userId, 'scim', userName, email);
     if (parsed.data.active === false) await deactivateUser(c.env, userId);
+    await recordAudit(c, {
+      action: 'scim.user.create',
+      actor: scimActor(c),
+      target: {
+        user_id: userId,
+        user_name: userName,
+        active: parsed.data.active ?? true,
+      },
+    });
     const row = await loadScimUser(c.env, userId);
     return row
       ? scimJson(toResource(row, origin(c)), 201)
@@ -261,6 +281,13 @@ scimRoutes.patch('/scim/v2/Users/:id', async (c) => {
     if (active === false) await deactivateUser(c.env, id);
     if (active === true)
       await run(c.env, 'UPDATE users SET active = 1 WHERE id = ?', [id]);
+    if (active !== undefined) {
+      await recordAudit(c, {
+        action: 'scim.user.update',
+        actor: scimActor(c),
+        target: { user_id: id, active },
+      });
+    }
     const row = await loadScimUser(c.env, id);
     return row ? scimJson(toResource(row, origin(c))) : scimError(404, 'no such user');
   } catch (err) {
@@ -279,6 +306,11 @@ scimRoutes.delete('/scim/v2/Users/:id', async (c) => {
       "DELETE FROM user_identities WHERE provider = 'scim' AND user_id = ?",
       [id],
     );
+    await recordAudit(c, {
+      action: 'scim.user.deprovision',
+      actor: scimActor(c),
+      target: { user_id: id },
+    });
     return new Response(null, { status: 204 });
   } catch (err) {
     return scimFailure(err);
@@ -325,6 +357,10 @@ scimRoutes.post('/api/v1/scim/tokens', async (c) => {
       `INSERT INTO scim_tokens (id, token_hash, label, created_by, created_at) VALUES (?, ?, ?, ?, ?)`,
       [id, await tokenHash(raw), parsed.data.label, user.id, now],
     );
+    await recordAudit(c, {
+      action: 'scim_token.create',
+      target: { token_id: id, label: parsed.data.label },
+    });
     // raw token is returned exactly once
     return c.json({ id, label: parsed.data.label, created_at: now, token: raw }, 201, {
       'cache-control': 'private, no-store',
@@ -364,6 +400,10 @@ scimRoutes.delete('/api/v1/scim/tokens/:id', async (c) => {
       c.req.param('id'),
     ]);
     if (!removed) return apiError(c, 404, 'token_not_found', 'no such SCIM token');
+    await recordAudit(c, {
+      action: 'scim_token.revoke',
+      target: { token_id: c.req.param('id') },
+    });
     return c.json({ ok: true });
   } catch (err) {
     return errorResponse(c, err);

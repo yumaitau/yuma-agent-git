@@ -16,6 +16,7 @@ import {
   sessionCookie,
 } from './session';
 import type { AppEnv } from './principal';
+import { recordAudit } from '../audit/record';
 
 /**
  * Generic OIDC sign-in (issue #27): authorisation code flow with PKCE (S256),
@@ -477,6 +478,10 @@ oidcRoutes.get('/auth/oidc/:provider/callback', async (c) => {
         );
       }
       await linkIdentity(c.env, user.id, identity, claims.sub, email);
+      await recordAudit(c, {
+        action: 'identity.link',
+        target: { user_id: user.id, provider: identity },
+      });
       return c.redirect('/security', 302);
     }
 
@@ -506,6 +511,11 @@ oidcRoutes.get('/auth/oidc/:provider/callback', async (c) => {
     const session = await createSession(c.env, user.id, now, {
       method: identity,
       mfaAt: claims.amr?.includes('mfa') ? now : null,
+    });
+    await recordAudit(c, {
+      action: 'auth.login',
+      actor: { kind: 'user', id: user.id },
+      target: { user_id: user.id, login: user.login, method: identity },
     });
     return new Response(null, {
       status: 302,
