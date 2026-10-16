@@ -3,14 +3,16 @@ import type { Env } from '../env';
 import {
   authorSchema,
   fileChangeSchema,
+  gitMetaShape,
   parseChangesetRow,
   q1,
   run,
   type Author,
   type FileChange,
+  type GitCommitMeta,
 } from '../db/client';
 import { C, T } from '../db/schema';
-import { RequestValidationError } from './errors';
+import { ObjectWalkLimitError, RequestValidationError } from './errors';
 import { canonicalJson, sha256Hex } from './hashing';
 
 export type { Author, FileChange };
@@ -24,7 +26,7 @@ export type { Author, FileChange };
  * **first parent** (Scion footnote 1) — mainline history is what blame and
  * merge semantics care about.
  */
-export interface Changeset {
+export interface Changeset extends GitCommitMeta {
   id: string;
   repo_id: string;
   first_parent: string | null;
@@ -36,8 +38,8 @@ export interface Changeset {
   root_tree: string | null;
 }
 
-/** Fields hashed into the changeset id. */
-export interface ChangesetFields {
+/** Fields hashed into the changeset id (Git metadata only when present). */
+export interface ChangesetFields extends GitCommitMeta {
   repo_id: string;
   first_parent: string | null;
   parents: string[];
@@ -87,13 +89,15 @@ const changesetInputSchema = z.object({
     .regex(/^[0-9a-f]{64}$/)
     .nullable()
     .optional(),
+  ...gitMetaShape,
 });
 
 /**
  * Changeset id = SHA-256 of canonical JSON over the semantic fields, with a
  * domain tag. `created_at` is deliberately excluded: timestamps are server
  * metadata, and excluding them makes identical commits content-addressed →
- * idempotent (architecture §1.3).
+ * idempotent (architecture §1.3). Git metadata (issue #30) is hashed only when
+ * present (`canonicalJson` drops undefined keys), so existing IDs never change.
  */
 export function computeChangesetId(fields: ChangesetFields): Promise<string> {
   return sha256Hex(
@@ -106,6 +110,11 @@ export function computeChangesetId(fields: ChangesetFields): Promise<string> {
         author: fields.author,
         message: fields.message,
         changed_files: fields.changed_files,
+        committer: fields.committer,
+        author_tz: fields.author_tz,
+        committer_tz: fields.committer_tz,
+        gpgsig: fields.gpgsig,
+        git_extra_headers: fields.git_extra_headers,
       }),
     ),
   );
@@ -176,6 +185,7 @@ export async function createChangeset(
     created_at: fields.created_at ?? Date.now(),
     changed_files: fields.changed_files,
     root_tree: fields.root_tree ?? null,
+    ...gitMeta(fields),
   };
 
   await run(
@@ -183,8 +193,10 @@ export async function createChangeset(
     `INSERT OR IGNORE INTO ${T.changesets}
        (${C.changesets.id}, ${C.changesets.repoId}, ${C.changesets.firstParent},
         ${C.changesets.parents}, ${C.changesets.author}, ${C.changesets.message},
-        ${C.changesets.createdAt}, ${C.changesets.changedFiles}, ${C.changesets.rootTree})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ${C.changesets.createdAt}, ${C.changesets.changedFiles}, ${C.changesets.rootTree},
+        ${C.changesets.committer}, ${C.changesets.authorTz}, ${C.changesets.committerTz},
+        ${C.changesets.gpgsig}, ${C.changesets.gitExtraHeaders})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       changeset.id,
       changeset.repo_id,
@@ -195,11 +207,29 @@ export async function createChangeset(
       changeset.created_at,
       JSON.stringify(changeset.changed_files),
       changeset.root_tree,
+      changeset.committer ? JSON.stringify(changeset.committer) : null,
+      changeset.author_tz ?? null,
+      changeset.committer_tz ?? null,
+      changeset.gpgsig ?? null,
+      changeset.git_extra_headers ? JSON.stringify(changeset.git_extra_headers) : null,
     ],
   );
 
   // Re-read: INSERT OR IGNORE may have been a no-op under concurrency.
   return (await getChangeset(env, repoId, id)) ?? changeset;
+}
+
+/** The Git metadata fields that are set, so absent ones stay absent. */
+export function gitMeta(fields: GitCommitMeta): GitCommitMeta {
+  const out: GitCommitMeta = {};
+  if (fields.committer !== undefined) out.committer = fields.committer;
+  if (fields.author_tz !== undefined) out.author_tz = fields.author_tz;
+  if (fields.committer_tz !== undefined) out.committer_tz = fields.committer_tz;
+  if (fields.gpgsig !== undefined) out.gpgsig = fields.gpgsig;
+  if (fields.git_extra_headers !== undefined) {
+    out.git_extra_headers = fields.git_extra_headers;
+  }
+  return out;
 }
 
 /** Fetch one changeset by id. */
@@ -233,6 +263,52 @@ export async function firstParentHistory(
     if (cs === null) break;
     out.push(cs);
     cursor = cs.first_parent;
+  }
+  return out;
+}
+
+/** A history walk hit its limit; `frontier` is the deepest changeset it reached. */
+export class HistoryWalkLimitError extends ObjectWalkLimitError {
+  constructor(
+    limit: number,
+    readonly frontier: string,
+  ) {
+    super(limit);
+    this.name = 'HistoryWalkLimitError';
+  }
+}
+
+/**
+ * Every ancestor of `head` (merges included), parents before children, `head`
+ * last. Iterative DFS, one indexed read per changeset, deterministic order
+ * (first parent explored first). `stop` ids and their ancestors are not
+ * walked. Throws `HistoryWalkLimitError` past `limit` changesets.
+ */
+export async function ancestorsParentsFirst(
+  env: Env,
+  repoId: string,
+  head: string,
+  limit: number,
+  stop: (id: string) => boolean | Promise<boolean> = () => false,
+): Promise<Changeset[]> {
+  const out: Changeset[] = [];
+  const start = await getChangeset(env, repoId, head);
+  if (start === null) return out;
+  const seen = new Set<string>([head]);
+  const stack: { cs: Changeset; next: number }[] = [{ cs: start, next: 0 }];
+  while (stack.length > 0) {
+    const top = stack[stack.length - 1] as { cs: Changeset; next: number };
+    if (top.next < top.cs.parents.length) {
+      const parentId = top.cs.parents[top.next++] as string;
+      if (seen.has(parentId) || (await stop(parentId))) continue;
+      seen.add(parentId);
+      if (seen.size > limit) throw new HistoryWalkLimitError(limit, parentId);
+      const parent = await getChangeset(env, repoId, parentId);
+      if (parent !== null) stack.push({ cs: parent, next: 0 });
+      continue;
+    }
+    stack.pop();
+    out.push(top.cs);
   }
   return out;
 }

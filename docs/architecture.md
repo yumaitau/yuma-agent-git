@@ -102,9 +102,11 @@ Types shipped in v1:
 | `skip_list`     | Ancestry skip pointers (heights 2^k) for O(log n) merge-base  | eager    |
 | `path_history`  | Per-touched-path list of ancestor cs ids                      | deferred |
 | `blame`         | Per-file line-range → cs id mapping for files touched         | deferred |
+| `git_ids`       | Git commit SHA-1/SHA-256; fills `git_commits/trees/blobs`     | both     |
 
 - **Deferred** = computed on first read (cache-aside), or enqueued to a Queue for background computation.
 - **Eager** = computed in the commit RPC's transaction when cheap.
+- `git_ids` (issue #30) is eager for small changes whose parents already have IDs and queued otherwise; one invocation never hashes more than 64 MiB. `worker/src/git/` holds the exact object encoders and the indexed lookups (sha1 ⇄ cs id, tree/blob IDs, raw object bytes) that fetch and push build on.
 - Clients never see internals — payloads are private to the server, so we can optimize freely.
 
 ## 2. RPC surface (Worker + Hono)

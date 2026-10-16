@@ -49,6 +49,35 @@ export interface DerivedKind<P = unknown> {
   parse(payload: string): P;
   /** Row size guard; default 1 MiB. */
   maxPayloadBytes?: number;
+  /**
+   * Reads its parents from its own tables (git_ids): it gets an empty
+   * `ctx.parents` and is never loaded into another kind's parent context.
+   */
+  isolated?: boolean;
+}
+
+/**
+ * A computation saved partial progress and needs another invocation (a CPU
+ * or hashing bound). The queue consumer re-enqueues instead of retrying.
+ * `first` names a key that must be computed before this one can finish.
+ */
+export class DerivedDeferredError extends Error {
+  constructor(
+    message: string,
+    readonly first?: string,
+  ) {
+    super(message);
+    this.name = 'DerivedDeferredError';
+  }
+}
+
+/** The message that continues `msg` after it deferred (see `resume`). */
+export function continuation(
+  msg: DerivedMessage,
+  err: DerivedDeferredError,
+): DerivedMessage {
+  if (err.first === undefined) return msg;
+  return { ...msg, cs_id: err.first, resume: [msg.cs_id, ...(msg.resume ?? [])] };
 }
 
 const derivedKinds = new Map<string, DerivedKind>();
@@ -179,9 +208,10 @@ export async function computeDerived<P>(
   key: string = cs.id,
 ): Promise<P> {
   const ctx: DerivedCtx = { parents: {}, key };
-  for (const parentId of cs.parents) {
+  for (const parentId of kind.isolated ? [] : cs.parents) {
     const payloads: Record<string, unknown> = {};
     for (const other of derivedKinds.values()) {
+      if (other.isolated) continue;
       const value = await getDerived(env, repoId, other.name, parentId);
       if (value !== null) payloads[other.name] = value;
     }
@@ -260,6 +290,8 @@ export interface DerivedMessage {
   cs_id: string;
   /** Oversize-payload compaction request (kind-specific). */
   compaction?: boolean;
+  /** Keys of the same kind to compute next, in order, once this one is done. */
+  resume?: string[];
 }
 
 export async function enqueueDerived(

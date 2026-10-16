@@ -20,6 +20,7 @@ import {
   type SkipListEntry,
 } from '../src/core/derived';
 import { derivedQueue } from '../src/queues/derived';
+import { GIT_IDS } from '../src/core/derived/gitIds';
 import type { DerivedMessage } from '../src/core/derived';
 
 const testEnv = env as unknown as TestEnv;
@@ -188,8 +189,10 @@ describe('derived-data framework', () => {
       `SELECT ${C.derivedData.kind} AS kind FROM ${T.derivedData} WHERE ${C.derivedData.csId} = ?`,
       [root.changeset.id],
     );
+    // (+ git_ids, which the commit hook computes for small changes, issue #30)
     expect(rows.map((r) => (r as { kind: string }).kind).sort()).toEqual([
       CHANGED_PATHS,
+      GIT_IDS,
       SKIP_LIST,
     ]);
   });
