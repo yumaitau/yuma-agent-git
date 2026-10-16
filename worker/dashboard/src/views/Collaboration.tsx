@@ -77,6 +77,7 @@ export function RepoNav({ active }: { active: string }): ReactElement {
           ['Code', ''],
           ['History', '/history'],
           ['Issues', '/issues'],
+          ['Board', '/board'],
           ['Pull requests', '/pulls'],
           ['CI', '/ci'],
         ].map(([name, tail]) => (
