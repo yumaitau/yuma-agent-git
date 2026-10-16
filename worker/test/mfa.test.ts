@@ -140,6 +140,30 @@ describe('totp', () => {
       'mfa_required',
     );
   });
+
+  it('with REQUIRE_MFA_FOR_TOKENS, token creation needs MFA in the last 12 hours', async () => {
+    const strict = makeApp({ ...testEnv, REQUIRE_MFA_FOR_TOKENS: 'true' });
+    const mint = (cookie: string): Promise<Response> =>
+      Promise.resolve(
+        strict(
+          new Request(`${ORIGIN}/api/v1/tokens`, {
+            method: 'POST',
+            headers: { cookie, 'content-type': 'application/json' },
+            body: JSON.stringify({ label: 'x' }),
+          }),
+        ),
+      );
+    const { cookie } = await loginAs(testEnv, 3, 'gail');
+    const none = await mint(cookie);
+    expect(none.status).toBe(403);
+    expect(await none.json()).toMatchObject({
+      error: { code: 'mfa_required', mfa_enrolled: false },
+    });
+    await enrolTotp(cookie); // confirming counts as this session's MFA
+    expect((await mint(cookie)).status).toBe(201);
+    await ageMfa(cookie, 13 * 60 * 60 * 1000);
+    expect(await errorCode(await mint(cookie))).toBe('mfa_required');
+  });
 });
 
 describe('passkeys', () => {

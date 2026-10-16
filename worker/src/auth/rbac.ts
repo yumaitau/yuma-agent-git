@@ -4,6 +4,7 @@ import { C, T } from '../db/schema';
 import { parsePathRuleRow, q } from '../db/client';
 import type { PathRuleRecord, RepoRecord } from '../db/client';
 import { agentIdOf, boundRepos, hasScope, type Principal } from './principal';
+import { ssoRequirement, type SsoRequirement } from './sso';
 
 /**
  * RBAC (issue #14, architecture §3) — repo roles **plus** directory-level
@@ -24,6 +25,10 @@ import { agentIdOf, boundRepos, hasScope, type Principal } from './principal';
  *      the next request.
  *   4. repo creator → admin
  *   5. default deny
+ *
+ * Org SSO (sso.ts) then gates the result: a member of an org enforcing SSO
+ * who has not signed in through its IdP keeps only what an anonymous caller
+ * gets, and the denial names the requirement.
  */
 
 /** `triage` (issue #38): label, assign, close and lock issues; never code. */
@@ -164,6 +169,8 @@ export interface Decision {
   allowed: boolean;
   /** The path rule that denied — surfaced in 403 bodies as `denied_by`. */
   deniedBy?: { id: number; path_prefix: string; effect: string; principal: string };
+  /** Access the roles grant but org SSO withholds — surfaced as `sso_required`. */
+  ssoRequired?: SsoRequirement;
 }
 
 /** Everything a decision reads from D1, loaded once per (repo, principal). */
@@ -172,6 +179,7 @@ interface DecisionContext {
   principal: Principal | null;
   rules: PathRuleRecord[];
   role: Role | null;
+  sso: SsoRequirement | null;
 }
 
 async function loadContext(
@@ -180,11 +188,12 @@ async function loadContext(
   principal: Principal | null,
   withRules: boolean,
 ): Promise<DecisionContext> {
-  const [rules, role] = await Promise.all([
+  const [rules, role, sso] = await Promise.all([
     withRules ? listPathRules(env, repo.id) : Promise.resolve([]),
     roleOf(env, repo.id, principal),
+    ssoRequirement(env, repo, principal),
   ]);
-  return { repo, principal, rules, role };
+  return { repo, principal, rules, role, sso };
 }
 
 /**
@@ -238,6 +247,14 @@ export function restrictingDecision(
 }
 
 function evaluate(ctx: DecisionContext, perm: Perm, path?: string): Decision {
+  const decision = evaluateAccess(ctx, perm, path);
+  if (!decision.allowed || ctx.sso === null) return decision;
+  return evaluateAccess({ ...ctx, principal: null }, perm, path).allowed
+    ? decision
+    : { allowed: false, ssoRequired: ctx.sso };
+}
+
+function evaluateAccess(ctx: DecisionContext, perm: Perm, path?: string): Decision {
   const { repo, principal, rules } = ctx;
   // Token limits constrain every role and path grant, including repo creators.
   // An agent token also gets the human's role below: the intersection (#57).

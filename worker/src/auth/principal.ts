@@ -9,15 +9,22 @@ import type { UserRecord } from '../db/client';
  *   - `agent`: an agent identity (#57) acting for the human `userId` through a
  *     short-lived exchanged token, bound to `repoIds` and agent `scopes`. RBAC
  *     resolves the human's role, so the agent gets the intersection.
+ *
+ * `authMethod` is how the credential signed in: the session's method, or for a
+ * token the method of the session that minted it (null when not recorded).
+ * Org SSO (auth/sso.ts) checks it. Only the credential resolvers set it;
+ * internal principals (agent runs, review checks) leave it undefined and are
+ * not gated, since the request that started them was.
  */
 export type Principal =
-  | { kind: 'user'; userId: string }
+  | { kind: 'user'; userId: string; authMethod?: string | null }
   | {
       kind: 'token';
       userId: string;
       tokenId: string;
       scopes: string[];
       repoId: string | null;
+      authMethod?: string | null;
     }
   | {
       kind: 'agent';
@@ -27,6 +34,8 @@ export type Principal =
       taskId: string | null;
       scopes: string[];
       repoIds: string[];
+      /** Unset: SSO is checked on the delegating token when this one is issued. */
+      authMethod?: undefined;
     };
 
 export interface AppVariables {

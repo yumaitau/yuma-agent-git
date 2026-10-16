@@ -59,6 +59,8 @@ export interface Env {
   TOTP_ENCRYPTION_KEY?: string;
   /** Comma-separated user ids allowed to mint SCIM provisioning tokens. */
   SCIM_ADMIN_USER_IDS?: string;
+  /** "true": creating an API token needs a second factor in the last 12 hours. */
+  REQUIRE_MFA_FOR_TOKENS?: string;
   /** GitHub App credentials (issue #13). */
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
