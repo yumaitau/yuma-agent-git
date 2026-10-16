@@ -409,6 +409,57 @@ export const provenanceSchema = z.object({
 });
 export type AgentProvenance = z.infer<typeof provenanceSchema>;
 
+/** The signature check of a commit pushed over Git (#58); null when the forge wrote it. */
+export const commitSignatureSchema = z.object({
+  status: z.enum(['verified', 'unverified', 'unsigned']),
+  format: z.enum(['ssh', 'gpg', 'x509']).nullable(),
+  key_id: z.string().nullable(),
+  signer: z.string().nullable(),
+  user_login: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type CommitSignature = z.infer<typeof commitSignatureSchema>;
+
+export const agentSessionSchema = z.object({
+  id: z.string(),
+  agent_id: z.string().nullable(),
+  task_id: z.string().nullable(),
+  model: z.string().nullable(),
+  harness: z.string().nullable(),
+  tools: z.array(z.string()),
+  started_at: z.number(),
+  transcript_available: z.boolean(),
+});
+export type AgentSession = z.infer<typeof agentSessionSchema>;
+
+/** Signed provenance for a changeset (#58): records, signature, sessions. */
+export const sourceProvenanceSchema = z.object({
+  records: z.array(
+    z.object({
+      id: z.string(),
+      ref: z.string(),
+      new_cs: z.string().nullable(),
+      via: z.string(),
+      bypass: z.boolean(),
+      verified: z.boolean(),
+      reason: z.string().nullable(),
+      created_at: z.number(),
+    }),
+  ),
+  signature: commitSignatureSchema.nullable(),
+  sessions: z.array(agentSessionSchema),
+});
+export type SourceProvenance = z.infer<typeof sourceProvenanceSchema>;
+
+export const signingKeySchema = z.object({
+  id: z.string(),
+  kind: z.enum(['ssh', 'gpg']),
+  title: z.string(),
+  fingerprint: z.string(),
+  created_at: z.number(),
+});
+export type SigningKey = z.infer<typeof signingKeySchema>;
+
 export const memberSchema = z.object({
   user_id: z.string(),
   role: z.enum(['admin', 'write', 'triage', 'read']),
@@ -739,6 +790,14 @@ export const api = {
     return { ...body.changeset, provenance: body.provenance ?? null };
   },
 
+  async getProvenance(slug: string, cs: string): Promise<SourceProvenance> {
+    return requestJson(
+      `/api/v1/repos/${slug}/provenance`,
+      { query: { cs } },
+      sourceProvenanceSchema,
+    );
+  },
+
   // -- diff -----------------------------------------------------------------
   async getDiff(
     slug: string,
@@ -953,6 +1012,36 @@ export const api = {
       `/api/v1/me/passkeys/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
       okSchema,
+    );
+  },
+
+  async listSigningKeys(): Promise<SigningKey[]> {
+    const body = await requestJson(
+      '/api/v1/me/signing-keys',
+      {},
+      z.object({ keys: z.array(signingKeySchema) }),
+    );
+    return body.keys;
+  },
+
+  async addSigningKey(input: {
+    kind: SigningKey['kind'];
+    title: string;
+    public_key: string;
+  }): Promise<SigningKey> {
+    const body = await requestJson(
+      '/api/v1/me/signing-keys',
+      { method: 'POST', body: input },
+      z.object({ key: signingKeySchema }),
+    );
+    return body.key;
+  },
+
+  async deleteSigningKey(id: string): Promise<void> {
+    await requestJson(
+      `/api/v1/me/signing-keys/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+      z.null(),
     );
   },
 

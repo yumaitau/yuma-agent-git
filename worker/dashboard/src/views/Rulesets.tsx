@@ -29,6 +29,8 @@ const REF_RULES: Record<Exclude<Target, 'push'>, [string, string][]> = {
     ['required_review_thread_resolution', 'Require review threads resolved'],
     ['require_code_owner_review', 'Require code owner review'],
     ['merge_queue', 'Require the merge queue'],
+    ['required_signatures', 'Require verified commit signatures'],
+    ['required_provenance', 'Require signed provenance from a pull request'],
   ],
   tag: [
     ['deletion', 'Block deletion'],
@@ -67,6 +69,10 @@ export function describeRule(rule: Ruleset['rules'][number]): string {
       return 'code owner review';
     case 'merge_queue':
       return `merge queue (${String(rule.mode ?? 'strict')}, ${String(rule.max_batch ?? 5)} per group)`;
+    case 'required_signatures':
+      return 'signed commits';
+    case 'required_provenance':
+      return 'signed provenance';
     case 'max_file_size':
       return `files up to ${Number(rule.max_bytes) / MB} MB`;
     case 'file_path_restriction':

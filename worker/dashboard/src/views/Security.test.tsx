@@ -1,10 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api, type Security } from '../api';
 import { ToastProvider } from '../toast';
 import { SecurityView } from './Security';
 
+beforeEach(() => {
+  vi.spyOn(api, 'listSigningKeys').mockResolvedValue([]);
+});
 afterEach(() => vi.restoreAllMocks());
 
 const base: Security = {
@@ -83,4 +86,32 @@ it('asks for a fresh second factor when one is enrolled but stale', async () => 
   expect((await screen.findAllByText('second factor verified')).length).toBeGreaterThan(
     0,
   );
+});
+
+it('registers a commit signing key and lists it', async () => {
+  vi.spyOn(api, 'getSecurity').mockResolvedValue(base);
+  const key = {
+    id: 'k1',
+    kind: 'ssh' as const,
+    title: 'Laptop',
+    fingerprint: 'SHA256:abc',
+    created_at: 1,
+  };
+  const add = vi.spyOn(api, 'addSigningKey').mockResolvedValue(key);
+  renderView();
+  expect(await screen.findByText(/No signing keys yet/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Laptop' } });
+  fireEvent.change(screen.getByLabelText('Public key'), {
+    target: { value: 'ssh-ed25519 AAAA' },
+  });
+  vi.mocked(api.listSigningKeys).mockResolvedValue([key]);
+  fireEvent.click(screen.getByRole('button', { name: 'Add signing key' }));
+  await waitFor(() =>
+    expect(add).toHaveBeenCalledWith({
+      kind: 'ssh',
+      title: 'Laptop',
+      public_key: 'ssh-ed25519 AAAA',
+    }),
+  );
+  expect(await screen.findByText('SHA256:abc')).toBeTruthy();
 });

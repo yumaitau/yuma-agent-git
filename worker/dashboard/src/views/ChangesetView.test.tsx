@@ -108,4 +108,76 @@ describe('ChangesetView', () => {
 
     expect(await screen.findByText('Codex on behalf of Justin, task #42')).toBeTruthy();
   });
+
+  it('shows the signature, signed provenance and a transcript link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.includes('/provenance'))
+          return json({
+            records: [
+              {
+                id: 'p1',
+                ref: 'main',
+                new_cs: ID,
+                via: 'merge',
+                bypass: false,
+                verified: true,
+                reason: null,
+                created_at: 1,
+              },
+            ],
+            signature: {
+              status: 'verified',
+              format: 'x509',
+              key_id: '07',
+              signer: 'ada@example.com (https://accounts.example.com)',
+              user_login: 'ada',
+              reason: null,
+            },
+            sessions: [
+              {
+                id: 's1',
+                agent_id: null,
+                task_id: null,
+                model: 'claude-opus-5-5',
+                harness: 'claude-code',
+                tools: [],
+                started_at: 1,
+                transcript_available: true,
+              },
+            ],
+          });
+        return json({
+          changeset: {
+            id: ID,
+            repo_id: 'repo1',
+            first_parent: null,
+            parents: [],
+            author: { name: 'Ada', email: 'ada@example.com' },
+            message: 'signed change',
+            created_at: 1_700_000_000_000,
+            changed_files: [],
+            root_tree: 'd'.repeat(64),
+          },
+        });
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={[`/r/acme/tools/cs/${ID}`]}>
+        <Routes>
+          <Route path="/r/:owner/:name/cs/:id" element={<ChangesetView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Verified')).toBeTruthy();
+    expect(screen.getByText('x509 · ada')).toBeTruthy();
+    expect(screen.getByText('Signed provenance')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'transcript' }).getAttribute('href')).toBe(
+      '/api/v1/repos/acme/tools/sessions/s1/transcript',
+    );
+  });
 });

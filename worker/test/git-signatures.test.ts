@@ -25,7 +25,7 @@ const NO_SHA256 = '0'.repeat(64);
 
 type User = Awaited<ReturnType<typeof loginAs>>;
 let owner: User;
-let repoId = '';
+
 let trustRoots = '';
 
 function app() {
@@ -429,7 +429,7 @@ beforeEach(async () => {
   await cleanDb(testEnv);
   trustRoots = '';
   owner = await loginAs(testEnv, 5901, 'owner');
-  repoId = (await createRepo(dbEnv, { slug: 'acme/app', createdBy: owner.userId })).id;
+  await createRepo(dbEnv, { slug: 'acme/app', createdBy: owner.userId });
 });
 
 describe('signed payload', () => {
@@ -471,7 +471,7 @@ describe('SSH signatures', () => {
 
     await cleanDb(testEnv);
     owner = await loginAs(testEnv, 5901, 'owner');
-    repoId = (await createRepo(dbEnv, { slug: 'acme/app', createdBy: owner.userId })).id;
+    await createRepo(dbEnv, { slug: 'acme/app', createdBy: owner.userId });
     await addKey('ssh', key.line);
     // a signature over different bytes
     const forged = await signedCommit(ownerEmail, 'signed\n', (payload) =>
