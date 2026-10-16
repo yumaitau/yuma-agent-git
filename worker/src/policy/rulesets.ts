@@ -62,6 +62,10 @@ const branchRuleSchema = z.discriminatedUnion('type', [
     /** Most pull requests one merge group carries. */
     max_batch: z.number().int().min(1).max(50).default(5),
   }),
+  // every commit pushed over Git that the move brings in has a verified signature (#58)
+  z.object({ type: z.literal('required_signatures') }),
+  // updates carry provenance from a reviewed pull request, signed by the forge (#58)
+  z.object({ type: z.literal('required_provenance') }),
 ]);
 const tagRuleSchema = z.discriminatedUnion('type', [...refRules]);
 const globSchema = z.string().min(1).max(256);
@@ -322,6 +326,13 @@ export interface RefFacts {
   };
   /** The merge queue (#43) makes this move. */
   queue?: boolean;
+  /**
+   * Pushed commits the move brings in without a verified signature (#58), or
+   * `truncated` when there were too many to walk. Absent when no rule asks.
+   */
+  signatures?: { unverified: readonly string[]; truncated: boolean };
+  /** The forge has no signing key, so it cannot issue provenance (#58). */
+  cannotSign?: boolean;
 }
 
 export interface FileFacts {
@@ -433,6 +444,22 @@ function refMessage(rule: Rule, ref: RefFacts): string | null {
     case 'merge_queue':
       return ref.kind === 'update' && !ref.queue
         ? `${name} only changes through the merge queue; add the pull request to the queue.`
+        : null;
+    case 'required_signatures': {
+      const s = ref.signatures;
+      if (ref.kind === 'delete' || !s) return null;
+      if (s.truncated) return 'Commit signatures could not be checked for this update.';
+      const n = s.unverified.length;
+      if (n === 0) return null;
+      const shown = s.unverified.slice(0, 3).map((id) => id.slice(0, 12));
+      return `${n} pushed commit${n === 1 ? ' has' : 's have'} no verified signature (${shown.join(', ')}${n > 3 ? ', ...' : ''}).`;
+    }
+    case 'required_provenance':
+      if (ref.kind === 'delete') return null;
+      if (ref.cannotSign)
+        return `${name} requires signed provenance, and this forge has no signing key.`;
+      return ref.kind === 'update' && !ref.merge && !ref.queue
+        ? `${name} requires provenance from a reviewed pull request; this update skips it.`
         : null;
     default:
       return null;

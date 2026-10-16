@@ -38,6 +38,12 @@ import {
 } from './objects';
 import { PackError, readPack, type PackedObject } from './pack-reader';
 import {
+  checkCommitSignature,
+  recordSignatures,
+  signedPayload,
+  type SignatureCheck,
+} from './signatures';
+import {
   concatBytes,
   FLUSH,
   GitProtocolError,
@@ -530,6 +536,25 @@ export async function receivePack(
     if (bad) u.error = failed.get(bad);
   }
   if (atomic && updates.some((u) => u.error)) failAll();
+
+  // signature checks (#58) land before the moves: required_signatures reads them
+  const checks: { csId: string; check: SignatureCheck }[] = [];
+  for (const sha of new Set(updates.flatMap((u) => (u.error ? [] : u.commits)))) {
+    const csId = push.csOf.get(sha);
+    const object = push.objects.get(sha);
+    const parsed = packCommit(push, sha);
+    if (!csId || !object || !parsed) continue;
+    checks.push({
+      csId,
+      check: await checkCommitSignature(env, {
+        gpgsig: parsed.gpgsig,
+        payload: signedPayload(object.body),
+        committerEmail: parsed.committer.email,
+        committedAt: parsed.committer.seconds * 1000,
+      }),
+    });
+  }
+  await recordSignatures(env, repo.id, checks);
 
   // 5. one compare-and-swap per ref
   const moved: PushUpdate[] = [];

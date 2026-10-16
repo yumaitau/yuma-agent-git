@@ -15,8 +15,11 @@ import { pipelineGate } from '../ci/planner';
 import type { Principal } from '../auth/principal';
 import type { RepoRecord } from '../db/client';
 import { actorOf } from '../audit/record';
+import { signatureFacts } from '../git/signatures';
+import { canSign, issueAfterMove } from '../provenance/issue';
 import {
   actorFor,
+  applies,
   enforcePushRules,
   evaluate,
   principalSchema,
@@ -227,6 +230,16 @@ async function checkMerge(
   )
     ? await pullCodeowners(env, repo, pull)
     : null;
+  // a merge commit brings the pull request's own commits in; squash and
+  // rebase write new ones, so only `merge` is checked for signatures (#58)
+  const target = await getRef(env, pull.repo_id, pull.base_ref);
+  const signatures = rulesets.some(
+    (r) =>
+      applies(r, repo, pull.base_ref) &&
+      r.rules.some((rule) => rule.type === 'required_signatures'),
+  )
+    ? await signatureFacts(env, pull.repo_id, target?.head ?? null, pull.head_cs)
+    : undefined;
   const facts = (m: MergeMethod): EvalInput => ({
     repo,
     actor: evalActor,
@@ -235,6 +248,8 @@ async function checkMerge(
       kind: 'update',
       fastForward: true,
       queue: queued,
+      signatures: m === 'merge' ? signatures : undefined,
+      cannotSign: !canSign(env),
       merge: {
         approvals,
         checksPassed,
@@ -529,6 +544,16 @@ export async function mergePullLocked(
   } catch (err) {
     console.error('merge: ruleset outcome not recorded', err);
   }
+  await issueAfterMove(env, {
+    repo: gate.repo,
+    ref: pull.base_ref,
+    from: prepared.target,
+    to: prepared.result,
+    via: 'merge',
+    actor,
+    outcome: gate.outcome,
+    pulls: [pull.id],
+  });
   return getPull(env, repoId, id);
 }
 
