@@ -16,7 +16,8 @@
     "build:dashboard": "npm run build",
     "docs:api": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-api-docs.ts",
     "bench:policy": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-policy.ts",
-    "bench:secrets": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-secrets.ts"
+    "bench:secrets": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/bench-secrets.ts",
+    "bench:endpoints": "vitest run test/perf-budgets.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "latest",
