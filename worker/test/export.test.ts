@@ -224,6 +224,59 @@ describe('fast-import export', () => {
     expect(rangedText).toContain('c1');
     expect(rangedText).not.toContain('c0');
   });
+
+  it('full mode keeps merges; ranged mode names outside parents by stored Git ID', async () => {
+    const repo = await createRepo(dbEnv, { slug: 'acme/fimerge', visibility: 'public' });
+    const commit = async (
+      first: string | null,
+      path: string,
+      parents?: string[],
+    ): Promise<string> =>
+      (
+        await commitChanges(dbEnv, repo.id, {
+          first_parent: first,
+          parents,
+          message: `add ${path}`,
+          author,
+          changes: [{ path, op: 'add', content_b64: b64(path) }],
+        })
+      ).changeset.id;
+    const root = await commit(null, 'root.txt');
+    const main = await commit(root, 'main.txt');
+    const side = await commit(root, 'side.txt');
+    const merge = await commit(main, 'merge.txt', [main, side]);
+
+    const text = async (query: string): Promise<string> =>
+      new TextDecoder().decode(
+        await collect(
+          (await get(`/acme/fimerge/export/fast-import?head=${merge}&${query}`))
+            .body as ReadableStream<Uint8Array>,
+        ),
+      );
+    const full = await text('mode=full');
+    expect(full.match(/^commit refs\/heads\/main$/gm)).toHaveLength(4);
+    expect(full.match(/^merge :\d+$/gm)).toHaveLength(1);
+
+    const ranged = await text(`mode=ranged&from=${main}`);
+    const rootSha1 = (
+      await q1<{ sha1: string }>(
+        dbEnv,
+        `SELECT sha1 FROM git_commits WHERE repo_id = ? AND cs_id = ?`,
+        [repo.id, root],
+      )
+    )?.sha1;
+    const mainSha1 = (
+      await q1<{ sha1: string }>(
+        dbEnv,
+        `SELECT sha1 FROM git_commits WHERE repo_id = ? AND cs_id = ?`,
+        [repo.id, main],
+      )
+    )?.sha1;
+    // side + merge only; their parents outside the range are named by Git ID
+    expect(ranged.match(/^commit refs\/heads\/main$/gm)).toHaveLength(2);
+    expect(ranged).toContain(`from ${rootSha1}\n`);
+    expect(ranged).toContain(`from ${mainSha1}\nmerge :`);
+  });
 });
 
 describe('export → GitHub contents sync', () => {

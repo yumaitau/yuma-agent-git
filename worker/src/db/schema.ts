@@ -110,6 +110,9 @@ export const T = {
   changesets: 'changesets',
   refs: 'refs',
   derivedData: 'derived_data',
+  gitCommits: 'git_commits',
+  gitTrees: 'git_trees',
+  gitBlobs: 'git_blobs',
   sessions: 'sessions',
   users: 'users',
   repoMembers: 'repo_members',
@@ -146,6 +149,11 @@ export const C = {
     createdAt: 'created_at',
     changedFiles: 'changed_files',
     rootTree: 'root_tree',
+    committer: 'committer',
+    authorTz: 'author_tz',
+    committerTz: 'committer_tz',
+    gpgsig: 'gpgsig',
+    gitExtraHeaders: 'git_extra_headers',
   },
   refs: {
     repoId: 'repo_id',
@@ -160,6 +168,9 @@ export const C = {
     payload: 'payload',
     computedAt: 'computed_at',
   },
+  gitCommits: { repoId: 'repo_id', csId: 'cs_id', sha1: 'sha1', sha256: 'sha256' },
+  gitTrees: { repoId: 'repo_id', treeHash: 'tree_hash', sha1: 'sha1', sha256: 'sha256' },
+  gitBlobs: { blobHash: 'blob_hash', sha1: 'sha1', sha256: 'sha256' },
   sessions: {
     tokenHash: 'token_hash',
     userId: 'user_id',
@@ -273,5 +284,6 @@ export const DERIVED_KINDS = [
   'changed_paths',
   'path_history',
   'blame',
+  'git_ids',
 ] as const;
 export type DerivedKindName = (typeof DERIVED_KINDS)[number];

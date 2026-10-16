@@ -1,8 +1,11 @@
 import type { Env } from '../env';
 import { getBlob } from '../core/blobs';
-import { firstParentHistory, getChangeset, type Changeset } from '../core/changesets';
-import { NotFoundError } from '../core/errors';
-import { getTree, type TreeEntry } from '../core/trees';
+import { ancestorsParentsFirst, getChangeset, type Changeset } from '../core/changesets';
+import { ensureGitIds } from '../core/derived/gitIds';
+import { NotFoundError, ObjectWalkLimitError } from '../core/errors';
+import { getTree, type Tree, type TreeEntry } from '../core/trees';
+import { commitSignatures } from '../git/identity';
+import { formatSignature } from '../git/objects';
 
 /**
  * `git fast-import` stream generation (issue #16) — the off-ramp that lets any
@@ -14,6 +17,12 @@ import { getTree, type TreeEntry } from '../core/trees';
  * deterministic — same head ⇒ byte-identical bytes (marks in tree DFS / commit
  * order) — and bounded-memory: an async generator pulls blobs one at a time,
  * so at most one is ever materialized.
+ *
+ * Full mode rebuilds the stored Git IDs (issue #30): `git rev-parse HEAD`
+ * after import equals `git_commits.sha1` of the head, because identities, time
+ * zones, parents and modes come from the same mapping. Fast-import cannot
+ * write `gpgsig` or extra headers, so signed commits only round-trip through
+ * the Git protocol, not this stream.
  */
 
 export interface FastImportOptions {
@@ -43,10 +52,32 @@ function rawBlock(header: string, body: Uint8Array): Uint8Array {
   return out;
 }
 
-function signature(cs: Changeset): string {
-  const name = 'name' in cs.author ? cs.author.name : cs.author.agent;
-  const email = 'email' in cs.author ? cs.author.email : 'agent@yuma-agent-git';
-  return `${name} <${email}> ${Math.floor(cs.created_at / 1000)} +0000`;
+/** The commit header lines Git hashes: same identities as the stored Git IDs. */
+function* commitLines(cs: Changeset): Generator<Uint8Array> {
+  const { author, committer } = commitSignatures(cs);
+  yield line(`author ${formatSignature(author)}`);
+  yield line(`committer ${formatSignature(committer)}`);
+  yield dataBlock(cs.message);
+}
+
+/** File mode of `path` in a changeset's tree (trees read once per commit). */
+async function modeAt(
+  env: Env,
+  repoId: string,
+  rootTree: string | null,
+  path: string,
+  cache: Map<string, Tree | null>,
+): Promise<string> {
+  let hash = rootTree;
+  const segments = path.split('/');
+  for (let i = 0; hash !== null && i < segments.length; i++) {
+    if (!cache.has(hash)) cache.set(hash, await getTree(env, repoId, hash));
+    const entry = cache.get(hash)?.entries.find((e) => e.name === segments[i]);
+    if (!entry) break;
+    if (i === segments.length - 1) return entry.mode ?? '100644';
+    hash = entry.kind === 'tree' ? entry.hash : null;
+  }
+  return '100644';
 }
 
 interface TreeFile {
@@ -110,39 +141,53 @@ export async function* fastImportChunks(
     const commitMark = ++mark;
     yield line('commit refs/heads/main');
     yield line(`mark :${commitMark}`);
-    yield line(`author ${signature(head)}`);
-    yield line(`committer ${signature(head)}`);
-    yield dataBlock(head.message);
+    yield* commitLines(head);
     for (const op of ops) yield line(op);
     yield line('');
     yield line('done');
     return;
   }
 
-  // full / ranged: first-parent history oldest → newest, incremental fileops
-  let history = await firstParentHistory(env, repoId, headCs, maxCommits + 1);
-  if (history.length > maxCommits) {
-    throw new Error('too-many-commits');
-  }
-  history = history.reverse();
-  if (mode === 'ranged' && opts.from) {
-    const index = history.findIndex((cs) => cs.id === opts.from);
-    history = index >= 0 ? history.slice(index + 1) : history;
+  // full / ranged: every ancestor (merges too), parents first, incremental
+  // fileops. Ranged mode skips `from` and its ancestors and names parents
+  // outside the range by their stored Git IDs, which the target already has.
+  let history: Changeset[];
+  try {
+    const exclude = new Set<string>();
+    if (mode === 'ranged' && opts.from) {
+      for (const cs of await ancestorsParentsFirst(env, repoId, opts.from, maxCommits)) {
+        exclude.add(cs.id);
+      }
+    }
+    history = await ancestorsParentsFirst(env, repoId, headCs, maxCommits, (id) =>
+      exclude.has(id),
+    );
+  } catch (err) {
+    if (err instanceof ObjectWalkLimitError) throw new Error('too-many-commits');
+    throw err;
   }
 
-  let parentMark: number | null = null;
+  const marks = new Map<string, number>();
   for (const cs of history) {
-    yield line('commit refs/heads/main');
-    const commitMark = ++mark;
-    yield line(`mark :${commitMark}`);
-    if (parentMark !== null) yield line(`from :${parentMark}`);
-    yield line(`author ${signature(cs)}`);
-    yield line(`committer ${signature(cs)}`);
-    yield dataBlock(cs.message);
-    // changed_files semantics 1:1 — M/D per change, only that commit's files
+    const parents: string[] = [];
+    for (const parentId of cs.parents) {
+      const parentMark = marks.get(parentId);
+      if (parentMark !== undefined) {
+        parents.push(`:${parentMark}`);
+        continue;
+      }
+      const ids = await ensureGitIds(env, repoId, parentId);
+      if (!ids)
+        throw new NotFoundError('revision_not_found', `no git id for ${parentId}`);
+      parents.push(ids.sha1);
+    }
+    // changed_files semantics 1:1 — M/D per change (vs first parent), modes
+    // from the changeset's own tree; blobs go before their commit command
+    const trees = new Map<string, Tree | null>();
+    const ops: string[] = [];
     for (const change of cs.changed_files) {
       if (change.op === 'del') {
-        yield line(`D ${change.path}`);
+        ops.push(`D ${change.path}`);
         continue;
       }
       const blob = await getBlob(env, repoId, change.hash as string);
@@ -151,10 +196,21 @@ export async function* fastImportChunks(
       yield line('blob');
       yield line(`mark :${blobMark}`);
       yield rawBlock('data ', blob.content);
-      yield line(`M 100644 :${blobMark} ${change.path}`);
+      const fileMode = await modeAt(env, repoId, cs.root_tree, change.path, trees);
+      ops.push(`M ${fileMode} :${blobMark} ${change.path}`);
     }
+    // a later root must not continue from the branch tip
+    if (parents.length === 0 && marks.size > 0) yield line('reset refs/heads/main');
+    yield line('commit refs/heads/main');
+    const commitMark = ++mark;
+    yield line(`mark :${commitMark}`);
+    yield* commitLines(cs);
+    const [first, ...merges] = parents;
+    if (first !== undefined) yield line(`from ${first}`);
+    for (const merge of merges) yield line(`merge ${merge}`);
+    for (const op of ops) yield line(op);
     yield line('');
-    parentMark = commitMark;
+    marks.set(cs.id, commitMark);
   }
   yield line('done');
 }

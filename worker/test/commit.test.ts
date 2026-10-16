@@ -117,7 +117,9 @@ describe('commitChanges', () => {
         first_parent: root.changeset.id,
         message: 'touch f1',
         author,
-        changes: [{ path: 'a/b/c/f1.txt', op: 'mod', content_b64: b64('ONE') }],
+        // per-repo content: Git blob IDs are a global index, so a shared blob
+        // would skip the git_ids read in the second repo only
+        changes: [{ path: 'a/b/c/f1.txt', op: 'mod', content_b64: b64(`ONE ${slug}`) }],
       });
       const childTree = child.changeset.root_tree as string;
 

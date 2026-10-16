@@ -87,6 +87,45 @@ export const authorSchema = z.union([
 ]);
 export type Author = z.infer<typeof authorSchema>;
 
+/**
+ * Optional Git commit metadata (issue #30) so a pushed commit round-trips
+ * byte for byte. Absent fields keep the old changeset ID and Git defaults:
+ * committer = author at `created_at`, time zones `+0000`.
+ */
+export const committerSchema = z.object({
+  name: z.string(),
+  email: z.string(),
+  /** Commit time, epoch ms (Git keeps whole seconds). */
+  at: z.number().int(),
+});
+export type Committer = z.infer<typeof committerSchema>;
+
+const tzSchema = z.string().regex(/^[+-]\d{4}$/);
+
+/** Header keys the commit encoder writes itself. */
+const RESERVED_HEADERS = new Set(['tree', 'parent', 'author', 'committer', 'gpgsig']);
+
+export const gitMetaShape = {
+  committer: committerSchema.optional(),
+  author_tz: tzSchema.optional(),
+  committer_tz: tzSchema.optional(),
+  /** Raw signature block, without the `gpgsig ` prefix or continuation spaces. */
+  gpgsig: z.string().min(1).optional(),
+  /** Extra headers in order (`encoding`, `mergetag`, …), written before gpgsig. */
+  git_extra_headers: z
+    .array(
+      z.tuple([
+        z
+          .string()
+          .regex(/^[^\s]+$/)
+          .refine((key) => !RESERVED_HEADERS.has(key), 'reserved header'),
+        z.string(),
+      ]),
+    )
+    .optional(),
+};
+export type GitCommitMeta = z.infer<z.ZodObject<typeof gitMetaShape>>;
+
 /** Validate a JSON-encoded D1 column against a schema. */
 function jsonOf<T extends z.ZodType>(schema: T) {
   return z.string().transform((text, ctx): z.infer<T> => {
@@ -159,9 +198,16 @@ export const changesetRowSchema = z.object({
   created_at: z.number(),
   changed_files: jsonOf(z.array(fileChangeSchema)),
   root_tree: z.string().nullable().optional(),
+  committer: jsonOf(committerSchema).nullable().optional(),
+  author_tz: z.string().nullable().optional(),
+  committer_tz: z.string().nullable().optional(),
+  gpgsig: z.string().nullable().optional(),
+  git_extra_headers: jsonOf(z.array(z.tuple([z.string(), z.string()])))
+    .nullable()
+    .optional(),
 });
 
-export interface ChangesetRecord {
+export interface ChangesetRecord extends GitCommitMeta {
   id: string;
   repo_id: string;
   first_parent: string | null;
@@ -175,7 +221,18 @@ export interface ChangesetRecord {
 
 export function parseChangesetRow(row: unknown): ChangesetRecord {
   const parsed = parseOrThrow(changesetRowSchema, 'changesets', row);
-  return { ...parsed, root_tree: parsed.root_tree ?? null };
+  const { committer, author_tz, committer_tz, gpgsig, git_extra_headers, ...rest } =
+    parsed;
+  // Git metadata is optional: absent columns stay absent (old rows, old JSON).
+  return {
+    ...rest,
+    root_tree: parsed.root_tree ?? null,
+    ...(committer ? { committer } : {}),
+    ...(author_tz ? { author_tz } : {}),
+    ...(committer_tz ? { committer_tz } : {}),
+    ...(gpgsig ? { gpgsig } : {}),
+    ...(git_extra_headers ? { git_extra_headers } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,17 +1,19 @@
 import { z } from 'zod';
 import type { Env } from '../env';
-import { authorSchema, type FileChange } from '../db/client';
+import { authorSchema, gitMetaShape, type FileChange } from '../db/client';
 import { hasBlob, putBlob, statBlob } from './blobs';
 import {
   computeChangesetId,
   createChangeset,
   getChangeset,
+  gitMeta,
   pathSchema,
   type Changeset,
   type ChangesetFields,
 } from './changesets';
 import { PayloadTooLargeError, RequestValidationError } from './errors';
 import { computeEager } from './derived';
+import { scheduleGitIds } from './derived/gitIds';
 import { sha256Hex } from './hashing';
 import { lookupRev } from './read';
 import { getTree, putTree, resolvePath, type Tree, type TreeEntry } from './trees';
@@ -54,6 +56,8 @@ export const commitRequestSchema = z.object({
   changes: z.array(changeSchema).max(5000),
   /** Server-side timestamp override (git imports preserve commit dates). */
   created_at: z.number().int().optional(),
+  /** Optional Git commit metadata (issue #30); hashed only when present. */
+  ...gitMetaShape,
 });
 export type CommitRequest = z.infer<typeof commitRequestSchema>;
 
@@ -188,6 +192,7 @@ async function commitChangesInner(
     author: req.author,
     message: req.message,
     changed_files: resolvedChanges,
+    ...gitMeta(req),
   };
   const id = await computeChangesetId(fields);
   const existing = await getChangeset(env, repoId, id);
@@ -223,6 +228,7 @@ async function commitChangesInner(
  * Eager derived data, computed inside the commit path via the generic
  * framework (issue #9): `skip_list` (issue #8) + `changed_paths`, rows written
  * in one D1 batch. Deferred kinds compute cache-aside or via the queue.
+ * Git IDs (issue #30) compute here for small changes, else in the queue.
  */
 export async function onChangesetCreated(
   env: Env,
@@ -230,6 +236,7 @@ export async function onChangesetCreated(
   cs: Changeset,
 ): Promise<void> {
   await computeEager(env, repoId, cs);
+  await scheduleGitIds(env, repoId, cs);
 }
 
 // ---------------------------------------------------------------------------

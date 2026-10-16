@@ -2,7 +2,10 @@ import type { Env } from '../env';
 import { recordQueue } from '../observability/metrics';
 import { RowParseError } from '../db/client';
 import {
+  DerivedDeferredError,
   FAILED_SENTINEL,
+  continuation,
+  enqueueDerived,
   getDerived,
   storeRaw,
   type DerivedMessage,
@@ -37,8 +40,25 @@ export async function derivedQueue(
         // attempt budget runs out, then terminal like any poison message.
         throw new MissingTargetError(`${kind}:${csId}`);
       }
+      const [next, ...rest] = message.body.resume ?? [];
+      if (next !== undefined) {
+        await enqueueDerived(env, [
+          {
+            repo_id: repoId,
+            kind,
+            cs_id: next,
+            ...(rest.length > 0 ? { resume: rest } : {}),
+          },
+        ]);
+      }
       message.ack();
     } catch (err) {
+      if (err instanceof DerivedDeferredError) {
+        // progress is stored; continue in a fresh invocation (not a failure)
+        await enqueueDerived(env, [continuation(message.body, err)]);
+        message.ack();
+        continue;
+      }
       const permanent = isPermanent(err);
       if (permanent || message.attempts >= 3) {
         await storeRaw(env, repoId, kind, csId, FAILED_SENTINEL);
