@@ -84,8 +84,7 @@ describe('GitHub Actions compatibility report', () => {
       {
         status: 'unsupported',
         line: 14,
-        message:
-          'No built-in equivalent for github/codeql-action/upload-sarif; replace the step with run steps',
+        message: 'Uploading SARIF needs permissions: security-events: write',
       },
     ]);
     expect(report.pipeline).toBeNull();
@@ -204,7 +203,7 @@ jobs:
           aws-region: ap-southeast-2
 `),
     ).toEqual([
-      '2 translated: write-all grants only id-token and packages here; jobs get no forge token',
+      '2 translated: write-all grants only id-token, packages and security-events here; jobs get no forge token',
       '8 unsupported: Static AWS keys are not supported: use role-to-assume with OIDC',
     ]);
   });
@@ -215,6 +214,9 @@ jobs:
       'set +u +o pipefail\nnpm install -g pnpm@9',
       'set +u +o pipefail\npnpm install --frozen-lockfile',
       'set +u +o pipefail\nexport CI="true"\npnpm test',
+      expect.stringContaining(
+        'curl -fsS -X PUT -H "authorization: Bearer $YAG_RUNTIME_TOKEN" --data-binary @/tmp/yag-artifact.tgz "$YAG_RUNTIME_URL/artifacts/coverage-20"',
+      ),
     ]);
     expect(messages(nodeCi)).toEqual([
       '6 translated: Event types are ignored: the pipeline runs for every activity of this event',
@@ -222,8 +224,9 @@ jobs:
       '14 translated: ubuntu-latest runs on the built-in Linux pool (Debian bookworm with Node.js 22, python3, Docker, git, aws, helm and kubectl)',
       '16 translated: strategy.fail-fast is ignored',
       "25 translated: Uses the runner's Node.js (22 on the built-in pool), not ${{ matrix.node }}",
-      '27 translated: Dependency caching is not available yet (#51)',
-      '32 translated: Artifacts are not kept yet (#51): the files are discarded when the job ends',
+      '27 translated: with.cache is ignored: add an actions/cache step with an explicit key',
+      '32 translated: The artifact is kept as one .tar.gz archive, which the CI page downloads',
+      '33 translated: always() runs only while earlier steps pass: a failed step ends the job',
     ]);
     const tools = translateWorkflow(
       path('tools.yml'),
@@ -246,10 +249,129 @@ jobs:
     ).report;
     expect(tools.findings.map((f) => `${f.line} ${f.status}: ${f.message}`)).toEqual([
       "6 translated: Uses the runner's python3 (3.11 on the built-in pool, without pip or a python command), not 3.12",
-      '10 translated: Caching is not available yet (#51): the job starts without restored files',
       '13 translated: with.fetch-depth is ignored: the runner provides the source',
-      '15 unsupported: Artifacts are not passed between jobs yet (#51)',
+      '15 unsupported: Name one artifact of this run',
     ]);
+  });
+
+  it('maps actions/cache and the artifact actions onto job caches and artifacts (#51)', () => {
+    const text = `on: push
+jobs:
+  build:
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: npm-\${{ runner.os }}-\${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            npm-\${{ runner.os }}-
+      - run: npm ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist
+            report.xml
+          if-no-files-found: error
+          retention-days: 3
+  test:
+    needs: build
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: out }
+      - uses: actions/cache/restore@v4
+        with: { path: .turbo, key: turbo }
+      - uses: actions/cache/save@v4
+        with: { path: .turbo, key: 'turbo-\${{ github.sha }}' }
+`;
+    expect(messages(text)).toEqual([
+      '15 translated: The artifact is kept as one .tar.gz archive, which the CI page downloads',
+      '22 translated: Artifacts are kept 14 days',
+    ]);
+    const [build, test] = jobs('cache.yml', text);
+    // restore where the step is; save after the job's own steps
+    expect(build!.commands).toHaveLength(4);
+    expect(build!.commands[0]).toContain(
+      `key="npm-Linux-$(hash_files '**/package-lock.json')"\n`,
+    );
+    expect(build!.commands[0]).toContain('restore="npm-Linux-"\n');
+    expect(build!.commands[0]).toContain(
+      `printf '%s\\n%s\\n' "$PWD" "$key" > "\${TMPDIR:-/tmp}/yag-cache-0"`,
+    );
+    expect(build!.commands[0]).toContain(
+      '--data-urlencode "key=$key" --data-urlencode "restore_keys=$restore" "$YAG_RUNTIME_URL/caches"',
+    );
+    expect(build!.commands[1]).toBe('set +u +o pipefail\nnpm ci');
+    expect(build!.commands[2]).toContain(
+      'f=(); for p in dist report.xml; do if [ -e "$p" ]; then f+=("$p"); fi; done',
+    );
+    expect(build!.commands[2]).toContain(
+      'exit 1; fi\ntar -czf /tmp/yag-artifact.tgz -- "${f[@]}"',
+    );
+    expect(build!.commands[3]).toMatch(
+      /^if \[ ! -f "\$\{TMPDIR:-\/tmp\}\/yag-cache-0" \]; then .*\n\{ read -r dir; read -r key; \} </,
+    );
+    expect(build!.commands[3]).toContain('for p in ~/.npm node_modules;');
+    expect(build!.commands[3]).toContain('"$YAG_RUNTIME_URL/caches/$id"');
+    expect(test!.commands[0]).toContain(
+      'mkdir -p out\ncurl -fsS -H "authorization: Bearer $YAG_RUNTIME_TOKEN" -o /tmp/yag-artifact.tgz "$YAG_RUNTIME_URL/artifacts/dist"\ntar -xzf /tmp/yag-artifact.tgz -C out',
+    );
+    expect(test!.commands[1]).toContain('key="turbo"\n');
+    expect(test!.commands[1]).not.toContain('yag-cache-');
+    expect(test!.commands[2]).toContain('key="turbo-${GITHUB_SHA}"\n');
+    expect(test!.commands[2]).toContain('dir=$PWD\ncd "$dir"');
+    expect(test!.commands).toHaveLength(3);
+
+    expect(
+      messages(`on: push
+jobs:
+  a:
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/cache@v4
+        with: { path: 'a b', key: "\${{ hashFiles(env.X) }}" }
+      - uses: actions/upload-artifact@v4
+        with: { name: 'bad name', path: '!dist' }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'dist-*' }
+`),
+    ).toEqual([
+      '7 unsupported: Paths must be literal file paths or globs without spaces',
+      '7 unsupported: hashFiles() takes literal globs',
+      '9 unsupported: Artifact names are letters, digits, ., _ or -',
+      '9 unsupported: Excluded (!) paths are not supported',
+      '11 unsupported: with.pattern is not supported',
+      '11 unsupported: Name one artifact of this run',
+    ]);
+  });
+
+  it('maps upload-sarif onto code scanning uploads (#67)', () => {
+    const [scan] = jobs(
+      'sarif.yml',
+      `on: push
+permissions:
+  security-events: write
+jobs:
+  scan:
+    runs-on: [self-hosted]
+    steps:
+      - run: semgrep --sarif -o semgrep.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: semgrep.sarif, category: semgrep }
+`,
+    );
+    expect(scan!.permissions).toMatchObject({ security_events: 'write' });
+    expect(scan!.commands[1]).toBe(
+      [
+        'set +u +o pipefail',
+        `printf '{"sarif":"%s","category":"%s"}' "$(gzip -c semgrep.sarif | base64 | tr -d '\\n')" 'semgrep' |`,
+        `  curl -fsS -H "authorization: Bearer $YAG_CODE_SCANNING_TOKEN" -H 'content-type: application/json' --data @- "$YAG_CODE_SCANNING_URL"`,
+      ].join('\n'),
+    );
   });
 
   it('maps the Docker actions to docker login, build and push', () => {

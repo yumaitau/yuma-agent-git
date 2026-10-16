@@ -9,6 +9,7 @@ import {
   type Document,
 } from 'yaml';
 import { parseSpec, type PipelineFile } from '../spec';
+import { ARTIFACT_NAME } from '../artifacts';
 
 /**
  * GitHub Actions compatibility (issue #49): translate one
@@ -68,6 +69,7 @@ interface Aws {
 interface Permissions {
   id_token: 'none' | 'write';
   packages: 'none' | 'write';
+  security_events: 'none' | 'write';
 }
 interface Defaults {
   shell?: unknown;
@@ -322,28 +324,36 @@ export function shellCondition(
 interface JobState {
   aws: Aws | null;
   permissions: Permissions;
+  /** Steps run after the job's own steps, like an action's post step (cache saves). */
+  post: Obj[];
 }
 
-const NO_PERMISSIONS: Permissions = { id_token: 'none', packages: 'none' };
+const NO_PERMISSIONS: Permissions = {
+  id_token: 'none',
+  packages: 'none',
+  security_events: 'none',
+};
 
 function permissions(t: Translation, raw: unknown, at: Key[]): Permissions {
   if (raw === 'write-all') {
     t.note(
       'translated',
       at,
-      'write-all grants only id-token and packages here; jobs get no forge token',
+      'write-all grants only id-token, packages and security-events here; jobs get no forge token',
     );
-    return { id_token: 'write', packages: 'write' };
+    return { id_token: 'write', packages: 'write', security_events: 'write' };
   }
   if (raw === 'read-all' || raw === null || raw === undefined) return NO_PERMISSIONS;
   if (!isObj(raw)) {
     t.note('unsupported', at, 'Use read-all, write-all or a mapping for permissions');
     return NO_PERMISSIONS;
   }
-  const out: Permissions = { id_token: 'none', packages: 'none' };
+  const out: Permissions = { ...NO_PERMISSIONS };
   for (const [scope, level] of Object.entries(raw)) {
     if (scope === 'id-token') out.id_token = level === 'write' ? 'write' : 'none';
     else if (scope === 'packages') out.packages = level === 'write' ? 'write' : 'none';
+    else if (scope === 'security-events')
+      out.security_events = level === 'write' ? 'write' : 'none';
     else if (level === 'write')
       t.note(
         'translated',
@@ -517,6 +527,215 @@ function services(t: Translation, raw: unknown, at: Key[]): Obj | undefined {
   return out;
 }
 
+/** A path or glob a translated step uses unquoted: no spaces, quotes or shell syntax. */
+const PLAIN_PATH = /^(~\/)?[\w./*?@+=:-]+$/;
+const RUNTIME_AUTH = '-H "authorization: Bearer $YAG_RUNTIME_TOKEN"';
+const HASH_FILES =
+  'hash_files() { local p f; for p in "$@"; do for f in $p; do if [ -f "$f" ]; then sha256sum "$f"; fi; done; done | sha256sum | cut -c1-64; }';
+
+/** `with.path` lines; null (and noted) unless each is a plain path or glob. */
+function plainPaths(t: Translation, raw: string | undefined, at: Key[]): string[] | null {
+  const lines = (raw ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) t.note('unsupported', at, 'Set path');
+  else if (lines.some((l) => l.startsWith('!')))
+    t.note('unsupported', at, 'Excluded (!) paths are not supported');
+  else if (!lines.every((l) => PLAIN_PATH.test(l)))
+    t.note('unsupported', at, 'Paths must be literal file paths or globs without spaces');
+  else return lines;
+  return null;
+}
+
+/** A cache key as double-quoted shell text; `hashFiles()` and `runner.os` work too. */
+function cacheKey(
+  t: Translation,
+  value: string,
+  at: Key[],
+): { text: string; hashes: boolean } | null {
+  let ok = true;
+  let hashes = false;
+  let out = '';
+  let last = 0;
+  for (const m of value.matchAll(EXPRESSION)) {
+    out += dq(value.slice(last, m.index));
+    last = m.index + m[0].length;
+    const expr = m[1]!;
+    const args = /^hashFiles\((.*)\)$/s
+      .exec(expr)?.[1]
+      ?.split(',')
+      .map((a) => a.trim());
+    if (expr === 'runner.os') out += 'Linux';
+    else if (expr === 'runner.arch') out += 'X64';
+    else if (args) {
+      if (args.every((a) => /^'[^']+'$/.test(a) && PLAIN_PATH.test(a.slice(1, -1)))) {
+        hashes = true;
+        out += `$(hash_files ${args.join(' ')})`;
+      } else {
+        t.note('unsupported', at, 'hashFiles() takes literal globs');
+        ok = false;
+      }
+    } else {
+      const word = t.reference(expr, at);
+      if (word === null) ok = false;
+      else out += word;
+    }
+  }
+  return ok ? { text: out + dq(value.slice(last)), hashes } : null;
+}
+
+/**
+ * `actions/cache` on the forge's job caches (#51): restore where the step is,
+ * save in a step after the job's own steps (its post step). The restore step
+ * leaves the key and directory in a state file, so the save step knows them.
+ * `cache/restore` and `cache/save` do one half where they stand.
+ */
+function cache(
+  t: Translation,
+  name: string,
+  w: Map<string, string>,
+  at: Key[],
+  job: JobState,
+): string | null {
+  const withAt = [...at, 'with'];
+  const files = plainPaths(t, w.get('path'), [...withAt, 'path']);
+  const raw = w.get('key');
+  if (!raw) t.note('unsupported', withAt, 'Set key');
+  const key = raw ? cacheKey(t, raw, [...withAt, 'key']) : null;
+  const restoreKeys = (w.get('restore-keys') ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((r) => cacheKey(t, r, [...withAt, 'restore-keys']));
+  for (const k of w.keys())
+    if (!['path', 'key', 'restore-keys'].includes(k))
+      t.note('translated', [...withAt, k], `with.${k} is ignored`);
+  if (!files || !key || restoreKeys.some((r) => r === null)) return null;
+  const head = [
+    'shopt -s globstar nullglob',
+    ...(key.hashes || restoreKeys.some((r) => r!.hashes) ? [HASH_FILES] : []),
+    `key="${key.text}"`,
+    `if [ -z "\${YAG_RUNTIME_URL:-}" ]; then echo 'Cache skipped: this run has no YAG_RUNTIME_URL'; exit 0; fi`,
+  ];
+  const restore = [
+    `restore="${restoreKeys.map((r) => r!.text).join(',')}"`,
+    `code=$(curl -sS -G -o /tmp/yag-cache.tgz -w '%{http_code}' ${RUNTIME_AUTH} --data-urlencode "key=$key" --data-urlencode "restore_keys=$restore" "$YAG_RUNTIME_URL/caches") || code=failed`,
+    'if [ "$code" = 200 ]; then tar -xzPf /tmp/yag-cache.tgz; echo "Cache restored: $key"; else echo "No cache restored for $key ($code)"; fi',
+  ];
+  // needs $dir and $key; a failed save only warns, as on GitHub
+  const save = [
+    'cd "$dir"',
+    // relative paths stay relative to the step's directory, as GitHub keeps them
+    `f=(); for p in ${files.join(' ')}; do if [ -e "$p" ]; then f+=("$p"); fi; done`,
+    `if [ \${#f[@]} -eq 0 ]; then echo 'Cache not saved: no files match its path'; exit 0; fi`,
+    'tar -czPf /tmp/yag-cache.tgz -- "${f[@]}"',
+    'k=${key//\\\\/\\\\\\\\}; k=${k//\\"/\\\\\\"}',
+    `if r=$(curl -fsS -X POST ${RUNTIME_AUTH} -H 'content-type: application/json' -d "{\\"key\\":\\"$k\\"}" "$YAG_RUNTIME_URL/caches"); then`,
+    `  id=$(printf '%s' "$r" | sed -n 's/.*"id":"\\([^"]*\\)".*/\\1/p')`,
+    `  if curl -fsS -X PUT ${RUNTIME_AUTH} --data-binary @/tmp/yag-cache.tgz "$YAG_RUNTIME_URL/caches/$id" >/dev/null; then echo "Cache saved: $key"; else echo 'Cache not saved: the upload failed'; fi`,
+    `else echo "Cache not saved: $key exists or is being saved"; fi`,
+  ];
+  if (name === 'actions/cache/restore') return [...head, ...restore].join('\n');
+  if (name === 'actions/cache/save') return [...head, 'dir=$PWD', ...save].join('\n');
+  const state = `"\${TMPDIR:-/tmp}/yag-cache-${job.post.length}"`;
+  job.post.push({
+    name: 'Save cache',
+    run: [
+      `if [ ! -f ${state} ]; then echo 'Cache not saved: its restore step did not run'; exit 0; fi`,
+      `{ read -r dir; read -r key; } < ${state}`,
+      'shopt -s globstar nullglob',
+      ...save,
+    ].join('\n'),
+  });
+  return [...head, `printf '%s\\n%s\\n' "$PWD" "$key" > ${state}`, ...restore].join('\n');
+}
+
+/** An artifact name as double-quoted shell text; one with expressions is checked on upload. */
+function artifactName(t: Translation, name: string, at: Key[]): string | null {
+  if (hasExpression(name)) return t.text(name, at, true);
+  if (ARTIFACT_NAME.test(name)) return name;
+  t.note('unsupported', at, 'Artifact names are letters, digits, ., _ or -');
+  return null;
+}
+
+/** `upload-artifact` as one .tar.gz run artifact (#51), shared by the run's jobs. */
+function uploadArtifact(
+  t: Translation,
+  w: Map<string, string>,
+  at: Key[],
+): string | null {
+  const withAt = [...at, 'with'];
+  const name = artifactName(t, w.get('name') ?? 'artifact', [...withAt, 'name']);
+  const files = plainPaths(t, w.get('path'), [...withAt, 'path']);
+  const missing = w.get('if-no-files-found') ?? 'warn';
+  for (const key of w.keys())
+    if (key === 'retention-days')
+      t.note('translated', [...withAt, key], 'Artifacts are kept 14 days');
+    else if (!['name', 'path', 'if-no-files-found'].includes(key))
+      t.note('translated', [...withAt, key], `with.${key} is ignored`);
+  if (name === null) return null;
+  if (!['warn', 'error', 'ignore'].includes(missing)) {
+    t.note('unsupported', [...withAt, 'if-no-files-found'], 'Use warn, error or ignore');
+    return null;
+  }
+  if (!files) return null;
+  t.note(
+    'translated',
+    at,
+    'The artifact is kept as one .tar.gz archive, which the CI page downloads',
+  );
+  // one directory or file is the archive's root, as GitHub roots it
+  const single = files.length === 1 && !/[*?]/.test(files[0]!);
+  return [
+    `if [ -z "\${YAG_RUNTIME_URL:-}" ]; then echo 'Artifacts need YAG_RUNTIME_URL, which this run does not have'; exit 1; fi`,
+    'shopt -s globstar nullglob',
+    `f=(); for p in ${files.join(' ')}; do if [ -e "$p" ]; then f+=("$p"); fi; done`,
+    `if [ \${#f[@]} -eq 0 ]; then echo "No files found for artifact ${name}"; exit ${missing === 'error' ? 1 : 0}; fi`,
+    single
+      ? 'if [ -d "${f[0]}" ]; then tar -czf /tmp/yag-artifact.tgz -C "${f[0]}" .; else tar -czf /tmp/yag-artifact.tgz -C "$(dirname "${f[0]}")" "$(basename "${f[0]}")"; fi'
+      : 'tar -czf /tmp/yag-artifact.tgz -- "${f[@]}"',
+    `curl -fsS -X PUT ${RUNTIME_AUTH} --data-binary @/tmp/yag-artifact.tgz "$YAG_RUNTIME_URL/artifacts/${name}" >/dev/null`,
+  ].join('\n');
+}
+
+/** `download-artifact` of one named artifact of this run (#51), unpacked into `path`. */
+function downloadArtifact(
+  t: Translation,
+  w: Map<string, string>,
+  at: Key[],
+): string | null {
+  const withAt = [...at, 'with'];
+  const raw = w.get('name');
+  const dest = w.get('path') ?? '.';
+  let ok = true;
+  for (const key of w.keys())
+    if (
+      ['pattern', 'merge-multiple', 'run-id', 'repository', 'github-token'].includes(key)
+    ) {
+      t.note('unsupported', [...withAt, key], `with.${key} is not supported`);
+      ok = false;
+    } else if (key !== 'name' && key !== 'path')
+      t.note('translated', [...withAt, key], `with.${key} is ignored`);
+  if (!raw) {
+    t.note('unsupported', withAt, 'Name one artifact of this run');
+    return null;
+  }
+  const name = artifactName(t, raw, [...withAt, 'name']);
+  if (name === null) return null;
+  if (!PLAIN_PATH.test(dest)) {
+    t.note('unsupported', [...withAt, 'path'], 'path must be a literal directory');
+    return null;
+  }
+  if (!ok) return null;
+  return [
+    `if [ -z "\${YAG_RUNTIME_URL:-}" ]; then echo 'Artifacts need YAG_RUNTIME_URL, which this run does not have'; exit 1; fi`,
+    `mkdir -p ${dest}`,
+    `curl -fsS ${RUNTIME_AUTH} -o /tmp/yag-artifact.tgz "$YAG_RUNTIME_URL/artifacts/${name}"`,
+    `tar -xzf /tmp/yag-artifact.tgz -C ${dest}`,
+  ].join('\n');
+}
+
 /** A known action as a step body, null when the runner already does what it does. */
 function action(
   t: Translation,
@@ -589,7 +808,7 @@ function action(
         t.note(
           'translated',
           [...withAt, 'cache'],
-          'Dependency caching is not available yet (#51)',
+          'with.cache is ignored: add an actions/cache step with an explicit key',
         );
       if (w.has('registry-url'))
         t.note(
@@ -633,22 +852,39 @@ function action(
     case 'actions/cache':
     case 'actions/cache/restore':
     case 'actions/cache/save':
-      t.note(
-        'translated',
-        at,
-        'Caching is not available yet (#51): the job starts without restored files',
-      );
-      return null;
+      return cache(t, name, w, at, job);
     case 'actions/upload-artifact':
-      t.note(
-        'translated',
-        at,
-        'Artifacts are not kept yet (#51): the files are discarded when the job ends',
-      );
-      return null;
+      return uploadArtifact(t, w, at);
     case 'actions/download-artifact':
-      t.note('unsupported', at, 'Artifacts are not passed between jobs yet (#51)');
-      return null;
+      return downloadArtifact(t, w, at);
+    case 'github/codeql-action/upload-sarif': {
+      const file = literal('sarif_file') ?? 'results.sarif';
+      const category = literal('category');
+      for (const key of w.keys())
+        if (key !== 'sarif_file' && key !== 'category')
+          t.note('translated', [...withAt, key], `with.${key} is ignored`);
+      if (!PLAIN_PATH.test(file)) {
+        t.note(
+          'unsupported',
+          [...withAt, 'sarif_file'],
+          'sarif_file must be one file path',
+        );
+        return null;
+      }
+      if (job.permissions.security_events !== 'write') {
+        t.note(
+          'unsupported',
+          at,
+          'Uploading SARIF needs permissions: security-events: write',
+        );
+        return null;
+      }
+      // the forge's code scanning upload (#67): gzip, base64, JSON
+      return [
+        `printf '{"sarif":"%s"${category ? `,"category":"%s"` : ''}}' "$(gzip -c ${file} | base64 | tr -d '\\n')"${category ? ` ${sq(category.replace(/[\\"]/g, ''))}` : ''} |`,
+        `  curl -fsS -H "authorization: Bearer $YAG_CODE_SCANNING_TOKEN" -H 'content-type: application/json' --data @- "$YAG_CODE_SCANNING_URL"`,
+      ].join('\n');
+    }
     case 'aws-actions/configure-aws-credentials': {
       if (w.has('aws-access-key-id') || w.has('aws-secret-access-key')) {
         t.note(
@@ -789,7 +1025,7 @@ function job(
     return { steps: [] };
   }
   const out: Obj = {};
-  const state: JobState = { aws: null, permissions: workflow.permissions };
+  const state: JobState = { aws: null, permissions: workflow.permissions, post: [] };
   const env: Obj = { ...workflow.env };
   const defaults: Defaults = { ...workflow.defaults };
   let condition: string | null = null;
@@ -926,9 +1162,11 @@ function job(
     const translated = stepOf(t, step, path, state, { env, defaults, condition });
     if (translated) steps.push(translated);
   }
+  // post steps run last, in reverse order, only when the job's steps passed
+  steps.push(...state.post.reverse());
   out.steps = pack(t, steps, [...at, 'steps']);
   if (state.aws) out.aws = state.aws;
-  if (state.permissions.id_token === 'write' || state.permissions.packages === 'write')
+  if (Object.values(state.permissions).includes('write'))
     out.permissions = state.permissions;
   return out;
 }

@@ -82,20 +82,21 @@ get them too. Jobs of `.yuma` pipelines get none.
 
 ### Actions
 
-| Action                                            | Becomes                                                                                                                                                  |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actions/checkout`                                | Nothing: the runner checks out the revision. `fetch-depth`, `submodules`, `lfs` are ignored; `repository`, `ref` and `path` are unsupported.             |
-| `actions/setup-node`                              | Nothing: the runner's Node.js (22 on the built-in pool). Another version or `cache` is translated; `registry-url` is unsupported.                        |
-| `actions/setup-python`                            | Nothing: the runner's `python3` (3.11 on the built-in pool, without pip).                                                                                |
-| `pnpm/action-setup`                               | `npm install -g pnpm@<version>` or `corepack enable pnpm`, then `pnpm install` with `run_install: true`.                                                 |
-| `actions/cache`                                   | Nothing yet (#51): jobs start without restored files.                                                                                                    |
-| `actions/upload-artifact`                         | Nothing yet (#51): files are discarded when the job ends.                                                                                                |
-| `actions/download-artifact`                       | Unsupported until artifacts pass between jobs (#51).                                                                                                     |
-| `aws-actions/configure-aws-credentials`           | The job's `aws` block (#50): a forge-issued OIDC web identity token for the whole job. Needs `id-token: write` and a literal role and region (or `env`). |
-| `docker/login-action`                             | `docker login --password-stdin`; for Amazon ECR without a password, `aws ecr get-login-password` with the job's role.                                    |
-| `docker/setup-buildx-action`, `setup-qemu-action` | Nothing: images build with plain `docker build`.                                                                                                         |
-| `docker/build-push-action`                        | `docker build` with `file`, `tags`, `build-args`, `labels`, `target`, then `docker push` per tag when `push: true`. Only `linux/amd64`.                  |
-| `azure/setup-helm`                                | Nothing: the runner's helm (v3.22.0 on the built-in pool).                                                                                               |
+| Action                                            | Becomes                                                                                                                                                                                 |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actions/checkout`                                | Nothing: the runner checks out the revision. `fetch-depth`, `submodules`, `lfs` are ignored; `repository`, `ref` and `path` are unsupported.                                            |
+| `actions/setup-node`                              | Nothing: the runner's Node.js (22 on the built-in pool). Another version or `cache` is translated; `registry-url` is unsupported.                                                       |
+| `actions/setup-python`                            | Nothing: the runner's `python3` (3.11 on the built-in pool, without pip).                                                                                                               |
+| `pnpm/action-setup`                               | `npm install -g pnpm@<version>` or `corepack enable pnpm`, then `pnpm install` with `run_install: true`.                                                                                |
+| `actions/cache` (and `/restore`, `/save`)         | The job's cache (#51): restore where the step is, save after the job's steps pass. `key` and `restore-keys` may use `hashFiles()` and `runner.os`; `path` must be plain paths or globs. |
+| `actions/upload-artifact`                         | A run artifact (#51) holding one `.tar.gz` of `path` (one directory or file is its root), kept 14 days. `if-no-files-found` is honoured.                                                |
+| `actions/download-artifact`                       | One named artifact of the same run (#51), unpacked into `path`. `pattern`, `merge-multiple` and `run-id` are unsupported.                                                               |
+| `github/codeql-action/upload-sarif`               | The forge's code scanning upload (#67) for one `sarif_file`, with `category`. Needs `security-events: write`.                                                                           |
+| `aws-actions/configure-aws-credentials`           | The job's `aws` block (#50): a forge-issued OIDC web identity token for the whole job. Needs `id-token: write` and a literal role and region (or `env`).                                |
+| `docker/login-action`                             | `docker login --password-stdin`; for Amazon ECR without a password, `aws ecr get-login-password` with the job's role.                                                                   |
+| `docker/setup-buildx-action`, `setup-qemu-action` | Nothing: images build with plain `docker build`.                                                                                                                                        |
+| `docker/build-push-action`                        | `docker build` with `file`, `tags`, `build-args`, `labels`, `target`, then `docker push` per tag when `push: true`. Only `linux/amd64`.                                                 |
+| `azure/setup-helm`                                | Nothing: the runner's helm (v3.22.0 on the built-in pool).                                                                                                                              |
 
 ### Conditions
 
@@ -111,7 +112,7 @@ pass and `failure()` and `cancelled()` steps never run (both translated). A job
 Unsupported, with the reason in the report:
 
 - Any action not listed above, including `aquasecurity/trivy-action`,
-  `github/codeql-action/*`, `dtolnay/rust-toolchain` and local, composite and
+  other `github/codeql-action/*` actions, `dtolnay/rust-toolchain` and local, composite and
   Docker actions. Replace them with `run` steps. There is no vetted action
   mirror yet, so third-party action code never runs (and never sees secrets).
 - Reusable workflows (`jobs.<id>.uses`, `workflow_call`), `pull_request_target`
@@ -125,8 +126,8 @@ Unsupported, with the reason in the report:
   expressions, job `continue-on-error`, `paths-ignore`, `branches-ignore` and
   negated patterns, shells other than bash and sh.
 - Expressions without an equivalent: `github.event.*`, `github.head_ref`,
-  `github.token`, `inputs.*`, `steps.*`, `needs.*.outputs`, `hashFiles()` and
-  `fromJSON()`. Writes to `$GITHUB_ENV` and `$GITHUB_PATH` do not reach later
+  `github.token`, `inputs.*`, `steps.*`, `needs.*.outputs`, `fromJSON()`, and
+  `hashFiles()` outside cache keys. Writes to `$GITHUB_ENV` and `$GITHUB_PATH` do not reach later
   steps; `$GITHUB_OUTPUT` and `$GITHUB_STEP_SUMMARY` writes are discarded.
 - Static AWS keys in `configure-aws-credentials`, role chaining, and more than
   one AWS role per job.
@@ -138,4 +139,6 @@ Other differences to know about:
 - Expressions become shell variables, so inside single quotes they no longer
   expand as GitHub's text substitution would.
 - The `github` context is limited to the variables above.
-- Artifacts and caches wait on #51.
+- Artifacts and caches use the forge's job routes (`YAG_RUNTIME_URL`), not
+  GitHub's artifact v4 and cache protocols. Scheduled built-in runs have no
+  `YAG_RUNTIME_URL`: their artifact steps fail and their caches are skipped.
