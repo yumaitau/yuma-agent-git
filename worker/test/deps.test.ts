@@ -262,7 +262,12 @@ describe('OSV matching (#67)', () => {
       ranges: [
         {
           type: 'SEMVER',
-          events: [{ introduced: '0' }, { fixed: '1.5.0' }, { introduced: '2.0.0' }, { fixed: '2.3.1' }],
+          events: [
+            { introduced: '0' },
+            { fixed: '1.5.0' },
+            { introduced: '2.0.0' },
+            { fixed: '2.3.1' },
+          ],
         },
         { type: 'GIT', events: [{ introduced: 'abc' }] },
       ],
@@ -277,7 +282,9 @@ describe('OSV matching (#67)', () => {
     expect(fixedVersion(affected, '1.2.0')).toBe('1.5.0');
     expect(fixedVersion(affected, '2.2.0')).toBe('2.3.1');
     const last = {
-      ranges: [{ type: 'ECOSYSTEM', events: [{ introduced: '1.0' }, { last_affected: '1.4' }] }],
+      ranges: [
+        { type: 'ECOSYSTEM', events: [{ introduced: '1.0' }, { last_affected: '1.4' }] },
+      ],
       versions: [],
     };
     expect(isAffected(last, '1.4')).toBe(true);
@@ -317,7 +324,9 @@ const LODASH: OsvEntry = {
   summary: 'Command injection in lodash',
   aliases: ['CVE-2021-23337'],
   database_specific: { severity: 'HIGH' },
-  references: [{ type: 'ADVISORY', url: 'https://nvd.nist.gov/vuln/detail/CVE-2021-23337' }],
+  references: [
+    { type: 'ADVISORY', url: 'https://nvd.nist.gov/vuln/detail/CVE-2021-23337' },
+  ],
   affected: [
     {
       package: { ecosystem: 'npm', name: 'lodash' },
@@ -444,7 +453,10 @@ describe('dependency alerts (#67)', () => {
       "INSERT INTO repo_members (repo_id, user_id, role) VALUES (?, ?, 'write')",
       [repo.id, dev.userId],
     );
-    base = await commit(null, { 'package-lock.json': lock('4.17.20'), 'README.md': 'x\n' });
+    base = await commit(null, {
+      'package-lock.json': lock('4.17.20'),
+      'README.md': 'x\n',
+    });
     await setRef(dbEnv, repo.id, 'main', base);
   });
 
@@ -460,24 +472,36 @@ describe('dependency alerts (#67)', () => {
     expect(deps.snapshot.cs_id).toBe(base);
     // nothing moved: nothing queued
     expect(await match()).toBe(0);
-    const next = await commit(base, { 'README.md': 'y\n', 'api/go.sum': 'example.com/m v1.0.0 h1:a=\n' });
+    const next = await commit(base, {
+      'README.md': 'y\n',
+      'api/go.sum': 'example.com/m v1.0.0 h1:a=\n',
+    });
     await setRef(dbEnv, repo.id, 'main', next);
     expect(await match()).toBe(1);
     const graph = JSON.parse(
       (await peekDerived(dbEnv, repo.id, DEPENDENCIES, next))!,
     ) as { lockfiles: { path: string }[] };
-    expect(graph.lockfiles.map((l) => l.path)).toEqual(['api/go.sum', 'package-lock.json']);
+    expect(graph.lockfiles.map((l) => l.path)).toEqual([
+      'api/go.sum',
+      'package-lock.json',
+    ]);
   });
 
   it('loads an OSV snapshot, raises alerts, fixes and reopens them', async () => {
     await match();
     expect(await alerts()).toEqual([]);
     // only security admins load advisories
-    expect((await call('POST', '/admin/advisories', { advisories: [LODASH] })).status).toBe(
-      403,
-    );
+    expect(
+      (await call('POST', '/admin/advisories', { advisories: [LODASH] })).status,
+    ).toBe(403);
     const loaded = await json<{ loaded: number; attribution: string }>(
-      await call('POST', '/admin/advisories', { advisories: [LODASH] }, owner.headers, adminApp()),
+      await call(
+        'POST',
+        '/admin/advisories',
+        { advisories: [LODASH] },
+        owner.headers,
+        adminApp(),
+      ),
     );
     expect(loaded.loaded).toBe(1);
     expect(loaded.attribution).toContain('CC-BY 4.0');
@@ -497,7 +521,13 @@ describe('dependency alerts (#67)', () => {
     expect(alert!.attribution).toContain('osv.dev');
     // reloading the same entry changes nothing
     const again = await json<{ loaded: number; unchanged: number }>(
-      await call('POST', '/admin/advisories', { advisories: [LODASH] }, owner.headers, adminApp()),
+      await call(
+        'POST',
+        '/admin/advisories',
+        { advisories: [LODASH] },
+        owner.headers,
+        adminApp(),
+      ),
     );
     expect(again).toMatchObject({ loaded: 0, unchanged: 1 });
 
@@ -562,11 +592,18 @@ describe('dependency alerts (#67)', () => {
       readiness: string;
       risk: string;
     }>(
-      await call('POST', `/repos/acme/shop/dependency-alerts/${alert!.id}/work`, {}, agent),
+      await call(
+        'POST',
+        `/repos/acme/shop/dependency-alerts/${alert!.id}/work`,
+        {},
+        agent,
+      ),
       201,
     );
     expect(filed).toMatchObject({ created: true, risk: 'low', readiness: 'needs-prep' });
-    expect(filed.issue.title).toBe('Bump lodash from 4.17.20 to 4.17.21 in package-lock.json');
+    expect(filed.issue.title).toBe(
+      'Bump lodash from 4.17.20 to 4.17.21 in package-lock.json',
+    );
     expect(filed.issue.body).toContain('GHSA-35jh-r3h4-6jhm');
     const work = await q1<{ readiness: string; risk: string }>(
       dbEnv,
@@ -576,11 +613,22 @@ describe('dependency alerts (#67)', () => {
     expect(work).toEqual({ readiness: 'needs-prep', risk: 'low' });
     // once is enough
     const twice = await json<{ created: boolean; issue: { number: number } }>(
-      await call('POST', `/repos/acme/shop/dependency-alerts/${alert!.id}/work`, {}, agent),
+      await call(
+        'POST',
+        `/repos/acme/shop/dependency-alerts/${alert!.id}/work`,
+        {},
+        agent,
+      ),
     );
-    expect(twice).toMatchObject({ created: false, issue: { number: filed.issue.number } });
+    expect(twice).toMatchObject({
+      created: false,
+      issue: { number: filed.issue.number },
+    });
     expect(
-      await q1(dbEnv, "SELECT 1 FROM audit_events WHERE action = 'dependency_alert.work'"),
+      await q1(
+        dbEnv,
+        "SELECT 1 FROM audit_events WHERE action = 'dependency_alert.work'",
+      ),
     ).not.toBeNull();
 
     const dismissed = await json<{ alert: AlertView }>(
@@ -600,8 +648,14 @@ describe('dependency alerts (#67)', () => {
     // whole-repository write to see alerts at all
     const stranger = await loginAs(testEnv, 923, 'stranger');
     expect(
-      (await call('GET', '/repos/acme/shop/dependency-alerts', undefined, stranger.headers))
-        .status,
+      (
+        await call(
+          'GET',
+          '/repos/acme/shop/dependency-alerts',
+          undefined,
+          stranger.headers,
+        )
+      ).status,
     ).toBe(404);
   });
 
@@ -644,7 +698,11 @@ describe('dependency alerts (#67)', () => {
       `https://api.osv.dev/v1/vulns/${LODASH.id}`,
     ]);
     // checked within the day: not asked again
-    expect(await syncAdvisories(dbEnv, fetcher)).toEqual({ packages: 0, fetched: 0, loaded: 0 });
+    expect(await syncAdvisories(dbEnv, fetcher)).toEqual({
+      packages: 0,
+      fetched: 0,
+      loaded: 0,
+    });
     await match();
     expect((await alerts()).map((a) => a.advisory_id)).toEqual([LODASH.id]);
     // operators can turn the sync off
@@ -652,7 +710,11 @@ describe('dependency alerts (#67)', () => {
       get: (t, k, r) => (k === 'OSV_SYNC' ? 'off' : Reflect.get(t, k, r)),
     });
     await run(dbEnv, 'DELETE FROM osv_packages');
-    expect(await syncAdvisories(off, fetcher)).toEqual({ packages: 0, fetched: 0, loaded: 0 });
+    expect(await syncAdvisories(off, fetcher)).toEqual({
+      packages: 0,
+      fetched: 0,
+      loaded: 0,
+    });
   });
 
   it('blocks a merge that adds a vulnerable dependency under a security_alerts rule', async () => {
@@ -665,7 +727,9 @@ describe('dependency alerts (#67)', () => {
         affected: [
           {
             package: { ecosystem: 'npm', name: 'minimist' },
-            ranges: [{ type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.2.6' }] }],
+            ranges: [
+              { type: 'SEMVER', events: [{ introduced: '0' }, { fixed: '1.2.6' }] },
+            ],
           },
         ],
       },
@@ -693,13 +757,18 @@ describe('dependency alerts (#67)', () => {
     });
     const pull = (
       await json<{ pull: Pull }>(
-        await call('POST', '/repos/acme/shop/pulls', { title: 'Bump', head_cs: head }, dev.headers),
+        await call(
+          'POST',
+          '/repos/acme/shop/pulls',
+          { title: 'Bump', head_cs: head },
+          dev.headers,
+        ),
         201,
       )
     ).pull;
-    const found = await json<{ dependencies: { advisory_id: string; severity: string }[] }>(
-      await call('GET', `/repos/acme/shop/pulls/${pull.id}/security`),
-    );
+    const found = await json<{
+      dependencies: { advisory_id: string; severity: string }[];
+    }>(await call('GET', `/repos/acme/shop/pulls/${pull.id}/security`));
     expect(found.dependencies.map((d) => [d.advisory_id, d.severity]).sort()).toEqual([
       ['GHSA-35jh-r3h4-6jhm', 'high'],
       ['GHSA-low', 'low'],

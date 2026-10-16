@@ -75,7 +75,10 @@ export type OsvEntry = z.infer<typeof osvEntrySchema>;
 const AFTER_RELEASE = new Set(['post']);
 
 function tokens(version: string): (number | string)[] {
-  const v = version.toLowerCase().replace(/^v(?=\d)/, '').replace(/\+.*$/, '');
+  const v = version
+    .toLowerCase()
+    .replace(/^v(?=\d)/, '')
+    .replace(/\+.*$/, '');
   return (v.match(/\d+|[a-z]+/g) ?? []).map((t) => (/^\d/.test(t) ? Number(t) : t));
 }
 
@@ -130,7 +133,8 @@ export interface Affected {
 
 export function isAffected(affected: Affected, version: string): boolean {
   return (
-    affected.versions.includes(version) || affected.ranges.some((r) => inRange(r, version))
+    affected.versions.includes(version) ||
+    affected.ranges.some((r) => inRange(r, version))
   );
 }
 
@@ -365,13 +369,17 @@ export async function syncAdvisories(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      queries: packages.map((p) => ({ package: { ecosystem: p.ecosystem, name: p.name } })),
+      queries: packages.map((p) => ({
+        package: { ecosystem: p.ecosystem, name: p.name },
+      })),
     }),
   });
   if (!res.ok) throw new Error(`OSV querybatch failed: ${res.status}`);
   const batch = batchResponse.parse(await res.json());
   const known = new Map<string, string>();
-  const all = [...new Set(batch.results.flatMap((r) => (r.vulns ?? []).map((v) => v.id)))];
+  const all = [
+    ...new Set(batch.results.flatMap((r) => (r.vulns ?? []).map((v) => v.id))),
+  ];
   for (let i = 0; i < all.length; i += 90) {
     const ids = all.slice(i, i + 90);
     for (const row of await q<{ id: string; modified: string }>(
@@ -397,7 +405,9 @@ export async function syncAdvisories(
   result.fetched = entries.length;
   result.loaded = (await loadAdvisories(env, entries)).loaded;
   const done = packages.filter((_, i) =>
-    (batch.results[i]?.vulns ?? []).every((v) => !wanted.has(v.id) || fetchedIds.has(v.id)),
+    (batch.results[i]?.vulns ?? []).every(
+      (v) => !wanted.has(v.id) || fetchedIds.has(v.id),
+    ),
   );
   const marks = done.map((p) =>
     env.DB.prepare(

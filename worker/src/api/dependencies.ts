@@ -163,7 +163,12 @@ dependencyRoutes.patch('/repos/:repo{.+}/dependency-alerts/:id', async (c) => {
     const before = await loadAlert(c, repo.id);
     if (!before) return apiError(c, 404, 'alert_not_found', 'Alert not found');
     if (before.state === 'fixed')
-      return apiError(c, 409, 'alert_fixed', 'A fixed alert cannot be dismissed or reopened');
+      return apiError(
+        c,
+        409,
+        'alert_fixed',
+        'A fixed alert cannot be dismissed or reopened',
+      );
     const dismissed = parsed.data.state === 'dismissed';
     const after: DependencyAlert = {
       ...before,
@@ -216,11 +221,7 @@ dependencyRoutes.patch('/repos/:repo{.+}/dependency-alerts/:id', async (c) => {
 /** A patch update (same major and minor) is low risk; anything larger is medium. */
 function riskOf(from: string, to: string): 'low' | 'medium' {
   const head = (v: string): string =>
-    v
-      .replace(/^v/, '')
-      .split(/[.-]/)
-      .slice(0, 2)
-      .join('.');
+    v.replace(/^v/, '').split(/[.-]/).slice(0, 2).join('.');
   return head(from) === head(to) ? 'low' : 'medium';
 }
 
@@ -254,7 +255,10 @@ dependencyRoutes.post('/repos/:repo{.+}/dependency-alerts/:id/work', async (c) =
     const [view] = await alertViews(c.env, [alert]);
     const advisory = (view?.advisory ?? {}) as { url?: string; summary?: string };
     const title =
-      `Bump ${alert.name} from ${alert.version} to ${fixed} in ${alert.path}`.slice(0, 256);
+      `Bump ${alert.name} from ${alert.version} to ${fixed} in ${alert.path}`.slice(
+        0,
+        256,
+      );
     const body = [
       `Bump \`${alert.name}\` (${alert.ecosystem}) from \`${alert.version}\` to \`${fixed}\` in \`${alert.path}\`.`,
       '',
@@ -326,7 +330,12 @@ dependencyRoutes.post('/admin/advisories', async (c) => {
       return apiError(c, 403, 'forbidden', 'security admin required');
     const parsed = loadAdvisoriesSchema.safeParse(await readJsonBody(c));
     if (!parsed.success)
-      return apiError(c, 400, 'invalid_request', 'Send 1 to 1000 OSV entries as advisories');
+      return apiError(
+        c,
+        400,
+        'invalid_request',
+        'Send 1 to 1000 OSV entries as advisories',
+      );
     const result = await loadAdvisories(c.env, parsed.data.advisories);
     await recordAudit(c, {
       action: 'advisories.load',

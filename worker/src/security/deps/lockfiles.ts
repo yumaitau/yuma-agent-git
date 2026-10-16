@@ -8,13 +8,7 @@ import { parse as parseYaml } from 'yaml';
  */
 
 export type Ecosystem =
-  | 'npm'
-  | 'PyPI'
-  | 'Go'
-  | 'crates.io'
-  | 'Packagist'
-  | 'Maven'
-  | 'SwiftURL';
+  'npm' | 'PyPI' | 'Go' | 'crates.io' | 'Packagist' | 'Maven' | 'SwiftURL';
 
 export interface Package {
   name: string;
@@ -97,7 +91,9 @@ function pnpmKey(key: string): Package | null {
   const at = bare.indexOf('@', 1);
   if (at > 0) return { name: bare.slice(0, at), version: bare.slice(at + 1) };
   const slash = bare.lastIndexOf('/');
-  return slash > 0 ? { name: bare.slice(0, slash), version: bare.slice(slash + 1) } : null;
+  return slash > 0
+    ? { name: bare.slice(0, slash), version: bare.slice(slash + 1) }
+    : null;
 }
 
 function pnpmLock(text: string): Package[] {
@@ -143,10 +139,14 @@ export function pypiName(name: string): string {
 function requirements(text: string): Package[] {
   const out: Package[] = [];
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/\s#.*$/, '').split(';')[0]!.trim();
-    const m = /^([A-Za-z0-9][A-Za-z0-9._-]*)(\[[^\]]*\])?\s*===?\s*([A-Za-z0-9.!+_-]+)$/.exec(
-      line,
-    );
+    const line = raw
+      .replace(/\s#.*$/, '')
+      .split(';')[0]!
+      .trim();
+    const m =
+      /^([A-Za-z0-9][A-Za-z0-9._-]*)(\[[^\]]*\])?\s*===?\s*([A-Za-z0-9.!+_-]+)$/.exec(
+        line,
+      );
     if (m) out.push({ name: pypiName(m[1]!), version: m[3]! });
   }
   return unique(out);

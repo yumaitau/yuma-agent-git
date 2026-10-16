@@ -70,7 +70,10 @@ const resultSchema = z.looseObject({
     })
     .optional(),
   level: z.string().optional(),
-  message: z.looseObject({ text: z.string().optional(), markdown: z.string().optional() }),
+  message: z.looseObject({
+    text: z.string().optional(),
+    markdown: z.string().optional(),
+  }),
   locations: z
     .array(
       z.looseObject({
@@ -240,7 +243,11 @@ export async function analysesOf(
     const findings = new Map<string, Finding>();
     for (const result of run.results ?? []) {
       if (++total > MAX_RESULTS)
-        throw new ApiError(413, 'too_many_results', `An upload holds at most ${MAX_RESULTS} results.`);
+        throw new ApiError(
+          413,
+          'too_many_results',
+          `An upload holds at most ${MAX_RESULTS} results.`,
+        );
       const component = components[result.rule?.toolComponent?.index ?? 0];
       const index = result.ruleIndex ?? result.rule?.index;
       const indexed = index === undefined ? undefined : component?.rules?.[index];
@@ -250,7 +257,8 @@ export async function analysesOf(
       const region = location?.region;
       const finding = {
         rule_id: ruleId.slice(0, 255),
-        rule_name: (rule?.shortDescription?.text ?? rule?.name ?? null)?.slice(0, 500) ?? null,
+        rule_name:
+          (rule?.shortDescription?.text ?? rule?.name ?? null)?.slice(0, 500) ?? null,
         severity: severityOf(result, rule),
         message: (result.message.text ?? result.message.markdown ?? '').slice(0, 4000),
         path: pathOf(location?.artifactLocation?.uri),
@@ -264,7 +272,10 @@ export async function analysesOf(
     }
     out.push({
       tool: (overrides.tool_name ?? run.tool.driver.name).slice(0, 100),
-      category: (overrides.category ?? categoryOf(run.automationDetails?.id)).slice(0, 255),
+      category: (overrides.category ?? categoryOf(run.automationDetails?.id)).slice(
+        0,
+        255,
+      ),
       findings: [...findings.values()],
     });
   }
@@ -333,7 +344,14 @@ export async function ingestAnalyses(
       env,
       `INSERT INTO code_scanning_analyses (repo_id, ref, cs_id, tool, category, results, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-      [...key.slice(0, 2), at.csId, ...key.slice(2), analysis.findings.length, actor.id, now],
+      [
+        ...key.slice(0, 2),
+        at.csId,
+        ...key.slice(2),
+        analysis.findings.length,
+        actor.id,
+        now,
+      ],
     );
     const id = created!.id;
     const before = new Map(
@@ -385,7 +403,8 @@ export async function ingestAnalyses(
         now,
       ),
     );
-    for (let i = 0; i < writes.length; i += 100) await env.DB.batch(writes.slice(i, i + 100));
+    for (let i = 0; i < writes.length; i += 100)
+      await env.DB.batch(writes.slice(i, i + 100));
     const found = new Set(analysis.findings.map((f) => f.fingerprint));
     const gone = [...before.values()].filter(
       (a) => a.state === 'open' && !found.has(a.fingerprint),
@@ -463,8 +482,7 @@ export async function pullFindings(
 ): Promise<(CodeScanningAlert & { new: boolean })[]> {
   const rows = await q(
     env,
-    `SELECT ${ALERT_COLUMNS
-      .split(', ')
+    `SELECT ${ALERT_COLUMNS.split(', ')
       .map((c) => `a.${c}`)
       .join(', ')},
             NOT EXISTS (SELECT 1 FROM code_scanning_alerts b

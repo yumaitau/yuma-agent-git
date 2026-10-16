@@ -194,7 +194,8 @@ export async function prepareJob(
   }
   if (policy.permissions.security_events === 'write') {
     // code scanning (#67): the request token uploads SARIF for this run's changeset
-    if (!context.origin) notes.push('code scanning upload needs a run started from the forge');
+    if (!context.origin)
+      notes.push('code scanning upload needs a run started from the forge');
     else {
       if (request === null) {
         request = await createRequestToken(env, job.id, deadline);

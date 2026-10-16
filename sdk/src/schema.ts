@@ -123,6 +123,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/admin/advisories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Load OSV advisory entries (an offline snapshot); security admins only */
+    post: operations['loadAdvisories'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/admin/agents/pause': {
     parameters: {
       query?: never;
@@ -1655,6 +1672,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/repos/{owner}/{repo}/code-scanning/alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Code scanning alerts on a ref (`?ref=&state=&severity=&tool=&cursor=`) */
+    get: operations['listCodeScanningAlerts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/code-scanning/alerts/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Dismiss (with a reason) or reopen a code scanning alert; people only */
+    patch: operations['updateCodeScanningAlert'];
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/code-scanning/sarif': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload SARIF 2.1.0 (gzip, base64) for a commit and ref; agents need `security_events:write` */
+    post: operations['uploadSarif'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/repos/{owner}/{repo}/codeowners': {
     parameters: {
       query?: never;
@@ -1683,6 +1751,74 @@ export interface paths {
     put?: never;
     /** Link the repo to a GitHub repo via the App */
     post: operations['connectGithub'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/dependencies': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Packages the default branch lockfiles pin (`?ecosystem=&cursor=`) */
+    get: operations['listDependencies'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/dependency-alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Dependency alerts from OSV advisories (`?state=&severity=&cursor=`), with attribution */
+    get: operations['listDependencyAlerts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/dependency-alerts/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Dismiss (with a reason) or reopen a dependency alert; people only */
+    patch: operations['updateDependencyAlert'];
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/dependency-alerts/{id}/work': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** File an update work item (issue) for the fixed version, for an agent to pick up */
+    post: operations['createDependencyUpdateWork'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2565,6 +2701,23 @@ export interface paths {
     get: operations['listReviewRequests'];
     /** Request reviews from people, teams, agents */
     put: operations['setReviewRequests'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/repos/{owner}/{repo}/pulls/{id}/security': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Code scanning findings and vulnerable dependencies a pull request adds */
+    get: operations['getPullSecurity'];
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -3540,6 +3693,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/ci/code-scanning/sarif': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload SARIF from a running CI job with `permissions.security_events: write` (the job's changeset and ref) */
+    post: operations['uploadCiSarif'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/ci/oidc/.well-known/openid-configuration': {
     parameters: {
       query?: never;
@@ -4328,6 +4498,78 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  loadAdvisories: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          advisories: ({
+            id: string;
+            modified: string;
+            withdrawn?: string;
+            summary?: string;
+            details?: string;
+            aliases?: string[];
+            severity?: ({
+              type: string;
+              score: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            database_specific?: {
+              [key: string]: unknown;
+            };
+            references?: ({
+              type: string;
+              url: string;
+            } & {
+              [key: string]: unknown;
+            })[];
+            affected?: ({
+              package: {
+                ecosystem: string;
+                name: string;
+              } & {
+                [key: string]: unknown;
+              };
+              ranges?: {
+                type: string;
+                events: {
+                  introduced?: string;
+                  fixed?: string;
+                  last_affected?: string;
+                  limit?: string;
+                }[];
+              }[];
+              versions?: string[];
+            } & {
+              [key: string]: unknown;
+            })[];
+          } & {
+            [key: string]: unknown;
+          })[];
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getInstanceAgentPause: {
     parameters: {
       query?: never;
@@ -4491,6 +4733,7 @@ export interface operations {
             | 'queue:approve'
             | 'issues:write'
             | 'packages:write'
+            | 'security_events:write'
           )[];
           allowed_repos?: string[] | null;
           org?: string;
@@ -4684,6 +4927,7 @@ export interface operations {
             | 'queue:approve'
             | 'issues:write'
             | 'packages:write'
+            | 'security_events:write'
           )[];
           org?: string;
           webhook?: {
@@ -4699,6 +4943,8 @@ export interface operations {
               | 'ci_run'
               | 'work_item'
               | 'secret_scanning_alert'
+              | 'dependency_alert'
+              | 'code_scanning_alert'
               | 'merge_group'
               | 'release'
               | 'package'
@@ -4948,6 +5194,8 @@ export interface operations {
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
+            | 'dependency_alert'
+            | 'code_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
@@ -5678,6 +5926,8 @@ export interface operations {
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
+            | 'dependency_alert'
+            | 'code_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
@@ -7626,7 +7876,8 @@ export interface operations {
           /**
            * @default {
            *       "id_token": "none",
-           *       "packages": "none"
+           *       "packages": "none",
+           *       "security_events": "none"
            *     }
            */
           permissions?: {
@@ -7640,6 +7891,11 @@ export interface operations {
              * @enum {string}
              */
             packages?: 'none' | 'write';
+            /**
+             * @default none
+             * @enum {string}
+             */
+            security_events?: 'none' | 'write';
           };
           /** @default null */
           aws?: {
@@ -7883,6 +8139,110 @@ export interface operations {
       '5XX': components['responses']['Error'];
     };
   };
+  listCodeScanningAlerts: {
+    parameters: {
+      query?: {
+        ref?: string;
+        state?: 'open' | 'fixed' | 'dismissed';
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        tool?: string;
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateCodeScanningAlert: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json':
+          | {
+              /** @constant */
+              state: 'dismissed';
+              /** @enum {string} */
+              reason: 'false_positive' | 'wont_fix' | 'used_in_tests';
+            }
+          | {
+              /** @constant */
+              state: 'open';
+            };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  uploadSarif: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          commit_sha?: string;
+          ref?: string;
+          sarif: string;
+          category?: string;
+          tool_name?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
   getCodeowners: {
     parameters: {
       query?: {
@@ -7929,6 +8289,134 @@ export interface operations {
         };
       };
     };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listDependencies: {
+    parameters: {
+      query?: {
+        ecosystem?: string;
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  listDependencyAlerts: {
+    parameters: {
+      query?: {
+        state?: 'open' | 'fixed' | 'dismissed';
+        severity?: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+        cursor?: string;
+      };
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  updateDependencyAlert: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json':
+          | {
+              /** @constant */
+              state: 'dismissed';
+              /** @enum {string} */
+              reason:
+                | 'fix_started'
+                | 'inaccurate'
+                | 'no_bandwidth'
+                | 'not_used'
+                | 'tolerable_risk';
+            }
+          | {
+              /** @constant */
+              state: 'open';
+            };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  createDependencyUpdateWork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Success */
       '2XX': {
@@ -8356,6 +8844,8 @@ export interface operations {
             | 'ci_run'
             | 'work_item'
             | 'secret_scanning_alert'
+            | 'dependency_alert'
+            | 'code_scanning_alert'
             | 'merge_group'
             | 'release'
             | 'package'
@@ -9985,6 +10475,32 @@ export interface operations {
         };
       };
     };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
+    };
+  };
+  getPullSecurity: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        owner: string;
+        repo: string;
+        id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Success */
       '2XX': {
@@ -12111,6 +12627,36 @@ export interface operations {
           'application/json': unknown;
         };
       };
+    };
+  };
+  uploadCiSarif: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          commit_sha?: string;
+          ref?: string;
+          sarif: string;
+          category?: string;
+          tool_name?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      '2XX': {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      '4XX': components['responses']['Error'];
+      '5XX': components['responses']['Error'];
     };
   };
   getCiOidcConfiguration: {

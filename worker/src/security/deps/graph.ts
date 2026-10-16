@@ -303,7 +303,12 @@ export async function alertViews(
   const advisories = new Map<string, Record<string, unknown>>();
   for (let i = 0; i < ids.length; i += 90) {
     const chunk = ids.slice(i, i + 90);
-    for (const row of await q<{ id: string; summary: string; aliases: string; url: string }>(
+    for (const row of await q<{
+      id: string;
+      summary: string;
+      aliases: string;
+      url: string;
+    }>(
       env,
       `SELECT id, summary, aliases, url FROM osv_advisories WHERE id IN (${chunk.map(() => '?').join(',')})`,
       chunk,
@@ -360,9 +365,13 @@ export async function syncRepoDependencies(
       ).bind(repoId, d.ecosystem, d.name, d.version, d.path),
     ),
   ];
-  const matches = new Map((await matchDependencies(env, deps)).map((m) => [matchKey(m), m]));
+  const matches = new Map(
+    (await matchDependencies(env, deps)).map((m) => [matchKey(m), m]),
+  );
   const existing = (
-    await q(env, `SELECT ${ALERT_COLUMNS} FROM dependency_alerts WHERE repo_id = ?`, [repoId])
+    await q(env, `SELECT ${ALERT_COLUMNS} FROM dependency_alerts WHERE repo_id = ?`, [
+      repoId,
+    ])
   ).map((r) => alertRowSchema.parse(r));
   const events: { action: string; key: string }[] = [];
   for (const alert of existing) {
@@ -432,7 +441,8 @@ export async function syncRepoDependencies(
     events.push({ action: 'created', key });
   }
   writes.push(snapshot);
-  for (let i = 0; i < writes.length; i += 100) await env.DB.batch(writes.slice(i, i + 100));
+  for (let i = 0; i < writes.length; i += 100)
+    await env.DB.batch(writes.slice(i, i + 100));
   if (events.length > 0) {
     const rows = (
       await q(env, `SELECT ${ALERT_COLUMNS} FROM dependency_alerts WHERE repo_id = ?`, [
@@ -518,7 +528,8 @@ export async function dependencyMessage(
 ): Promise<void> {
   const { repo_id: repoId, cs_id: csId } = message.body;
   try {
-    if (await getChangeset(env, repoId, csId)) await syncRepoDependencies(env, repoId, csId);
+    if (await getChangeset(env, repoId, csId))
+      await syncRepoDependencies(env, repoId, csId);
     message.ack();
   } catch (err) {
     if (message.attempts >= 3) {

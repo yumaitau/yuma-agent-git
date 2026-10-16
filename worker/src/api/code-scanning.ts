@@ -62,7 +62,8 @@ async function changesetOf(env: Env, repoId: string, sha: string): Promise<strin
     sha.length === 40
       ? await changesetForSha1(env, repoId, sha)
       : (await getChangeset(env, repoId, sha))?.id;
-  if (!csId) throw new ApiError(422, 'unknown_commit', `No commit ${sha} in this repository`);
+  if (!csId)
+    throw new ApiError(422, 'unknown_commit', `No commit ${sha} in this repository`);
   return csId;
 }
 
@@ -105,7 +106,11 @@ async function ingest(
 function parseUpload(value: unknown): UploadSarif {
   const parsed = uploadSarifSchema.safeParse(value);
   if (!parsed.success)
-    throw new ApiError(400, 'invalid_request', 'Send sarif (gzip then base64), commit_sha and ref');
+    throw new ApiError(
+      400,
+      'invalid_request',
+      'Send sarif (gzip then base64), commit_sha and ref',
+    );
   return parsed.data;
 }
 
@@ -181,7 +186,12 @@ codeScanningRoutes.get('/repos/:repo{.+}/code-scanning/alerts', async (c) => {
     const query = codeScanningAlertQuery.safeParse(c.req.query());
     const before = Number(query.data?.cursor ?? Number.MAX_SAFE_INTEGER);
     if (!query.success || !Number.isSafeInteger(before))
-      return apiError(c, 400, 'invalid_request', 'Invalid ref, state, severity or cursor');
+      return apiError(
+        c,
+        400,
+        'invalid_request',
+        'Invalid ref, state, severity or cursor',
+      );
     const { state, severity, tool } = query.data;
     const ref = normaliseRef(query.data.ref ?? loaded.repo.default_branch);
     const rows = await q(
@@ -239,7 +249,12 @@ codeScanningRoutes.patch('/repos/:repo{.+}/code-scanning/alerts/:id', async (c) 
     if (!row) return apiError(c, 404, 'alert_not_found', 'Alert not found');
     const before = alertRowSchema.parse(row);
     if (before.state === 'fixed')
-      return apiError(c, 409, 'alert_fixed', 'A fixed alert cannot be dismissed or reopened');
+      return apiError(
+        c,
+        409,
+        'alert_fixed',
+        'A fixed alert cannot be dismissed or reopened',
+      );
     const dismissed = parsed.data.state === 'dismissed';
     const after: CodeScanningAlert = {
       ...before,

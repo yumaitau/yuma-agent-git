@@ -485,6 +485,49 @@ const SPECS: ToolSpec[] = [
     params: { number: issueNumber },
   },
   {
+    name: 'dependency_alerts',
+    title: 'List dependency alerts',
+    route: 'GET /api/v1/repos/:repo/dependency-alerts',
+    description:
+      'Vulnerable packages the default branch pins (OSV advisories), with the fixed version.',
+    scope: 'contents:write',
+  },
+  {
+    name: 'dependency_update_work',
+    title: 'File dependency update work',
+    route: 'POST /api/v1/repos/:repo/dependency-alerts/:id/work',
+    description:
+      'File a work item to bump the package of an open alert to its fixed version; returns the existing one when filed already.',
+    scope: 'issues:write',
+    params: { id: z.int().min(1).describe('Dependency alert id') },
+  },
+  {
+    name: 'code_scanning_alerts',
+    title: 'List code scanning alerts',
+    route: 'GET /api/v1/repos/:repo/code-scanning/alerts',
+    description: 'SARIF findings on a ref (default branch when `ref` is omitted).',
+    scope: 'contents:write',
+    untrusted: true,
+  },
+  {
+    name: 'code_scanning_upload',
+    title: 'Upload SARIF',
+    route: 'POST /api/v1/repos/:repo/code-scanning/sarif',
+    description:
+      'Upload a SARIF 2.1.0 log (gzip then base64) for `commit_sha` on `ref`; alerts are deduplicated by fingerprint.',
+    scope: 'security_events:write',
+  },
+  {
+    name: 'pr_security',
+    title: 'Pull request security findings',
+    route: 'GET /api/v1/repos/:repo/pulls/:id/security',
+    description:
+      'Code scanning findings on the head (marked `new` when the target lacks them) and vulnerable dependencies it adds.',
+    scope: 'contents:write',
+    untrusted: true,
+    params: { id: pullNumber },
+  },
+  {
     name: 'ci_status',
     title: 'CI status',
     route: 'GET /api/v1/repos/:repo/ci',

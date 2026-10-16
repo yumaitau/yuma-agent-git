@@ -479,6 +479,26 @@ const PURPOSES: Record<string, string> = {
     "Resolve (revoked, false positive, test data, won't fix) or reopen an alert",
   'POST /api/v1/repos/:repo/secret-scanning/scans':
     'Queue a history scan for secrets (also started after an import)',
+  'GET /api/v1/repos/:repo/dependencies':
+    'Packages the default branch lockfiles pin (`?ecosystem=&cursor=`)',
+  'GET /api/v1/repos/:repo/dependency-alerts':
+    'Dependency alerts from OSV advisories (`?state=&severity=&cursor=`), with attribution',
+  'PATCH /api/v1/repos/:repo/dependency-alerts/:id':
+    'Dismiss (with a reason) or reopen a dependency alert; people only',
+  'POST /api/v1/repos/:repo/dependency-alerts/:id/work':
+    'File an update work item (issue) for the fixed version, for an agent to pick up',
+  'POST /api/v1/admin/advisories':
+    'Load OSV advisory entries (an offline snapshot); security admins only',
+  'POST /api/v1/repos/:repo/code-scanning/sarif':
+    'Upload SARIF 2.1.0 (gzip, base64) for a commit and ref; agents need `security_events:write`',
+  'POST /ci/code-scanning/sarif':
+    "Upload SARIF from a running CI job with `permissions.security_events: write` (the job's changeset and ref)",
+  'GET /api/v1/repos/:repo/code-scanning/alerts':
+    'Code scanning alerts on a ref (`?ref=&state=&severity=&tool=&cursor=`)',
+  'PATCH /api/v1/repos/:repo/code-scanning/alerts/:id':
+    'Dismiss (with a reason) or reopen a code scanning alert; people only',
+  'GET /api/v1/repos/:repo/pulls/:id/security':
+    'Code scanning findings and vulnerable dependencies a pull request adds',
   'GET /api/v1/orgs/:org/rulesets': 'List org rulesets',
   'POST /api/v1/orgs/:org/rulesets': 'Create an org ruleset',
   'PUT /api/v1/orgs/:org/rulesets/:id': 'Replace an org ruleset',
@@ -507,6 +527,11 @@ function classify(path: string, src: string): { auth: string; perm: string | nul
   if (path.startsWith('/webhooks/')) return { auth: 'HMAC', perm: '—' };
   if (path.startsWith('/scim/')) return { auth: 'SCIM token', perm: '—' };
   if (path === '/ci/oidc/token') return { auth: 'CI request token', perm: 'running job' };
+  if (path === '/ci/code-scanning/sarif')
+    return {
+      auth: 'CI request token',
+      perm: 'running job with `security_events: write`',
+    };
   if (path === '/runner/v1/register') return { auth: 'registration token', perm: '—' };
   if (path.startsWith('/runner/')) return { auth: 'runner credential', perm: 'own jobs' };
   if (path === '/mcp') {

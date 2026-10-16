@@ -239,12 +239,12 @@ describe('code scanning API (#67)', () => {
     const first = await upload([a, b], { commit_sha: base, ref: 'refs/heads/main' });
     expect(first.analyses[0]).toMatchObject({ opened: 2, fixed: 0 });
     const listed = await alerts();
-    expect(listed.map((x) => [x.rule_id, x.severity, x.path, x.start_line, x.state])).toEqual(
-      [
-        ['sev-4.0', 'medium', 'src/b.ts', 7, 'open'],
-        ['sev-8.1', 'high', 'src/a.ts', 3, 'open'],
-      ],
-    );
+    expect(
+      listed.map((x) => [x.rule_id, x.severity, x.path, x.start_line, x.state]),
+    ).toEqual([
+      ['sev-4.0', 'medium', 'src/b.ts', 7, 'open'],
+      ['sev-8.1', 'high', 'src/a.ts', 3, 'open'],
+    ]);
     // the same finding again (a moved line keeps CodeQL's fingerprint): no new alert
     const again = await upload([{ ...a, line: 5 }, b], { commit_sha: base, ref: 'main' });
     expect(again.analyses[0]).toMatchObject({ opened: 0, reopened: 0, fixed: 0 });
@@ -291,7 +291,10 @@ describe('code scanning API (#67)', () => {
     await upload([a], { commit_sha: base, ref: 'main' });
     expect((await alerts())[0]!.state).toBe('dismissed');
     expect(
-      await q1(dbEnv, "SELECT 1 FROM audit_events WHERE action = 'code_scanning.alert.update'"),
+      await q1(
+        dbEnv,
+        "SELECT 1 FROM audit_events WHERE action = 'code_scanning.alert.update'",
+      ),
     ).not.toBeNull();
 
     const bad = async (body: Record<string, unknown>, status: number, code: string) => {
@@ -422,10 +425,11 @@ describe('code scanning API (#67)', () => {
         await call('POST', '/repos/acme/shop/ci/runs', {}, owner.headers, via),
         202,
       );
-      await run(dbEnv, "UPDATE ci_runs SET state = 'running', deadline = ? WHERE id = ?", [
-        Date.now() + 60_000,
-        job.id,
-      ]);
+      await run(
+        dbEnv,
+        "UPDATE ci_runs SET state = 'running', deadline = ? WHERE id = ?",
+        [Date.now() + 60_000, job.id],
+      );
       return (await q1<CiRun>(dbEnv, 'SELECT * FROM ci_runs WHERE id = ?', [job.id]))!;
     };
     await configure('write');
@@ -437,10 +441,14 @@ describe('code scanning API (#67)', () => {
       parsePolicy(JSON.parse(job.config)),
       Date.now() + 60_000,
     );
-    expect(access.env.YAG_CODE_SCANNING_URL).toBe('https://forge.test/ci/code-scanning/sarif');
+    expect(access.env.YAG_CODE_SCANNING_URL).toBe(
+      'https://forge.test/ci/code-scanning/sarif',
+    );
     const token = access.env.YAG_CODE_SCANNING_TOKEN!;
     expect(access.mask).toContain(token);
-    const sarif = await encode(sarifLog([{ rule: 'sev-7.5', path: 'src/a.ts', line: 2 }]));
+    const sarif = await encode(
+      sarifLog([{ rule: 'sev-7.5', path: 'src/a.ts', line: 2 }]),
+    );
     const ciUpload = (raw: string, body: Record<string, unknown>) =>
       app(
         new Request('https://forge.test/ci/code-scanning/sarif', {
@@ -450,7 +458,11 @@ describe('code scanning API (#67)', () => {
         }),
       );
     // the job's own repository, changeset and ref, whatever the body says
-    const res = await ciUpload(token, { sarif, commit_sha: 'f'.repeat(40), ref: 'other' });
+    const res = await ciUpload(token, {
+      sarif,
+      commit_sha: 'f'.repeat(40),
+      ref: 'other',
+    });
     expect(await json<{ ref: string; commit: string }>(res, 202)).toMatchObject({
       ref: 'main',
       commit: job.head_cs,
@@ -463,10 +475,11 @@ describe('code scanning API (#67)', () => {
     expect(audit).toEqual({ actor_id: `ci-run:${job.id}`, on_behalf_of: owner.userId });
     expect((await ciUpload('yagjob_nope', { sarif })).status).toBe(401);
     // without the permission the request token cannot upload
-    await run(dbEnv, "UPDATE ci_runs SET state = 'passed', finished_at = ? WHERE id = ?", [
-      Date.now(),
-      job.id,
-    ]);
+    await run(
+      dbEnv,
+      "UPDATE ci_runs SET state = 'passed', finished_at = ? WHERE id = ?",
+      [Date.now(), job.id],
+    );
     await configure('none');
     const plain = await runningJob();
     const other = await createRequestToken(dbEnv, plain.id, Date.now() + 60_000);
