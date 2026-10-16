@@ -46,6 +46,7 @@ const REASON_LABEL: Record<string, string> = {
   assign: 'Assigned',
   approval_requested: 'Approval needed',
   security_alert: 'Security alert',
+  budget: 'Budget',
   ci_failed: 'CI failed',
   queue_ejected: 'Left merge queue',
   work_claimed: 'Work claimed',

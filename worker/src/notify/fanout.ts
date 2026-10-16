@@ -21,8 +21,9 @@ import {
 /**
  * Notification fan-out (issue #44): a domain event from `emitEvent` becomes
  * one inbox row per recipient, and an email for those who want it at once.
- * Recipients come from the event (review requests, mentions, assignees,
- * environment reviewers, repo admins for security alerts), from thread
+ * Recipients come from the event (review requests, agent reviewers,
+ * mentions, assignees, environment reviewers, repo admins for security
+ * alerts, budget owners for usage and CI budget alerts), from thread
  * subscriptions (author, participants, manual) and from repo watchers.
  * Muting a thread or ignoring a repo silences it; the actor never hears
  * about their own action. Rows are keyed by event and recipient, so a
@@ -36,6 +37,7 @@ export const REASONS = [
   'assign',
   'approval_requested',
   'security_alert',
+  'budget',
   'ci_failed',
   'queue_ejected',
   'work_claimed',
@@ -86,7 +88,8 @@ export async function loadSettings(env: Env, principal: string): Promise<Setting
   };
 }
 
-type SubjectType = 'pull' | 'issue' | 'ci_run' | 'secret_alert' | 'approval';
+type SubjectType =
+  'pull' | 'issue' | 'ci_run' | 'secret_alert' | 'security_alert' | 'approval' | 'budget';
 interface Subject {
   type: SubjectType;
   id: string;
@@ -96,7 +99,13 @@ interface Subject {
 }
 
 /** Subjects that show code or CI, which need the whole repository as pulls do. */
-const WHOLE = new Set<string>(['pull', 'ci_run', 'approval', 'secret_alert']);
+const WHOLE = new Set<string>([
+  'pull',
+  'ci_run',
+  'approval',
+  'secret_alert',
+  'security_alert',
+]);
 
 /** May `who` see a notification about this kind of subject in `repo`? */
 export async function canSee(
@@ -105,7 +114,13 @@ export async function canSee(
   who: Principal,
   subjectType: string,
 ): Promise<boolean> {
-  const perm = subjectType === 'secret_alert' ? 'admin' : 'read';
+  // dependency and code scanning alerts (#67) are listed to writers
+  const perm =
+    subjectType === 'secret_alert'
+      ? 'admin'
+      : subjectType === 'security_alert'
+        ? 'write'
+        : 'read';
   if (!(await can(env, repo, who, perm))) return false;
   if (!WHOLE.has(subjectType)) return true;
   const decider = await pathDecider(env, repo, who);
@@ -263,6 +278,16 @@ async function repoAdmins(env: Env, repo: RepoRecord): Promise<string[]> {
   return rows.map((r) => `user:${r.id}`);
 }
 
+/** Owners and admins of an org, as principals. */
+async function orgAdmins(env: Env, orgId: string): Promise<string[]> {
+  const rows = await q<{ id: string }>(
+    env,
+    "SELECT user_id AS id FROM org_members WHERE org_id = ? AND role IN ('owner','admin')",
+    [orgId],
+  );
+  return rows.map((r) => `user:${r.id}`);
+}
+
 /** Who hears about `event`, or null when it notifies nobody. */
 async function planFor(
   env: Env,
@@ -395,6 +420,97 @@ async function planFor(
       if (pull) p.subscribers = { authors: true, as: 'ci_failed' };
       if (row) add(p, `user:${row.requested_by}`, 'ci_failed');
       if (context?.agent_id) add(p, `agent:${context.agent_id}`, 'ci_failed');
+      return p;
+    }
+    case 'agent_review': {
+      const p = plan(pullSubject(repo, pullSchema.parse(d['pull_request'])));
+      if (action === 'requested' || action === 'escalated') {
+        const reviewers = z
+          .array(z.string())
+          .parse(d[action === 'requested' ? 'reviewers' : 'requested_reviewers']);
+        for (const r of await expand(env, reviewers)) involve(p, r, 'review_requested');
+      } else if (action === 'completed') {
+        // the verdict and its findings are the author's feed, the author agent's too (#60)
+        p.subscribers = { authors: true };
+      } else return null;
+      return p;
+    }
+    case 'dependency_alert':
+    case 'code_scanning_alert': {
+      if (action !== 'created' && action !== 'reopened') return null;
+      const alert = z
+        .looseObject({
+          id: z.number(),
+          severity: z.string(),
+          name: z.string().optional(),
+          version: z.string().optional(),
+          ref: z.string().optional(),
+          tool: z.string().optional(),
+          rule_id: z.string().optional(),
+        })
+        .parse(d['alert']);
+      const dependency = event.event === 'dependency_alert';
+      // code scanning on other refs (pull requests) shows on the pull request instead
+      if (!dependency && alert.ref !== `refs/heads/${repo.default_branch}`) return null;
+      const p = plan({
+        type: 'security_alert',
+        id: `${dependency ? 'dependency' : 'code_scanning'}:${alert.id}`,
+        number: null,
+        title: dependency
+          ? `${alert.severity} vulnerability in ${alert.name ?? 'a dependency'} ${alert.version ?? ''}`.trim()
+          : `${alert.severity} ${alert.tool ?? 'code scanning'} finding: ${alert.rule_id ?? 'a rule'}`,
+        url: `/r/${repo.slug}/security-alerts`,
+      });
+      for (const a of await repoAdmins(env, repo)) add(p, a, 'security_alert');
+      return p;
+    }
+    case 'usage_budget': {
+      if (action === 'ci_budget') {
+        // a CI pool's monthly reservations passed a threshold (#52)
+        const ci = z
+          .looseObject({
+            pool: z.string(),
+            month: z.string(),
+            threshold: z.number(),
+            reserved_usd: z.number(),
+            budget_usd: z.number(),
+          })
+          .parse(d['ci_budget']);
+        const p = plan({
+          type: 'budget',
+          id: `ci:${ci.pool}:${ci.month}:${ci.threshold}`,
+          number: null,
+          title: `CI reservations reached ${ci.threshold}% of the monthly budget ($${ci.reserved_usd.toFixed(2)} of $${ci.budget_usd.toFixed(2)})`,
+          url: `/r/${repo.slug}/ci`,
+        });
+        for (const a of await orgAdmins(env, ci.pool)) add(p, a, 'budget');
+        return p;
+      }
+      const budget = z
+        .looseObject({
+          budget_id: z.string(),
+          scope: z.string(),
+          metric: z.string(),
+          period_start: z.string(),
+          level: z.string(),
+          used: z.number(),
+          limit: z.number(),
+          notify: z.string(),
+        })
+        .parse(d['budget']);
+      const amount = (n: number): string =>
+        budget.metric === 'usd_micros' ? `$${(n / 1e6).toFixed(2)}` : `${n} tokens`;
+      const p = plan({
+        type: 'budget',
+        id: `${budget.budget_id}:${budget.period_start}:${budget.level}`,
+        number: null,
+        title: `${budget.scope === 'org' ? 'Organisation' : 'Agent'} usage passed its ${budget.level} limit (${amount(budget.used)} of ${amount(budget.limit)})`,
+        url: `/r/${repo.slug}/usage`,
+      });
+      // the budget's owner (#61): an org's admins, or the agent's owner
+      const [kind, id] = budget.notify.split(':', 2) as [string, string];
+      for (const who of kind === 'org' ? await orgAdmins(env, id) : [budget.notify])
+        add(p, who, 'budget');
       return p;
     }
     case 'secret_scanning_alert': {
@@ -553,6 +669,7 @@ const WHY: Record<Reason, string> = {
   assign: 'you were assigned',
   approval_requested: 'your approval is needed',
   security_alert: 'you administer this repository',
+  budget: 'you own this usage budget',
   ci_failed: 'a CI run failed on your work',
   queue_ejected: 'your pull request left the merge queue',
   work_claimed: 'you follow this work',
@@ -582,6 +699,16 @@ const VERBS: Record<string, string> = {
   'secret_scanning_alert.created': 'reported',
   'environment_approval.requested': 'asked for approval of',
   'agent_approval.requested': 'asked for approval of',
+  'agent_review.requested': 'asked agents to review',
+  'agent_review.completed': 'gave an agent review verdict on',
+  'agent_review.escalated': 'asked a person to review',
+  'dependency_alert.created': 'reported',
+  'dependency_alert.reopened': 'reopened',
+  'code_scanning_alert.created': 'reported',
+  'code_scanning_alert.reopened': 'reopened',
+  'usage_budget.soft_limit': 'reported',
+  'usage_budget.hard_limit': 'reported',
+  'usage_budget.ci_budget': 'reported',
 };
 
 async function actorName(env: Env, key: string | null): Promise<string> {

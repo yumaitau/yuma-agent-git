@@ -104,6 +104,10 @@ const NOTIFY_EVENTS = new Set<WebhookEvent>([
   'secret_scanning_alert',
   'environment_approval',
   'agent_approval',
+  'agent_review',
+  'dependency_alert',
+  'code_scanning_alert',
+  'usage_budget',
 ]);
 
 function notifies(event: WebhookEvent, action: string | null): boolean {

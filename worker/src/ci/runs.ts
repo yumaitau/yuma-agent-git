@@ -216,7 +216,7 @@ export async function admitRun(
   if (!inserted.meta.changes) return null;
   if (runsOn) return id;
   try {
-    await budgetAlerts(env, pool, month);
+    await budgetAlerts(env, pool, month, a.repoId);
   } catch (err) {
     console.warn('CI budget alert failed', err instanceof Error ? err.message : err);
   }

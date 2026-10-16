@@ -435,6 +435,193 @@ describe('fan-out and email', () => {
   });
 });
 
+describe('agent review, security and budget notifications', () => {
+  const principalRows = (key: string) =>
+    q(
+      testEnv,
+      'SELECT reason, subject_type, event, action FROM notifications WHERE principal = ? ORDER BY created_at',
+      [key],
+    );
+
+  it('agent reviewers hear review requests; the author hears verdicts and escalations (#60)', async () => {
+    const agent = await json<{ id: string }>(
+      await call('POST', '/api/v1/agents', { name: 'reviewbot', kind: 'codex' }),
+      201,
+    );
+    await json(
+      await call('PUT', `/api/v1/repos/team/project/agent-reviewers/${agent.id}`, {}),
+    );
+    const pull = await openPull(reviewer);
+    await drain();
+    expect(await principalRows(`agent:${agent.id}`)).toEqual([
+      {
+        reason: 'review_requested',
+        subject_type: 'pull',
+        event: 'agent_review',
+        action: 'requested',
+      },
+    ]);
+    const { recordVerdict } = await import('../src/reviews/agentLoop');
+    const { getRepo } = await import('../src/db/repos');
+    const current = (await q1<Pull>(testEnv, 'SELECT * FROM pull_requests WHERE id = ?', [
+      pull.id,
+    ]))!;
+    await recordVerdict(
+      bindings(),
+      (await getRepo(testEnv, repo.id))!,
+      current,
+      agent.id,
+      {
+        head_cs: current.head_cs,
+        revision: current.revision,
+        verdict: 'fail',
+        confidence: 0.9,
+        summary: 'Missing tests',
+        findings: [],
+      },
+      { kind: 'agent', id: agent.id, onBehalfOf: owner.userId },
+      'https://forge.test',
+    );
+    await drain();
+    // the verdict goes to the pull request's author, not to the reviewer agent itself
+    expect((await inbox(reviewer)).notifications).toMatchObject([
+      { reason: 'author', event: 'agent_review', subject: { type: 'pull' } },
+    ]);
+    expect(await principalRows(`agent:${agent.id}`)).toHaveLength(1);
+  });
+
+  it('dependency and default-branch code scanning alerts notify repo admins only (#67)', async () => {
+    const { emitEvent } = await import('../src/webhooks/events');
+    const system = { kind: 'system' as const, id: 'test' };
+    await emitEvent(bindings(), repo, {
+      event: 'dependency_alert',
+      action: 'created',
+      actor: system,
+      data: { alert: { id: 7, severity: 'high', name: 'lodash', version: '4.17.20' } },
+    });
+    for (const ref of ['refs/heads/main', 'refs/pull/1/head'])
+      await emitEvent(bindings(), repo, {
+        event: 'code_scanning_alert',
+        action: 'created',
+        actor: system,
+        data: {
+          alert: { id: 9, severity: 'critical', ref, tool: 'semgrep', rule_id: 'sqli' },
+        },
+      });
+    await emitEvent(bindings(), repo, {
+      event: 'dependency_alert',
+      action: 'dismissed',
+      actor: system,
+      data: { alert: { id: 7, severity: 'high', name: 'lodash', version: '4.17.20' } },
+    });
+    await drain();
+    expect((await inbox(owner)).notifications).toMatchObject([
+      {
+        reason: 'security_alert',
+        event: 'code_scanning_alert',
+        subject: {
+          type: 'security_alert',
+          title: 'critical semgrep finding: sqli',
+          url: '/r/team/project/security-alerts',
+        },
+      },
+      {
+        reason: 'security_alert',
+        event: 'dependency_alert',
+        subject: {
+          type: 'security_alert',
+          title: 'high vulnerability in lodash 4.17.20',
+        },
+      },
+    ]);
+    // writers and readers are not repo admins
+    expect((await inbox(reviewer)).notifications).toHaveLength(0);
+    expect((await inbox(reader)).notifications).toHaveLength(0);
+  });
+
+  it('usage and CI budget alerts notify the budget owner (#61, #52)', async () => {
+    const { emitEvent } = await import('../src/webhooks/events');
+    await emitEvent(bindings(), repo, {
+      event: 'usage_budget',
+      action: 'soft_limit',
+      actor: { kind: 'system', id: 'usage' },
+      data: {
+        budget: {
+          budget_id: 'b1',
+          scope: 'agent',
+          scope_id: 'agent-x',
+          metric: 'usd_micros',
+          period: 'month',
+          period_start: '2026-10-01',
+          level: 'soft',
+          used: 5_500_000,
+          limit: 5_000_000,
+          notify: `user:${owner.userId}`,
+        },
+      },
+    });
+    await drain();
+    expect((await inbox(owner)).notifications).toMatchObject([
+      {
+        reason: 'budget',
+        subject: {
+          type: 'budget',
+          title: 'Agent usage passed its soft limit ($5.50 of $5.00)',
+          url: '/r/team/project/usage',
+        },
+      },
+    ]);
+    // an org pool's CI budget alert goes to the org's owners and admins who can see the repo
+    await run(
+      testEnv,
+      "INSERT INTO orgs (id, slug, display_name, created_at) VALUES ('o1', 'acme', 'Acme', 0)",
+    );
+    await run(
+      testEnv,
+      "INSERT INTO org_members (org_id, user_id, role) VALUES ('o1', ?, 'owner'), ('o1', ?, 'admin')",
+      [reviewer.userId, reader.userId],
+    );
+    const orgRepo = await createRepo(testEnv, {
+      slug: 'acme/app',
+      createdBy: owner.userId,
+      visibility: 'private',
+      ownerKind: 'org',
+      ownerId: 'o1',
+    });
+    await run(
+      testEnv,
+      `INSERT INTO ci_runs (id, repo_id, head_cs, settings_version, config, requested_by, state,
+         publish, month, reserved_micros, created_at, pool)
+       VALUES ('r1', ?, 'x', 1, '{}', ?, 'queued', 0, '2026-10', 900000, 0, 'o1')`,
+      [orgRepo.id, owner.userId],
+    );
+    const { budgetAlerts, sharedLimits } = await import('../src/ci/capacity');
+    const limits = { ...sharedLimits(bindings()), monthly_budget_usd: 1 };
+    expect(
+      await budgetAlerts(bindings(), { id: 'o1', limits }, '2026-10', orgRepo.id),
+    ).toEqual([50, 80]);
+    expect(queued.map((e) => `${e.event}.${e.action}`)).toEqual([
+      'usage_budget.ci_budget',
+      'usage_budget.ci_budget',
+    ]);
+    await drain();
+    expect((await inbox(reviewer)).notifications).toMatchObject([
+      {
+        reason: 'budget',
+        subject: {
+          type: 'budget',
+          title: expect.stringMatching(
+            /^CI reservations reached (80|50)% of the monthly budget/,
+          ),
+        },
+      },
+      { reason: 'budget' },
+    ]);
+    // an org admin who cannot read the repo hears nothing about it
+    expect(await principalRows(`user:${reader.userId}`)).toEqual([]);
+  });
+});
+
 describe('inbox API', () => {
   it('marks read and done, counts unread, pages, and hides rows the caller cannot see', async () => {
     for (const title of ['one', 'two', 'three']) await openIssue(title, '@reader look');

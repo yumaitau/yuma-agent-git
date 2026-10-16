@@ -43,6 +43,9 @@ encrypted with the CI secrets keys (#50, `SECRETS_KEK`) and never returned.
 | `merge_group`                | `checks_requested`, `destroyed`                                                                                           | the merge queue (#43) builds a group to test, then lands, fails, reverts or drops it                                              |
 | `environment_approval`       | `requested`                                                                                                               | a deployment to a protected environment waits for its reviewers                                                                   |
 | `agent_approval`             | `requested`                                                                                                               | an agent guardrail (#62) holds an action for a person to approve                                                                  |
+| `agent_review`               | `requested`, `completed`, `escalated`                                                                                     | agent reviewers (#60) are asked to review a revision, give a verdict, or still fail after the round limit and a person is asked   |
+| `usage_budget`               | `soft_limit`, `hard_limit`, `ci_budget`                                                                                   | usage (#61) passes a budget's soft or hard limit, or an org's CI reservations pass 50%, 80% or 100% of its monthly budget (#52)   |
+| `fork`                       | `created`                                                                                                                 | someone forks the repository (#36)                                                                                                |
 
 A push payload lists at most 20 commits (`size` has the full count). Pushes
 through the refs API and merges list only the new head.
@@ -56,8 +59,9 @@ through the refs API and merges list only the new head.
   GitHub webhook consumers can read them. GitHub's numeric ids are derived
   from forge ids and are stable per object. `ci_run`, `pull_request_review_thread`,
   `work_item`, `secret_scanning_alert`, `dependency_alert`, `code_scanning_alert`,
-  `merge_group`, `release`, `package`, `issue_comment`, `environment_approval`
-  and `agent_approval` have no GitHub shape.
+  `merge_group`, `release`, `package`, `issue_comment`, `environment_approval`,
+  `agent_approval`, `agent_review`, `usage_budget` and `fork` have no GitHub
+  shape.
 
 ### Verifying a delivery
 

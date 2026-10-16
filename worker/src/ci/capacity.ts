@@ -3,6 +3,8 @@ import type { Env } from '../env';
 import type { SpecError } from '../../shared/collaboration';
 import { q1 } from '../db/client';
 import { appendAudit } from '../audit/record';
+import { getRepo } from '../db/repos';
+import { emitEvent } from '../webhooks/events';
 import {
   DEFAULT_INSTANCE,
   INSTANCE_NAMES,
@@ -136,12 +138,15 @@ export const BUDGET_THRESHOLDS = [50, 80, 100] as const;
 /**
  * Budget alerts (issue #52): the first admission that takes a pool's monthly
  * reservations past 50%, 80% or 100% records each threshold once per month
- * and writes a `ci.budget.alert` audit event to the org's chain.
+ * and writes a `ci.budget.alert` audit event to the org's chain. An org pool
+ * also emits `usage_budget` `ci_budget` from the admitted run's repo, which
+ * notifies the org's admins (#44).
  */
 export async function budgetAlerts(
   env: Env,
   pool: Pool,
   month: string,
+  repoId?: string,
 ): Promise<number[]> {
   const budget = budgetMicros(pool.limits);
   if (budget <= 0) return [];
@@ -169,18 +174,28 @@ export async function budgetAlerts(
         : await q1<{ slug: string }>(env, 'SELECT slug FROM orgs WHERE id = ?', [
             pool.id,
           ]);
+    const target = {
+      pool: pool.id,
+      month,
+      threshold,
+      reserved_usd: used / 1e6,
+      budget_usd: budget / 1e6,
+    };
+    const actor = { kind: 'system' as const, id: 'ci' };
     await appendAudit(env, {
       action: 'ci.budget.alert',
       ...(org ? { orgId: org.slug } : {}),
-      actor: { kind: 'system', id: 'ci' },
-      target: {
-        pool: pool.id,
-        month,
-        threshold,
-        reserved_usd: used / 1e6,
-        budget_usd: budget / 1e6,
-      },
+      actor,
+      target,
     });
+    const repo = org && repoId ? await getRepo(env, repoId) : null;
+    if (repo)
+      await emitEvent(env, repo, {
+        event: 'usage_budget',
+        action: 'ci_budget',
+        actor,
+        data: { ci_budget: target },
+      });
   }
   return fired;
 }

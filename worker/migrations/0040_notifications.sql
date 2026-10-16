@@ -20,7 +20,7 @@ CREATE TABLE notifications (
   principal TEXT NOT NULL,
   event_id TEXT NOT NULL,
   repo_id TEXT NOT NULL,
-  subject_type TEXT NOT NULL,          -- pull | issue | ci_run | secret_alert | approval
+  subject_type TEXT NOT NULL,          -- pull | issue | ci_run | secret_alert | security_alert | approval | budget
   subject_id TEXT NOT NULL,
   number INTEGER,                      -- issue or pull request number
   title TEXT NOT NULL,

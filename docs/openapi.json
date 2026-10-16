@@ -3641,6 +3641,7 @@
                         "assign",
                         "approval_requested",
                         "security_alert",
+                        "budget",
                         "ci_failed",
                         "queue_ejected",
                         "work_claimed",
