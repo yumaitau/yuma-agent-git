@@ -340,6 +340,8 @@ export async function buildPayload(
           updated_at: iso(issue.updated_at),
           closed_at: iso(issue.closed_at),
         },
+        // `labeled` and `unlabeled` name the label, as GitHub's do
+        ...(event.data['label'] ? { label: event.data['label'] } : {}),
       };
     }
   }

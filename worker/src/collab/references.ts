@@ -7,9 +7,10 @@ import type { RepoRecord } from '../db/client';
 import { getRepoBySlug } from '../db/repos';
 import { firstParentHistory, getChangeset } from '../core/changesets';
 import { dagMergeBases } from '../core/ancestry';
-import { recordAudit } from '../audit/record';
+import { actorOf, recordAudit } from '../audit/record';
+import { emitEvent } from '../webhooks/events';
 import { parseReferences } from '../../shared/markdown';
-import { actorKey, eventStatement, getIssueRow } from './issues';
+import { actorKey, eventStatement, getIssueRow, hydrateIssues } from './issues';
 
 /**
  * Cross-references (issue #38): `#N`, `owner/name#N` and closing keywords in
@@ -78,6 +79,19 @@ export async function linkReferences(
           }),
         ],
       );
+      // the `issues` `closed` webhook (#75), unless someone else closed it first
+      const closed = await getIssueRow(env, target.id, issue.number);
+      if (closed?.closed_at === now) {
+        const [hydrated] = await hydrateIssues(env, [closed]);
+        await emitEvent(env, target, {
+          event: 'issues',
+          action: 'closed',
+          actor: actorOf(principal),
+          // the merge queue links with a request-less context
+          origin: c.req.url ? new URL(c.req.url).origin : null,
+          data: { issue: hydrated, source },
+        });
+      }
       continue;
     }
     const payload = JSON.stringify({ source });

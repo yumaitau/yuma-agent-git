@@ -240,7 +240,7 @@ async function setLabels(
   repo: RepoWithCreator,
   issue: IssueRow,
   names: readonly string[],
-): Promise<void> {
+): Promise<{ added: Label[]; removed: Label[] }> {
   const wanted = await resolveLabels(c, repo.id, names);
   const current = (
     await q(
@@ -252,7 +252,7 @@ async function setLabels(
   ).map((r) => labelRowSchema.parse(r));
   const added = wanted.filter((l) => !current.some((x) => x.id === l.id));
   const removed = current.filter((l) => !wanted.some((x) => x.id === l.id));
-  if (added.length + removed.length === 0) return;
+  if (added.length + removed.length === 0) return { added, removed };
   const actor = actorKey(principalOf(c));
   const db = c.env.DB;
   await recordAudit(
@@ -283,6 +283,7 @@ async function setLabels(
       touch(c, issue),
     ],
   );
+  return { added, removed };
 }
 
 async function setAssignees(
@@ -859,8 +860,13 @@ issuesRoutes.put(`${base}/issues/:number/labels`, async (c) => {
     if (!loaded.ok) return loaded.response;
     const issue = await loadIssue(c, loaded.repo);
     const { labels } = parse(labelsInput, await readJsonBody(c));
-    await setLabels(c, loaded.repo, issue, labels);
+    const { added, removed } = await setLabels(c, loaded.repo, issue, labels);
     const [hydrated] = await hydrateIssues(c.env, [issue]);
+    // one event per label, as GitHub sends them (Factory picks up labelled tickets)
+    for (const label of added)
+      await emitIssue(c, loaded.repo, 'labeled', hydrated!, { label });
+    for (const label of removed)
+      await emitIssue(c, loaded.repo, 'unlabeled', hydrated!, { label });
     return c.json({ issue: hydrated });
   } catch (err) {
     return errorResponse(c, err);

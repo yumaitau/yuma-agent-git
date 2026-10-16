@@ -358,6 +358,7 @@ export async function recordVerdict(
   // findings on a line of the revision become review threads (#39); others
   // stay in the verdict only
   const threads: D1PreparedStatement[] = [];
+  let threadCount = 0;
   for (const f of input.findings) {
     if (!f.path || !f.line) continue;
     try {
@@ -377,6 +378,7 @@ export async function recordVerdict(
           false,
         )),
       );
+      threadCount += 1;
     } catch (err) {
       if (!(err instanceof ApiError)) throw err;
     }
@@ -462,7 +464,7 @@ export async function recordVerdict(
     round,
     passed,
     escalated,
-    threads: threads.length,
+    threads: threadCount,
   };
 }
 
