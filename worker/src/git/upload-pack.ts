@@ -5,7 +5,9 @@ import { getBlob, hasBlob } from '../core/blobs';
 import { getChangeset, type Changeset } from '../core/changesets';
 import { continuation, DerivedDeferredError, enqueueDerived } from '../core/derived';
 import { ensureGitIds, GIT_IDS } from '../core/derived/gitIds';
+import { storeArtifact } from '../ci/artifacts';
 import { ObjectCorruptError } from '../core/errors';
+import { sha256Hex } from '../core/hashing';
 import { AGENT_PREFIX } from '../core/refs';
 import { getTree, type TreeEntry } from '../core/trees';
 import {
@@ -353,6 +355,28 @@ async function planObjects(
   return plan;
 }
 
+/** Clone packs with at least this many objects are kept in R2 (#78). */
+export const PACK_CACHE_MIN_OBJECTS = 1000;
+export const PACK_CACHE_MAX_BYTES = 2 * 1024 ** 3;
+export const PACK_CACHE_PREFIX = 'git/packs/';
+
+/**
+ * Where a clone's pack is kept: the wants, depth and filter fix its content,
+ * because commits are immutable. An R2 lifecycle rule on `git/packs/` expires
+ * old entries (docs/git-http.md).
+ */
+export async function packCacheKey(
+  repoId: string,
+  wants: string[],
+  depth: number | null,
+  filter: Filter,
+): Promise<string> {
+  const id = await sha256Hex(
+    new TextEncoder().encode(JSON.stringify([[...wants].sort(), depth, filter])),
+  );
+  return `${PACK_CACHE_PREFIX}${repoId}/${id}.pack`;
+}
+
 /** Build the fetch response: acknowledgments, shallow-info, then the pack. */
 export async function fetchPack(
   env: Env,
@@ -403,6 +427,32 @@ export async function fetchPack(
   for (const s of req.shallow) {
     const id = await changesetForSha1(env, repoId, s);
     if (id !== null) clientShallow.add(id);
+  }
+
+  // A clone (nothing held) names immutable history: its pack can be reused (#78).
+  const cacheKey =
+    haves.size === 0 && clientShallow.size === 0
+      ? await packCacheKey(repoId, req.wants, req.depth, req.filter)
+      : null;
+  const cached = cacheKey ? await env.OBJECTS.get(cacheKey) : null;
+  if (cached) {
+    const shallow = JSON.parse(cached.customMetadata?.shallow ?? '[]') as string[];
+    return streamOf(
+      (async function* () {
+        yield concatBytes(head);
+        if (shallow.length > 0)
+          yield concatBytes([...shallow.map((l) => pktLine(`${l}\n`)), DELIM]);
+        yield pktLine('packfile\n');
+        try {
+          for await (const chunk of cached.body as unknown as AsyncIterable<Uint8Array>)
+            yield concatBytes(sideband(1, chunk));
+        } catch (err) {
+          console.error('upload-pack: cached pack stream failed', err);
+          yield concatBytes(sideband(3, 'error reading pack; retry the fetch\n'));
+        }
+        yield FLUSH;
+      })(),
+    );
   }
 
   const commits = await planCommits(
@@ -499,6 +549,20 @@ export async function fetchPack(
       shallowLines.push(`unshallow ${ids.get(id)?.sha1}`);
   }
 
+  // Large clone packs are copied to R2 as they stream; the copy is kept only if complete.
+  const shallowMeta = JSON.stringify(shallowLines);
+  let cache: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  let stored: Promise<unknown> = Promise.resolve();
+  if (cacheKey && count >= PACK_CACHE_MIN_OBJECTS && shallowMeta.length <= 1024) {
+    const pipe = new TransformStream<Uint8Array, Uint8Array>();
+    cache = pipe.writable.getWriter();
+    stored = storeArtifact(env.OBJECTS, cacheKey, pipe.readable, PACK_CACHE_MAX_BYTES, {
+      customMetadata: { shallow: shallowMeta },
+    }).catch(() => {
+      cache = null;
+    });
+  }
+
   return streamOf(
     (async function* () {
       yield concatBytes(head);
@@ -509,8 +573,12 @@ export async function fetchPack(
       try {
         for await (const chunk of packChunks(count, bodies())) {
           yield concatBytes(sideband(1, chunk));
+          await cache?.write(chunk).catch(() => (cache = null));
         }
+        await cache?.close().catch(() => {});
+        await stored;
       } catch (err) {
+        await cache?.abort(err).catch(() => {});
         console.error('upload-pack: pack stream failed', err);
         yield concatBytes(sideband(3, 'error building pack; retry the fetch\n'));
       }
