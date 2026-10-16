@@ -634,6 +634,44 @@ describe('MCP Streamable HTTP (#56)', () => {
     ]);
   });
 
+  it('release tools draft as the agent and hold publishing for approval (#54, #62)', async () => {
+    const repo = await q1<{ id: string }>(
+      dbEnv,
+      "SELECT id FROM repos WHERE slug = 'acme/app'",
+    );
+    await setRef(dbEnv, repo!.id, 'refs/tags/v1.0', mainCs);
+    // releases write the repo: agents need contents:write as well
+    const { access } = await oauthToken([
+      'contents:read',
+      'contents:write',
+      'releases:write',
+    ]);
+    const mcp = await connect(access);
+    const notes = await mcp.call('release_notes', { repo: 'acme/app', tag: 'v1.0' });
+    expect(notes.isError, notes.text).toBe(false);
+    const draft = await mcp.call('release_create', {
+      repo: 'acme/app',
+      tag: 'v1.0',
+      name: 'One',
+      body: 'first',
+      draft: true,
+    });
+    expect(draft.isError, draft.text).toBe(false);
+    const id = (draft.structured?.release as { id: string }).id;
+    const got = await mcp.call('release_get', { repo: 'acme/app', tag: 'v1.0' });
+    expect(got.structured?.release).toMatchObject({ id, draft: true, name: 'One' });
+    expect((await mcp.call('release_list', { repo: 'acme/app' })).text).toContain(id);
+    const publish = await mcp.call('release_update', {
+      repo: 'acme/app',
+      id,
+      draft: false,
+    });
+    expect(publish.isError).toBe(true);
+    expect(JSON.parse(publish.text)).toMatchObject({
+      error: { code: 'approval_required' },
+    });
+  });
+
   it('a token without issues:write gets a tool error, not a transport error', async () => {
     const { access } = await oauthToken(['contents:read']);
     const mcp = await connect(access);

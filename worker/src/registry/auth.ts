@@ -8,6 +8,8 @@ import { randomB64url } from '../auth/encoding';
 import { resolveCloneToken } from '../ci/runners';
 import { REQUEST_TOKEN_PREFIX, verifyIdToken } from '../ci/oidc';
 import type { CiRun } from '../ci/config';
+import { parseContext } from '../ci/context';
+import { jobAgent } from '../ci/inject';
 import { sha256Hex } from '../core/hashing';
 import { q1, run } from '../db/client';
 import type { RepoRecord } from '../db/client';
@@ -90,6 +92,22 @@ async function idTokenPrincipal(
   if (!claims) return null;
   const job = await q1<CiRun>(env, 'SELECT * FROM ci_runs WHERE id = ?', [claims.run_id]);
   return job && job.repo_id === claims.repository_id ? ciPrincipal(job) : null;
+}
+
+/**
+ * Who agent guardrails (#62) judge for a publish: a CI job an agent started
+ * publishes as that agent, so its pipeline cannot route around the policy.
+ */
+export async function guardedPrincipal(
+  env: Env,
+  principal: Principal,
+): Promise<Principal> {
+  if (principal.kind !== 'token' || !principal.ciRunId) return principal;
+  const job = await q1<CiRun>(env, 'SELECT * FROM ci_runs WHERE id = ?', [
+    principal.ciRunId,
+  ]);
+  const agentId = job ? parseContext(job.context)?.agent_id : null;
+  return job && agentId ? jobAgent(job, agentId) : principal;
 }
 
 /** A forge credential: API, agent or app token, CI request or ID token, clone token. */

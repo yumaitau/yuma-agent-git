@@ -438,6 +438,45 @@ describe('key rotation', () => {
   });
 });
 
+describe('package registry login (#53)', () => {
+  it('signs a packages: write job in to the registry without OIDC, for its own repo', async () => {
+    const noOidc = bindings({ CI_OIDC_SIGNING_KEYS: undefined });
+    await configure({ permissions: { packages: 'write' } });
+    const job = await runningJob();
+    const access = await prepareJob(
+      noOidc,
+      job,
+      parsePolicy(JSON.parse(job.config)),
+      job.deadline!,
+    );
+    expect(access.env).toMatchObject({
+      YAG_REGISTRY: 'forge.test',
+      YAG_REGISTRY_USERNAME: 'ci',
+    });
+    const password = access.env.YAG_REGISTRY_PASSWORD!;
+    expect(password).toMatch(/^yagjob_/);
+    expect(access.mask).toContain(password);
+    expect(access.env.YAG_ID_TOKEN_REQUEST_TOKEN).toBeUndefined();
+    // what `helm registry login` then `helm push` do: token exchange, then upload
+    const basic = { authorization: `Basic ${btoa(`ci:${password}`)}` };
+    const exchanged = await api(
+      '/v2/token?service=forge.test&scope=repository:team/project/charts/app:pull,push',
+      { headers: basic },
+      noOidc,
+    );
+    expect(exchanged.status).toBe(200);
+    const { token } = (await exchanged.json()) as { token: string };
+    const upload = await api(
+      '/v2/team/project/charts/app/blobs/uploads/',
+      { method: 'POST', headers: { authorization: `Bearer ${token}` } },
+      noOidc,
+    );
+    expect(upload.status).toBe(202);
+    // the same token mints no ID tokens: the pipeline did not ask for them
+    expect((await idToken(password)).status).toBe(403);
+  });
+});
+
 describe('AWS web identity', () => {
   it('writes a token file and AWS_* variables for opted-in jobs', async () => {
     await configure({

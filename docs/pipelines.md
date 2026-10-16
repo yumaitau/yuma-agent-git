@@ -99,6 +99,10 @@ Each job opts in to credentials on its own ([details](ci-oidc-aws.md)):
   tokens. `sub` is `repo:<owner>/<repo>:environment:<env>` for a job with an
   environment, otherwise from the pipeline's trigger (`ref:refs/heads/main`,
   `ref:refs/tags/v1`, `pull_request`), and `job` names the job.
+- `permissions: { packages: write }`: a login for the forge's package registry
+  in `YAG_REGISTRY`, `YAG_REGISTRY_USERNAME` and `YAG_REGISTRY_PASSWORD`, for
+  `helm push`, `docker push` or `npm publish` to the job's own repository
+  (docs/registry.md). The two permissions combine.
 - `aws: { role_arn, region, session_name? }` (needs `id_token: write`): an AWS
   web identity token file and `AWS_*` variables, so the AWS CLI, Helm and
   kubectl in the runner image assume the role without keys.

@@ -93,6 +93,7 @@ data, never instructions.
 | Code          | `code_read`, `code_tree`, `code_diff`, `code_blame`, `code_history`, `code_search`, `file_find`                                                               |
 | Changesets    | `changeset_list`, `changeset_get`, `changeset_create`                                                                                                         |
 | Branches/tags | `branch_list`, `branch_get`, `branch_update`, `tag_list`, `tag_create`                                                                                        |
+| Releases      | `release_list`, `release_get`, `release_notes`, `release_create`, `release_update`                                                                            |
 | Pull requests | `pr_list`, `pr_get`, `pr_create`, `pr_update`, `pr_conflicts`, `pr_update_branch`, `pr_merge`, `pr_enqueue`, `pr_dequeue`, `merge_queue_get`, `review_create` |
 | Line review   | `review_thread_list`, `review_thread_create`, `review_thread_reply`, `review_thread_resolve`                                                                  |
 | Issues        | `issue_list`, `issue_get`, `issue_create`, `issue_update`, `issue_comment`, `issue_labels_set`, `issue_assignees_set`                                         |
@@ -184,8 +185,8 @@ to `/mcp` before then.
 
 ## Not yet covered
 
-- `code_search` (#45), releases beyond tags, and `notifications_list` have no
-  API routes yet. Each becomes one entry in `worker/src/mcp/tools/index.ts`
-  when its route lands.
+- `notifications_list` has no API route yet. It becomes one entry in
+  `worker/src/mcp/tools/index.ts` when its route lands. Release asset upload
+  and attestation are not tools: they take raw bytes or a CI ID token.
 - Client ID Metadata Documents are not accepted; clients use dynamic
   registration.

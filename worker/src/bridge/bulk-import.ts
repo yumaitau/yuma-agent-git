@@ -32,6 +32,7 @@ import {
   type MetaPhase,
 } from './github-meta';
 import { nextPage } from './import';
+import { startSecretScan } from '../security/secrets/history';
 
 /**
  * Org-level bulk import from GitHub (issue #72). A job lists the source org's
@@ -387,7 +388,12 @@ async function repoStep(
       phase === 'git'
         ? await gitStep(ctx, cursor, opts)
         : await metaStep(ctx, phase as MetaPhase, cursor);
-    if (cursor === null) phase = PHASES[PHASES.indexOf(phase) + 1] ?? 'done';
+    if (cursor === null) {
+      // history secret scan (#66): alerts only, the import never waits on it
+      if (phase === 'git')
+        await startSecretScan(env, repo.id, { kind: 'system', id: 'import' });
+      phase = PHASES[PHASES.indexOf(phase) + 1] ?? 'done';
+    }
   } catch (err) {
     if (err instanceof RateLimitedError) {
       await saveRepo(env, row, phase, cursor, ctx, 'running', null);

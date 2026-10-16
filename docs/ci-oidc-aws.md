@@ -10,13 +10,14 @@ ECR and deploys to EKS, and how the same tokens work with other clouds.
 By default a job still gets no credentials. The repository CI settings, or each
 job of a YAML pipeline ([pipelines](pipelines.md)), opt in with these fields:
 
-| Pipeline setting                                            | What the job gets                                                                                                            |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `secrets: ["NAME", ...]`                                    | Those secrets as environment variables (environment, then repository, then org value)                                        |
-| (always, for trusted runs)                                  | All variables at the same three scopes                                                                                       |
-| `permissions: { id_token: "write" }`                        | A per-run request token to fetch OIDC ID tokens (`YAG_ID_TOKEN_REQUEST_URL` / `_TOKEN` and the `ACTIONS_ID_TOKEN_*` names)   |
-| `aws: { role_arn, region, session_name? }` (needs id_token) | A token file plus `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ROLE_SESSION_NAME` |
-| `environment: "production"`                                 | That environment's secrets and variables, after its protection rules pass                                                    |
+| Pipeline setting                                            | What the job gets                                                                                                                      |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets: ["NAME", ...]`                                    | Those secrets as environment variables (environment, then repository, then org value)                                                  |
+| (always, for trusted runs)                                  | All variables at the same three scopes                                                                                                 |
+| `permissions: { id_token: "write" }`                        | A per-run request token to fetch OIDC ID tokens (`YAG_ID_TOKEN_REQUEST_URL` / `_TOKEN` and the `ACTIONS_ID_TOKEN_*` names)             |
+| `permissions: { packages: "write" }`                        | A login for the forge package registry (`YAG_REGISTRY`, `YAG_REGISTRY_USERNAME`, `YAG_REGISTRY_PASSWORD`), see [registry](registry.md) |
+| `aws: { role_arn, region, session_name? }` (needs id_token) | A token file plus `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ROLE_SESSION_NAME`           |
+| `environment: "production"`                                 | That environment's secrets and variables, after its protection rules pass                                                              |
 
 Protections, all enforced on the server:
 

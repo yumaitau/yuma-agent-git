@@ -12,8 +12,11 @@ export interface CiPolicy {
   environment: string | null;
   /** Secret names injected as environment variables. */
   secrets: string[];
-  /** `id_token: 'write'` lets the job request OIDC tokens. */
-  permissions: { id_token: 'none' | 'write' };
+  /**
+   * `id_token: 'write'` lets the job request OIDC tokens; `packages: 'write'`
+   * signs it in to the forge's package registry (#53).
+   */
+  permissions: { id_token: 'none' | 'write'; packages?: 'none' | 'write' };
   /** AWS web identity: the runner writes a token file and sets AWS_* variables. */
   aws: { role_arn: string; region: string; session_name?: string } | null;
 }

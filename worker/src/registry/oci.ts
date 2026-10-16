@@ -14,6 +14,7 @@ import {
   credentialPrincipal,
   basicSecret,
   granted,
+  guardedPrincipal,
   mintRegistryToken,
   registryCaller,
   REGISTRY_TOKEN_TTL_S,
@@ -674,7 +675,7 @@ ociRoutes.put('/v2/:name{.+}/manifests/:reference', async (c) => {
     // agent guardrails (#62): publishing a package is a release
     await enforceAgentAction(
       c.env,
-      caller.principal,
+      await guardedPrincipal(c.env, caller.principal),
       repo,
       { action: 'release.publish', ref: `packages/oci/${name}:${reference}` },
       {

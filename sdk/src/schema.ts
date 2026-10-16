@@ -7625,7 +7625,8 @@ export interface operations {
           secrets?: string[];
           /**
            * @default {
-           *       "id_token": "none"
+           *       "id_token": "none",
+           *       "packages": "none"
            *     }
            */
           permissions?: {
@@ -7634,6 +7635,11 @@ export interface operations {
              * @enum {string}
              */
             id_token?: 'none' | 'write';
+            /**
+             * @default none
+             * @enum {string}
+             */
+            packages?: 'none' | 'write';
           };
           /** @default null */
           aws?: {

@@ -210,6 +210,52 @@ const SPECS: ToolSpec[] = [
     scope: 'releases:write',
   },
   {
+    name: 'release_list',
+    title: 'List releases',
+    route: 'GET /api/v1/repos/:repo/releases',
+    description: 'Releases newest first (cursor paged), with assets and attestations.',
+    scope: 'contents:read',
+    untrusted: true,
+  },
+  {
+    name: 'release_get',
+    title: 'Get release',
+    route: 'GET /api/v1/repos/:repo/releases/tags/:tag',
+    description: 'The release for one tag: notes, assets with SHA-256, attestations.',
+    scope: 'contents:read',
+    untrusted: true,
+    params: { tag: z.string().min(1).describe('Tag name, for example `v1.2.0`') },
+  },
+  {
+    name: 'release_notes',
+    title: 'Draft release notes',
+    route: 'POST /api/v1/repos/:repo/releases/generate-notes',
+    description:
+      'Generate notes for `tag` from the pull requests and changesets since `previous_tag` (or the last release). Changes nothing.',
+    scope: 'releases:write',
+    untrusted: true,
+    idempotent: true,
+  },
+  {
+    name: 'release_create',
+    title: 'Create release',
+    route: 'POST /api/v1/repos/:repo/releases',
+    description:
+      'Create a release for an existing tag. Agents create drafts (`draft: true`) freely; publishing is judged by the agent policy and may wait for a person to approve.',
+    scope: 'releases:write',
+  },
+  {
+    name: 'release_update',
+    title: 'Edit or publish release',
+    route: 'PATCH /api/v1/repos/:repo/releases/:id',
+    description:
+      'Edit the name, notes or prerelease flag, or publish a draft with `draft: false` (judged by the agent policy).',
+    scope: 'releases:write',
+    params: { id: z.string().min(1).describe('Release id') },
+    destructive: true,
+    idempotent: true,
+  },
+  {
     name: 'pr_list',
     title: 'List pull requests',
     route: 'GET /api/v1/repos/:repo/pulls',

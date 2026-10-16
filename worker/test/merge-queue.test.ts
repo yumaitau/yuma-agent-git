@@ -604,6 +604,87 @@ describe('the merge_queue rule', () => {
   });
 });
 
+describe('code owners and secret scanning in the queue (#40, #66)', () => {
+  it('refuses to queue until a code owner approves', async () => {
+    const carol = await loginAs(testEnv, 903, 'carol');
+    await run(
+      dbEnv,
+      "INSERT INTO repo_members(repo_id,user_id,role) VALUES (?,?,'write')",
+      [repoId, carol.userId],
+    );
+    seed = await commit(seed, { '.yuma/CODEOWNERS': '*.txt @carol\n' });
+    await setRef(dbEnv, repoId, 'main', seed);
+    await json(
+      await api('/rulesets', 'POST', {
+        name: 'Queue with owners',
+        target: 'branch',
+        conditions: { ref_name: { include: ['~DEFAULT_BRANCH'] } },
+        rules: [
+          { type: 'merge_queue', mode: 'strict', max_batch: 5 },
+          { type: 'require_code_owner_review' },
+        ],
+      }),
+      201,
+    );
+    const pull = await approved('owned.txt');
+    const refused = await json<{ error: { code: string; message: string } }>(
+      await api(`/pulls/${pull.id}/queue`, 'POST', {
+        head_cs: pull.head_cs,
+        revision: pull.revision,
+      }),
+      409,
+    );
+    expect(refused.error.code).toBe('merge_blocked');
+    expect(refused.error.message).toContain('Code owner approval required');
+    await json(
+      await api(
+        `/pulls/${pull.id}/review`,
+        'POST',
+        { head_cs: pull.head_cs, revision: 1, decision: 'approve', body: 'owner ok' },
+        carol,
+      ),
+    );
+    await enqueue(pull);
+  });
+
+  it('keeps a pull request with an open secret alert on its commits out, and ejects one raised while queued', async () => {
+    await queueRule('strict', 5);
+    const alert = async (cs: string): Promise<void> =>
+      run(
+        dbEnv,
+        `INSERT INTO secret_alerts (repo_id, detector, secret_hash, path, line, changeset_id, source,
+           state, created_by, created_at) VALUES (?, 'aws_access_key_id', ?, 'a.txt', 1, ?, 'history', 'open', 'import', 0)`,
+        [repoId, cs, cs],
+      );
+    const leaked = await approved('leaked.txt');
+    await alert(leaked.head_cs);
+    const refused = await json<{ error: { code: string; message: string } }>(
+      await api(`/pulls/${leaked.id}/queue`, 'POST', {
+        head_cs: leaked.head_cs,
+        revision: leaked.revision,
+      }),
+      409,
+    );
+    expect(refused.error.message).toContain('open secret scanning alert');
+    await run(
+      dbEnv,
+      "UPDATE secret_alerts SET state = 'resolved', resolution = 'revoked'",
+    );
+    await enqueue(leaked);
+
+    // an alert raised while it waits (a history scan, say) ejects it
+    const later = await approved('later.txt');
+    await enqueue(later);
+    await alert(later.head_cs);
+    await tick();
+    const entries = (await view()).entries;
+    expect(entries.find((e) => e.pull_id === later.id)).toMatchObject({
+      state: 'ejected',
+    });
+    expect((await pullOf(later.id)).state).toBe('open');
+  }, 60_000);
+});
+
 describe('durability', () => {
   it('keeps the queue in storage: a new Durable Object instance finishes what the last one started', async () => {
     await queueRule('strict', 5);

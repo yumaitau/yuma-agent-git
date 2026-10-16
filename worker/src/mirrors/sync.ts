@@ -220,7 +220,8 @@ async function remoteOf(env: Env, repo: RepoRecord, mirror: MirrorRow): Promise<
 /**
  * Run receive-pack on `body` as `principal`, inside a Hono context of its
  * own so the push path (audit, webhooks, issue links, CI) sees an ordinary
- * request from the forge's origin.
+ * request from the forge's origin. Upstream secrets raise alerts (#66) but
+ * never stop the mirror.
  */
 async function land(
   env: Env,
@@ -236,7 +237,7 @@ async function land(
     c.set('principal', principal);
     c.set('user', null);
     try {
-      report = await receivePack(c, repo, body);
+      report = await receivePack(c, repo, body, { secretAlertsOnly: true });
     } catch (err) {
       failure = err;
     }

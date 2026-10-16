@@ -66,6 +66,8 @@ export interface PushUpdate {
   pushRules?: Outcome;
   /** Secrets an admin pushed past, recorded once the ref has moved. */
   secretBypass?: { bypass: Bypass; found: Located[] };
+  /** Secrets a pull mirror brought in: alerts once the ref has moved, never a refusal. */
+  secretAlerts?: Located[];
 }
 
 export interface PreReceiveContext {
@@ -76,6 +78,8 @@ export interface PreReceiveContext {
   commits: Map<string, PushCommit>;
   /** `git push -o` values, when the client sent any. */
   pushOptions: string[];
+  /** A pull mirror (#73) lands upstream history: secrets raise alerts, not refusals. */
+  secretAlertsOnly?: boolean;
   /** Net file changes the ref sees (old head → new head). */
   refChanges(update: PushUpdate): Promise<GitChange[]>;
   /** A blob's bytes from the pack or the store, or null. */
@@ -316,6 +320,10 @@ const secretScanning: Check = async (ctx, updates) => {
     }
     found = await withoutDismissed(ctx.env, ctx.repo.id, found);
     if (found.length === 0) continue;
+    if (ctx.secretAlertsOnly) {
+      u.secretAlerts = found;
+      continue;
+    }
     const bypass = bypassFromPushOptions(ctx.pushOptions);
     const blocked = (message: string): void => {
       out.push({ ref: u.ref, rule: 'secret_scanning', message });

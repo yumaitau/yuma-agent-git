@@ -127,7 +127,17 @@ async function gitPush(
   commands: [string, string, string][],
   objects: Obj[],
   token = ghToken,
+  options: string[] = [],
 ): Promise<Record<string, string>> {
+  const pack = objects.length ? await packOf(objects) : null;
+  const body = options.length
+    ? concatBytes([
+        pushBody(commands, null, 'report-status push-options'),
+        ...options.map((o) => pktLine(o)),
+        FLUSH,
+        pack ?? new Uint8Array(),
+      ])
+    : pushBody(commands, pack, 'report-status');
   const res = await makeApp(bindings())(
     new Request(`https://x/${slug}.git/git-receive-pack`, {
       method: 'POST',
@@ -135,11 +145,7 @@ async function gitPush(
         'content-type': 'application/x-git-receive-pack-request',
         authorization: `Basic ${btoa(`git:${token}`)}`,
       },
-      body: pushBody(
-        commands,
-        objects.length ? await packOf(objects) : null,
-        'report-status',
-      ),
+      body,
     }),
   );
   expect(res.status).toBe(200);
@@ -431,6 +437,49 @@ describe('pull mirrors', () => {
     });
     expect((await sync(mirror.id)).ok).toBe(true);
     expect((await shasOf('acme/widgets'))['refs/heads/main']).toBe(next.commit.sha);
+  });
+
+  it('raises secret alerts for upstream history but still mirrors it (#66)', async () => {
+    // built at run time so this file holds no literal key
+    const key = `AKIA${Array.from({ length: 16 }, (_, i) => 'QRSTUVWXYZ234567'[(i * 7) % 16]).join('')}`;
+    const leaked = await gitCommit(`aws_key = ${key}\n`, [upstream.commit.sha], 'leak');
+    // "GitHub" only holds it past its own push protection
+    expect(
+      await gitPush(
+        'gh/widgets',
+        [[upstream.commit.sha, leaked.commit.sha, 'refs/heads/main']],
+        leaked.objects,
+        ghToken,
+        ['secret-scanning.bypass=will_fix'],
+      ),
+    ).toEqual({ 'refs/heads/main': 'ok' });
+    const mirror = await createMirror('acme/widgets', {
+      direction: 'pull',
+      remote_url: REMOTE,
+      auth: 'token',
+      token: ghToken,
+    });
+    expect(await sync(mirror.id)).toMatchObject({ ok: true, error: null });
+    expect((await shasOf('acme/widgets'))['refs/heads/main']).toBe(leaked.commit.sha);
+    const repo = await q1<{ id: string }>(
+      testEnv,
+      'SELECT id FROM repos WHERE slug = ?',
+      ['acme/widgets'],
+    );
+    const alerts = await q<{
+      source: string;
+      path: string;
+      state: string;
+      changeset_id: string;
+    }>(
+      testEnv,
+      'SELECT source, path, state, changeset_id FROM secret_alerts WHERE repo_id = ?',
+      [repo!.id],
+    );
+    expect(alerts).toEqual([
+      expect.objectContaining({ source: 'history', path: 'README.md', state: 'open' }),
+    ]);
+    expect(alerts[0]!.changeset_id).toBe((await getRef(testEnv, repo!.id, 'main'))!.head);
   });
 
   it('records remote failures without the credential', async () => {

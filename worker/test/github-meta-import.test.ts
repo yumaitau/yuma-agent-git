@@ -22,6 +22,7 @@ import {
   rewriteReferences,
 } from '../src/bridge/github-meta';
 import { planChunks } from '../src/bridge/bulk-import';
+import { runSecretScanSlice } from '../src/security/secrets/history';
 
 /**
  * Bulk importer (issue #72): a whole GitHub org into a forge org, against the
@@ -60,6 +61,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+const LEAKED_KEY = `AKIA${'MNOPQRSTUVWXYZ23'.split('').reverse().join('')}`;
 const at = (n: number): string => new Date(1_700_000_000_000 + n * 1000).toISOString();
 const user = (id: number, login: string) => ({
   id,
@@ -107,7 +109,11 @@ async function seedSource(name: string): Promise<Source> {
     first_parent: c1.changeset.id,
     message: 'feature\n',
     author,
-    changes: [{ path: 'feature.txt', op: 'add', content_b64: b64('one\n') }],
+    changes: [
+      { path: 'feature.txt', op: 'add', content_b64: b64('one\n') },
+      // a leaked key (built at run time) for the history secret scan
+      { path: 'deploy.env', op: 'add', content_b64: b64(`AWS_KEY=${LEAKED_KEY}\n`) },
+    ],
   });
   await setRef(qEnv, repo.id, 'main', c2.changeset.id);
   await setRef(qEnv, repo.id, 'feature', c3.changeset.id);
@@ -526,6 +532,46 @@ describe('bulk import: one org end to end', () => {
     const [asset] = JSON.parse(release!.assets) as { key: string; name: string }[];
     expect(asset?.name).toBe('app.zip');
     expect(await (await qEnv.OBJECTS.get(asset!.key))?.text()).toBe('zip');
+    // ...and mapped to a forge release (#54) whose asset downloads checksummed
+    const listed = (await (
+      await call('GET', '/api/v1/repos/acme/app/releases')
+    ).json()) as {
+      releases: {
+        id: string;
+        tag: string;
+        name: string;
+        body: string;
+        draft: boolean;
+        latest: boolean;
+        created_by: string;
+        published_at: number;
+        assets: { id: string; name: string; size: number; sha256: string }[];
+      }[];
+    };
+    expect(listed.releases).toHaveLength(1);
+    const forgeRelease = listed.releases[0]!;
+    expect(forgeRelease).toMatchObject({
+      tag: 'v1.0',
+      name: 'One',
+      body: 'notes for acme/app#1',
+      draft: false,
+      latest: true,
+      created_by: `user:${alice.userId}`,
+      published_at: Date.parse(at(81)),
+    });
+    expect(forgeRelease.assets).toEqual([
+      expect.objectContaining({
+        name: 'app.zip',
+        size: 3,
+        sha256: await sha256Hex(enc.encode('zip')),
+      }),
+    ]);
+    const download = await call(
+      'GET',
+      `/api/v1/repos/acme/app/releases/${forgeRelease.id}/assets/${forgeRelease.assets[0]!.id}`,
+    );
+    expect(download.status).toBe(200);
+    expect(new TextDecoder().decode(await download.arrayBuffer())).toBe('zip');
 
     // LFS: the pointer's object fetched through the batch API and verified
     expect(
@@ -533,6 +579,20 @@ describe('bulk import: one org end to end', () => {
     ).toEqual({ oid: src.lfsOid, status: 'stored' });
     const lfs = await qEnv.OBJECTS.get(`lfs/${repo.id}/${src.lfsOid}`);
     expect(new Uint8Array(await lfs!.arrayBuffer())).toEqual(src.lfsBytes);
+
+    // history secret scan (#66): queued after the git phase, alerts only
+    const scan = await q1<{ id: string; created_by: string }>(
+      qEnv,
+      'SELECT id, created_by FROM secret_scans WHERE repo_id = ?',
+      [repo.id],
+    );
+    expect(scan?.created_by).toBe('import');
+    expect(await runSecretScanSlice(qEnv, scan!.id)).toBe(true);
+    expect(
+      await q(qEnv, 'SELECT source, path, state FROM secret_alerts WHERE repo_id = ?', [
+        repo.id,
+      ]),
+    ).toEqual([{ source: 'history', path: 'deploy.env', state: 'open' }]);
 
     // read-only installation tokens only
     expect(gh.tokenPermissions.length).toBeGreaterThan(0);
@@ -555,6 +615,8 @@ describe('bulk import: one org end to end', () => {
       'milestones',
       'pull_requests',
       'imported_releases',
+      'releases',
+      'release_assets',
       'work_items',
     ];
     const before = await Promise.all(

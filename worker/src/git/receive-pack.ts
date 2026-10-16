@@ -11,7 +11,7 @@ import { triggerOf } from '../ci/context';
 import { linkLanded, linkPushed } from '../collab/references';
 import { recordOutcome } from '../policy/rulesets';
 import { emitRefUpdate } from '../webhooks/events';
-import { recordBypass } from '../security/secrets/scan';
+import { recordAlerts, recordBypass } from '../security/secrets/scan';
 import { listRefs, getRef } from '../db/repos';
 import { hasBlob, putBlob } from '../core/blobs';
 import { MAX_CHANGED_FILES } from '../core/changesets';
@@ -364,11 +364,15 @@ function statusReport(
   ]);
 }
 
-/** Handle one POST git-receive-pack body; returns the response body. */
+/**
+ * Handle one POST git-receive-pack body; returns the response body.
+ * `secretAlertsOnly` is for a pull mirror (#73), never set from a request.
+ */
 export async function receivePack(
   c: Context<AppEnv>,
   repo: RepoRecord,
   body: Uint8Array,
+  options: { secretAlertsOnly?: boolean } = {},
 ): Promise<Uint8Array> {
   const env = c.env;
   const principal = c.get('principal') as Principal;
@@ -485,6 +489,7 @@ export async function receivePack(
       decider,
       commits,
       pushOptions,
+      secretAlertsOnly: options.secretAlertsOnly === true,
       async refChanges(u) {
         const out = { changes: [] as GitChange[], trees: [] };
         const head = u.deleting ? null : await treeOf(push, u.newSha);
@@ -594,6 +599,21 @@ export async function receivePack(
         via: 'git-push',
         ref: u.name,
       });
+    }
+    if (u.secretAlerts) {
+      await recordAlerts(
+        env,
+        repo,
+        u.secretAlerts.map((f) => ({
+          ...f,
+          changeset: f.commit ? push.csOf.get(f.commit) : undefined,
+        })),
+        {
+          source: 'history',
+          actor: actorOf(principal),
+          origin: new URL(c.req.url).origin,
+        },
+      );
     }
     if (u.pushRules) {
       await recordOutcome(env, u.pushRules, {

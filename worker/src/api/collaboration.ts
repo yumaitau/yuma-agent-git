@@ -423,6 +423,7 @@ collaborationRoutes.put(`${base}/ci`, async (c) => {
         environment: config.environment,
         secrets: config.secrets,
         id_token: config.permissions.id_token,
+        packages: config.permissions.packages ?? 'none',
         aws_role_arn: config.aws?.role_arn ?? null,
       },
     });

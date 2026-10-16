@@ -965,7 +965,7 @@ export function CiView(): ReactElement {
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),
-        permissions: { id_token: idToken ? 'write' : 'none' },
+        permissions: { ...config?.permissions, id_token: idToken ? 'write' : 'none' },
         aws:
           idToken && awsRole.trim()
             ? {

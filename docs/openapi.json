@@ -4452,10 +4452,15 @@
                     }
                   },
                   "permissions": {
-                    "default": { "id_token": "none" },
+                    "default": { "id_token": "none", "packages": "none" },
                     "type": "object",
                     "properties": {
                       "id_token": {
+                        "default": "none",
+                        "type": "string",
+                        "enum": ["none", "write"]
+                      },
+                      "packages": {
                         "default": "none",
                         "type": "string",
                         "enum": ["none", "write"]

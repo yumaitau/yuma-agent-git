@@ -84,4 +84,16 @@ to a published release is judged as `release.publish` by the agent guardrails
 (the default policy pack holds it for a human approval). Drafts are hidden,
 so an agent can prepare one (notes, assets, attestations) and a person
 publishes it. The `release` webhook event sends `created`, `published`,
-`edited` and `deleted`.
+`edited` and `deleted`. MCP has `release_list`, `release_get`,
+`release_notes`, `release_create` and `release_update` (docs/mcp.md); agents
+need `contents:write` with `releases:write` to write.
+
+## Imported releases
+
+A bulk import from GitHub (#72) turns each GitHub release whose tag it
+imported into a release here, with its notes (references rewritten), draft
+and prerelease flags, author, publish time, and every asset it could download
+(each with its SHA-256). Assets whose names this API would refuse, over the
+download cap, or that fail to download stay listed in the import report and
+`imported_releases` only. A tag that already has a release here keeps it.
+Imports send no `release` webhooks.

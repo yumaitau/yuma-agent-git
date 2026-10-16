@@ -23,6 +23,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Wave 3 seams. Bulk imports (#72) queue a history secret scan once a repo's
+  Git history is in, and pull mirrors (#73) record upstream secrets as alerts
+  instead of refusing the sync; neither blocks. The merge queue (#43) keeps
+  out, and ejects, a pull request with open secret alerts on its own commits,
+  and honours `require_code_owner_review` (#40). Imported GitHub releases
+  become forge releases (#54) with checksummed assets. Pipeline jobs with
+  `permissions: { packages: write }` get a registry login (`YAG_REGISTRY*`)
+  for `helm push`, `docker push` or `npm publish` without OIDC (#53), and a
+  publish from a job an agent started is judged as that agent (#62). MCP gains
+  `release_list`, `release_get`, `release_notes`, `release_create` and
+  `release_update`. The dashboard can subscribe webhooks to `merge_group`.
 - Secret scanning with push protection (#66). Pushes, the commit RPC, the agent
   `commit` tool and applied suggestions refuse files that add AWS, GitHub,
   Yuma, Cloudflare, Slack or Stripe tokens, private keys or high-entropy

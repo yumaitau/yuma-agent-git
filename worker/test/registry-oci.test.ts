@@ -655,6 +655,37 @@ describe('permissions', () => {
     expect((await reg('GET', '/v2/', auth)).status).toBe(401);
   });
 
+  it('judges a publish from a CI job an agent started as that agent (#62)', async () => {
+    const job = await ciJob(repoA);
+    await run(dbEnv, 'UPDATE ci_runs SET context = ? WHERE id = ?', [
+      JSON.stringify({
+        event: 'workflow_dispatch',
+        ref: null,
+        actor_kind: 'agent',
+        origin: `https://${HOST}`,
+        agent_id: 'agt_ci',
+      }),
+      job.id,
+    ]);
+    const auth = basic(job.token);
+    const layer = await pushBlob(
+      'acme/app/agentci',
+      new TextEncoder().encode('ci layer'),
+      auth,
+    );
+    const manifest = {
+      schemaVersion: 2,
+      mediaType: OCI_MANIFEST,
+      config: { mediaType: 'application/vnd.oci.empty.v1+json', digest: layer, size: 8 },
+      layers: [],
+    };
+    const held = await pushManifest('acme/app/agentci', 'v1', manifest, auth);
+    expect(held.status).toBe(403);
+    expect((await held.json()) as unknown).toMatchObject({
+      error: { code: 'approval_required' },
+    });
+  });
+
   it('takes a CI OIDC ID token minted for the registry host', async () => {
     const pair = (await crypto.subtle.generateKey(
       {

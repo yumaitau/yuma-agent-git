@@ -24,6 +24,19 @@ export interface JobAccess {
   summary: string;
 }
 
+/** The agent a job acts for, as guardrails (#62) judge it. */
+export function jobAgent(job: CiRun, agentId: string): Principal {
+  return {
+    kind: 'agent',
+    userId: job.requested_by,
+    agentId,
+    jti: `ci-run:${job.id}`,
+    taskId: null,
+    scopes: [],
+    repoIds: [job.repo_id],
+  };
+}
+
 /**
  * Agent guardrails (#62) for a job an agent started, in either pool: the kill
  * switch, and the `deploy` policy for a job that names an environment. The
@@ -44,15 +57,7 @@ export async function guardAgentJob(
     const message = pauseMessage(pause);
     return { outcome: 'deny', code: 'agents_paused', message, details: {} };
   }
-  const agent: Principal = {
-    kind: 'agent',
-    userId: job.requested_by,
-    agentId: context.agent_id,
-    jti: `ci-run:${job.id}`,
-    taskId: null,
-    scopes: [],
-    repoIds: [job.repo_id],
-  };
+  const agent = jobAgent(job, context.agent_id);
   const deploy = {
     job: job.job_key ?? null,
     environment: policy.environment,
@@ -70,7 +75,9 @@ export async function guardAgentJob(
 /**
  * Credentials for a job, built once at job start inside the runner (issue
  * #50): variables, the secrets the pipeline names, a per-run OIDC request
- * token, and an AWS web identity token file. Untrusted runs get nothing.
+ * token, an AWS web identity token file, and a login for the forge's package
+ * registry (#53) that the same request token serves. Untrusted runs get
+ * nothing.
  */
 export async function prepareJob(
   env: Env,
@@ -82,6 +89,7 @@ export async function prepareJob(
   const wants =
     policy.secrets.length > 0 ||
     policy.permissions.id_token === 'write' ||
+    policy.permissions.packages === 'write' ||
     policy.environment !== null;
   const context = parseContext(job.context);
   const repo = await getRepo(env, job.repo_id);
@@ -114,12 +122,13 @@ export async function prepareJob(
   const variables = Object.keys(resolved.variables).length;
   if (variables) notes.push(`${variables} variable${variables === 1 ? '' : 's'}`);
   if (policy.environment) notes.push(`environment ${policy.environment}`);
+  let request: string | null = null;
   if (policy.permissions.id_token === 'write') {
     if (!env.CI_OIDC_SIGNING_KEYS) notes.push('OIDC not configured by the operator');
     else if (!env.CI_OIDC_ISSUER && !context.origin)
       notes.push('OIDC for scheduled runs needs CI_OIDC_ISSUER');
     else {
-      const request = await createRequestToken(env, job.id, deadline);
+      request = await createRequestToken(env, job.id, deadline);
       const url = `${issuerFor(env, context.origin)}/token?run_id=${job.id}`;
       Object.assign(access.env, {
         YAG_ID_TOKEN_REQUEST_URL: url,
@@ -162,6 +171,24 @@ export async function prepareJob(
           notes.push(`AWS role ${policy.aws.role_arn}`);
         }
       }
+    }
+  }
+  if (policy.permissions.packages === 'write') {
+    // the registry takes the request token as a password: `helm registry login`,
+    // `docker login`, or an npm `_authToken`
+    if (!context.origin) notes.push('registry login needs a run started from the forge');
+    else {
+      if (request === null) {
+        request = await createRequestToken(env, job.id, deadline);
+        access.mask.push(request);
+      }
+      const host = new URL(context.origin).host;
+      Object.assign(access.env, {
+        YAG_REGISTRY: host,
+        YAG_REGISTRY_USERNAME: 'ci',
+        YAG_REGISTRY_PASSWORD: request,
+      });
+      notes.push(`registry ${host}`);
     }
   }
   access.summary = notes.length ? `Job access: ${notes.join('; ')}.` : '';

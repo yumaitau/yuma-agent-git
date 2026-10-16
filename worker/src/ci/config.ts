@@ -25,8 +25,11 @@ export const accessFields = {
     .max(50)
     .default([]),
   permissions: z
-    .object({ id_token: z.enum(['none', 'write']).default('none') })
-    .default({ id_token: 'none' }),
+    .object({
+      id_token: z.enum(['none', 'write']).default('none'),
+      packages: z.enum(['none', 'write']).default('none'),
+    })
+    .default({ id_token: 'none', packages: 'none' }),
   aws: z
     .object({
       role_arn: z.string().regex(/^arn:aws[a-z-]*:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/),

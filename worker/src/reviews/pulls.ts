@@ -116,7 +116,36 @@ export async function queueGate(
     method: chosen,
     queue,
   } = await checkMerge(env, pull, actor, method, true);
-  return { mergeable, reasons, method: chosen, queue };
+  const alerts = await openSecretAlerts(env, pull);
+  if (alerts > 0)
+    reasons.push(
+      `${alerts} open secret scanning alert${alerts === 1 ? '' : 's'} on this pull request's commits; resolve ${alerts === 1 ? 'it' : 'them'} before it lands.`,
+    );
+  return { mergeable: mergeable && alerts === 0, reasons, method: chosen, queue };
+}
+
+/**
+ * Secret scanning (#66) for the merge queue: open alerts on the pull
+ * request's own changesets (pushed past protection as "will fix", or brought
+ * in by an import or pull mirror) keep it from landing until resolved.
+ */
+async function openSecretAlerts(env: Env, pull: Pull): Promise<number> {
+  const target = await getRef(env, pull.repo_id, pull.base_ref);
+  if (!target) return 0;
+  const { onlyB } = await dagMergeBases(env, pull.repo_id, target.head, pull.head_cs);
+  const ids = onlyB.map((cs) => cs.id);
+  let open = 0;
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90);
+    const row = await q1<{ n: number }>(
+      env,
+      `SELECT COUNT(*) AS n FROM secret_alerts WHERE repo_id = ? AND state = 'open'
+        AND changeset_id IN (${chunk.map(() => '?').join(',')})`,
+      [pull.repo_id, ...chunk],
+    );
+    open += row?.n ?? 0;
+  }
+  return open;
 }
 
 interface MergeCheck {

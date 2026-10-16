@@ -39,16 +39,32 @@ repo's roles from then on:
 
 ### CI jobs
 
-A job can sign in with either credential the forge gives trusted runs
-(`permissions.id_token: write`, see docs/ci-oidc-aws.md):
+A pipeline job that sets `permissions: { packages: write }` gets a registry
+login in `$YAG_REGISTRY`, `$YAG_REGISTRY_USERNAME` and `$YAG_REGISTRY_PASSWORD`
+(the job's request token, masked in logs). It needs no OIDC setup:
 
-- its request token, `$YAG_ID_TOKEN_REQUEST_TOKEN`, or
-- an ID token minted with the registry host as audience:
-  `curl -H "Authorization: Bearer $YAG_ID_TOKEN_REQUEST_TOKEN" "$YAG_ID_TOKEN_REQUEST_URL&audience=forge.example.com"`.
+```yaml
+jobs:
+  chart:
+    permissions: { packages: write }
+    steps:
+      - run: |
+          echo "$YAG_REGISTRY_PASSWORD" | helm registry login "$YAG_REGISTRY" \
+            -u "$YAG_REGISTRY_USERNAME" --password-stdin
+          helm package ./chart
+          helm push web-0.1.0.tgz "oci://$YAG_REGISTRY/acme/app/charts"
+```
 
-Either one pulls and pushes the packages linked to the job's own repo and
-nothing else: a job of repo A gets 404 for a package of repo B. It stops
-working when the run ends. A self-hosted runner's clone token pulls only.
+A job with `permissions.id_token: write` (see docs/ci-oidc-aws.md) can also use
+`$YAG_ID_TOKEN_REQUEST_TOKEN`, or an ID token minted with the registry host as
+audience:
+`curl -H "Authorization: Bearer $YAG_ID_TOKEN_REQUEST_TOKEN" "$YAG_ID_TOKEN_REQUEST_URL&audience=forge.example.com"`.
+
+Each pulls and pushes the packages linked to the job's own repo and nothing
+else: a job of repo A gets 404 for a package of repo B. It stops working when
+the run ends. Fork pull requests and other untrusted runs get no login. A
+self-hosted runner's clone token pulls only. A publish from a job an agent
+started is judged by the agent policy as that agent's (#62).
 
 ## Docker
 
@@ -65,7 +81,7 @@ exchanges the login for a registry token (valid five minutes, limited to the
 actions the caller holds now) and retries. In a pipeline:
 
 ```bash
-echo "$YAG_ID_TOKEN_REQUEST_TOKEN" | docker login forge.example.com -u ci --password-stdin
+echo "$YAG_REGISTRY_PASSWORD" | docker login "$YAG_REGISTRY" -u ci --password-stdin
 ```
 
 ## Helm

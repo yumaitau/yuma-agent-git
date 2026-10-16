@@ -2,6 +2,9 @@ import { z } from 'zod';
 import type { Env } from '../env';
 import { q, q1, type RepoRecord } from '../db/client';
 import { getRef } from '../db/repos';
+import { TAG_PREFIX } from '../core/refs';
+import { ulid } from '../core/ids';
+import { ASSET_NAME, assetKey, CONTENT_TYPE } from '../api/releases';
 import { upsertUser } from '../auth/session';
 import { fieldsFromLabels } from '../collab/work';
 import { changesetForSha1 } from '../git/mapping';
@@ -1067,7 +1070,11 @@ async function reviewCommentsStep(
   return page.next;
 }
 
-/** Releases as GitHub had them (for #54), assets stored in R2 under a cap. */
+/**
+ * Releases as GitHub had them, assets stored in R2 under a cap. A release
+ * whose tag was imported also becomes a forge release (#54) with its assets,
+ * in the same batch, so a re-run never half-maps one.
+ */
 async function releasesStep(ctx: MetaContext, path: string): Promise<string | null> {
   const page = await ghGet(ctx, path);
   const releases = items(ctx, 'release', page.data, ghRelease);
@@ -1078,13 +1085,43 @@ async function releasesStep(ctx: MetaContext, path: string): Promise<string | nu
       [ctx.repo.id, release.id],
     );
     if (exists) continue;
+    const tag = await getRef(ctx.env, ctx.repo.id, `${TAG_PREFIX}${release.tag_name}`);
+    const releaseId = tag ? ulid(release.created_at) : null;
     const assets: Record<string, unknown>[] = [];
+    const mapped: {
+      id: string;
+      name: string;
+      type: string;
+      size: number;
+      sha256: string;
+    }[] = [];
     for (const asset of release.assets) {
-      const key = `imports/${ctx.repo.id}/releases/${release.id}/${asset.id}`;
+      const assetId = ulid();
+      const forge = releaseId !== null && ASSET_NAME.test(asset.name);
+      const key = forge
+        ? assetKey(ctx.repo.id, releaseId, assetId)
+        : `imports/${ctx.repo.id}/releases/${release.id}/${asset.id}`;
       const stored =
-        asset.size <= MAX_DOWNLOAD_BYTES
-          ? await downloadAsset(ctx, asset.id, key)
-          : false;
+        asset.size <= MAX_DOWNLOAD_BYTES ? await downloadAsset(ctx, asset.id, key) : null;
+      const type =
+        asset.content_type && CONTENT_TYPE.test(asset.content_type)
+          ? asset.content_type
+          : 'application/octet-stream';
+      if (stored && forge)
+        mapped.push({
+          id: assetId,
+          name: asset.name,
+          type,
+          size: stored.size,
+          sha256: stored.sha256,
+        });
+      else if (stored && releaseId !== null)
+        warn(ctx, {
+          kind: 'release_asset',
+          tag: release.tag_name,
+          name: asset.name,
+          code: 'bad_name',
+        });
       if (!stored) {
         warn(ctx, {
           kind: 'release_asset',
@@ -1101,28 +1138,77 @@ async function releasesStep(ctx: MetaContext, path: string): Promise<string | nu
         key: stored ? key : null,
       });
     }
-    const tag = await getRef(ctx.env, ctx.repo.id, `refs/tags/${release.tag_name}`);
-    await ctx.env.DB.prepare(
-      `INSERT OR IGNORE INTO imported_releases (repo_id, github_id, tag_name, name, body, draft,
-         prerelease, target_commitish, target_cs, author_id, assets, created_at, published_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-      .bind(
+    const author = await mapUser(ctx, release.author ?? null);
+    const body = rewriteReferences(release.body ?? '', ctx.refs);
+    const statements = [
+      ctx.env.DB.prepare(
+        `INSERT OR IGNORE INTO imported_releases (repo_id, github_id, tag_name, name, body, draft,
+           prerelease, target_commitish, target_cs, author_id, assets, created_at, published_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
         ctx.repo.id,
         release.id,
         release.tag_name,
         release.name ?? null,
-        rewriteReferences(release.body ?? '', ctx.refs),
+        body,
         release.draft ? 1 : 0,
         release.prerelease ? 1 : 0,
         release.target_commitish ?? null,
         tag?.head ?? null,
-        await mapUser(ctx, release.author ?? null),
+        author,
         JSON.stringify(assets),
         release.created_at,
         release.published_at ?? null,
-      )
-      .run();
+      ),
+    ];
+    if (tag && releaseId !== null) {
+      const by = author ? `user:${author}` : 'system:import';
+      const published = release.draft
+        ? null
+        : (release.published_at ?? release.created_at);
+      statements.push(
+        // a tag that already has a forge release keeps it
+        ctx.env.DB.prepare(
+          `INSERT OR IGNORE INTO releases (id, repo_id, tag, target_cs, name, body, draft,
+             prerelease, created_by, created_at, updated_at, published_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ).bind(
+          releaseId,
+          ctx.repo.id,
+          release.tag_name,
+          tag.head,
+          release.name || release.tag_name,
+          body,
+          release.draft ? 1 : 0,
+          release.prerelease ? 1 : 0,
+          by,
+          release.created_at,
+          release.created_at,
+          published,
+        ),
+        ...mapped.map((a) =>
+          ctx.env.DB.prepare(
+            `INSERT INTO release_assets (id, release_id, repo_id, name, content_type, size,
+               sha256, uploaded_by, created_at)
+             SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM releases WHERE id = ?)`,
+          ).bind(
+            a.id,
+            releaseId,
+            ctx.repo.id,
+            a.name,
+            a.type,
+            a.size,
+            a.sha256,
+            by,
+            release.created_at,
+            releaseId,
+          ),
+        ),
+      );
+    } else {
+      warn(ctx, { kind: 'release', tag: release.tag_name, code: 'tag_missing' });
+    }
+    await ctx.env.DB.batch(statements);
     count(ctx, 'releases');
     count(ctx, 'release_assets', assets.filter((a) => a.key).length);
   }
@@ -1134,7 +1220,7 @@ async function downloadAsset(
   ctx: MetaContext,
   assetId: number,
   key: string,
-): Promise<boolean> {
+): Promise<{ size: number; sha256: string } | null> {
   const res = await githubApi(
     ctx.env,
     ctx.installationId,
@@ -1148,11 +1234,11 @@ async function downloadAsset(
     res.status >= 300 && res.status < 400 && location
       ? await (ctx.fetch ?? fetch)(location)
       : res;
-  if (!body.ok) return false;
+  if (!body.ok) return null;
   const bytes = await capped(body);
-  if (!bytes) return false;
+  if (!bytes) return null;
   await ctx.env.OBJECTS.put(key, bytes);
-  return true;
+  return { size: bytes.length, sha256: await sha256Hex(bytes) };
 }
 
 /** The body, or null when it is over the download cap (read as a stream). */

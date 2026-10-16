@@ -9,7 +9,7 @@ import { q, q1 } from '../db/client';
 import type { RepoRecord } from '../db/client';
 import { getRepoBySlug } from '../db/repos';
 import { enforceAgentAction } from '../policy/guardrails';
-import { authorize, registryCaller, type PackageAction } from './auth';
+import { authorize, guardedPrincipal, registryCaller, type PackageAction } from './auth';
 import {
   emitPackageEvent,
   ensurePackage,
@@ -486,7 +486,7 @@ npmRoutes.put('/npm/:pkg', async (c) => {
     // agent guardrails (#62): publishing a package is a release
     await enforceAgentAction(
       c.env,
-      principal,
+      await guardedPrincipal(c.env, principal),
       repo,
       { action: 'release.publish', ref: `packages/npm/${name}@${version}` },
       {

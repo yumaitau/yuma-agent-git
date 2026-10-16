@@ -60,8 +60,8 @@ const NO_STORE = 'private, no-store';
 export const DEFAULT_ASSET_MAX_BYTES = 100 * 1024 * 1024;
 const MAX_ASSET_SETTING = 5 * 1024 * 1024 * 1024;
 const MAX_ASSETS = 100;
-const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,254}$/;
-const CONTENT_TYPE = /^[\w.+-]+\/[\w.+-]+$/;
+export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,254}$/;
+export const CONTENT_TYPE = /^[\w.+-]+\/[\w.+-]+$/;
 
 for (const path of [`${REPO}/releases`, `${REPO}/releases/*`]) {
   releasesRoutes.use(path, async (c, next) => {
@@ -389,7 +389,7 @@ async function assetCap(env: Env, repo: RepoWithCreator): Promise<number> {
   return row?.asset_max_bytes ?? DEFAULT_ASSET_MAX_BYTES;
 }
 
-const assetKey = (repoId: string, releaseId: string, assetId: string): string =>
+export const assetKey = (repoId: string, releaseId: string, assetId: string): string =>
   `releases/${repoId}/${releaseId}/${assetId}`;
 
 // ---------------------------------------------------------------------------
