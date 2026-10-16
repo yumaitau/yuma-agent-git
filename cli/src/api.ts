@@ -346,17 +346,22 @@ export class YagApi {
     await this.request(`/releases/${id}`, { method: 'DELETE' });
   }
 
+  /** `idToken`: a CI job's ID token, so the asset records the run that built it. */
   async uploadAsset(
     releaseId: string,
     name: string,
     bytes: Uint8Array,
     sha256: string,
+    idToken?: string,
   ): Promise<z.infer<typeof releaseAssetSchema>> {
     const result = await this.json(
       `/releases/${releaseId}/assets?name=${encodeURIComponent(name)}&sha256=${sha256}`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/octet-stream' },
+        headers: {
+          'content-type': 'application/octet-stream',
+          ...(idToken ? { 'x-yag-id-token': idToken } : {}),
+        },
         body: new Uint8Array(bytes),
       },
     );
@@ -394,6 +399,23 @@ export class YagApi {
       new Request(`${this.opts.api.replace(/\/$/, '')}/ci/oidc/jwks`),
     );
     if (!res.ok) throw new ApiError(res.status, 'http_error', `JWKS: HTTP ${res.status}`);
+    return res.json();
+  }
+
+  /** Signed provenance records naming a changeset (#58), as the server stores them. */
+  async provenance(cs: string): Promise<unknown[]> {
+    return z
+      .object({ records: z.array(z.unknown()) })
+      .parse(await this.json(`/provenance?cs=${encodeURIComponent(cs)}`)).records;
+  }
+
+  /** The forge's published provenance keys (public, no token sent). */
+  async provenanceKeys(): Promise<unknown> {
+    const res = await this.fetchFn(
+      new Request(`${this.opts.api.replace(/\/$/, '')}/.well-known/yag-provenance-keys`),
+    );
+    if (!res.ok)
+      throw new ApiError(res.status, 'http_error', `provenance keys: HTTP ${res.status}`);
     return res.json();
   }
 

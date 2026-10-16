@@ -5,7 +5,6 @@ import { loadWholeRepo, requireAgentScope } from '../auth/guards';
 import { can } from '../auth/rbac';
 import { requireRecentMfa } from '../auth/session';
 import { actorOf, recordAudit } from '../audit/record';
-import { signingKeys } from '../ci/oidc';
 import { ApiError } from '../core/errors';
 import { q, q1, run } from '../db/client';
 import { ulid } from '../core/ids';
@@ -15,7 +14,8 @@ import {
   signatureOf,
   sshFingerprint,
 } from '../git/signatures';
-import { envelopeSchema, verifyEnvelope } from '../provenance/dsse';
+import { envelopeSchema } from '../provenance/dsse';
+import { provenanceKeys, verifyStatement } from '../provenance/keys';
 import {
   createSession,
   createSessionSchema,
@@ -38,8 +38,8 @@ import { apiError, errorResponse, readJsonBody } from './errors';
  * POST /api/v1/repos/:repo/sessions/:id/changesets     link more changesets (its creator)
  * GET|POST /api/v1/me/signing-keys, DELETE /:id       SSH and OpenPGP commit signing keys
  *
- * Records are signed with the CI OIDC key ring (#50, #54), so the published
- * keys are the same set as `/ci/oidc/jwks` and rotate with overlap there.
+ * Records are signed with the Ed25519 key ring in PROVENANCE_SIGNING_KEYS
+ * (provenance/keys.ts); keys rotated out stay published for verification.
  */
 export const provenanceRoutes = new Hono<AppEnv>();
 export const provenanceKeysRoutes = new Hono<AppEnv>();
@@ -108,7 +108,7 @@ async function checkRecord(
 ): Promise<{ verified: boolean; reason: string | null }> {
   const envelope = envelopeSchema.safeParse(JSON.parse(row.envelope));
   if (!envelope.success) return { verified: false, reason: 'malformed envelope' };
-  const check = await verifyEnvelope(c.env, envelope.data);
+  const check = await verifyStatement(c.env, envelope.data);
   if (!check.verified) return { verified: false, reason: check.reason };
   if (JSON.stringify(check.statement) !== row.statement)
     return { verified: false, reason: 'the signed statement differs from the record' };
@@ -123,7 +123,7 @@ async function checkRecord(
 
 provenanceKeysRoutes.get('/.well-known/yag-provenance-keys', async (c) => {
   try {
-    return c.json({ keys: (await signingKeys(c.env)).published }, 200, {
+    return c.json({ keys: (await provenanceKeys(c.env)).published }, 200, {
       'cache-control': 'public, max-age=300',
     });
   } catch (err) {

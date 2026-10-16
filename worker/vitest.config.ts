@@ -10,6 +10,10 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
 });
 
+// Provenance signing key (#58): the ref-lock Durable Object reads it from its
+// own bindings, so tests cannot inject it per request.
+const provenanceKey = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' });
+
 /**
  * Tests run against real in-memory D1 / R2 / DO / Queue bindings from
  * `wrangler.jsonc` — hermetic, no network.
@@ -40,6 +44,9 @@ export default defineConfig({
           GITHUB_APP_SLUG: 'yuma-agent-git',
           GITHUB_APP_PRIVATE_KEY: privateKey,
           TEST_GITHUB_APP_PUBLIC_KEY: publicKey,
+          PROVENANCE_SIGNING_KEYS: JSON.stringify({
+            keys: [{ ...provenanceKey, kid: 'test-provenance' }],
+          }),
           GITHUB_WEBHOOK_SECRET: 'test-webhook-secret',
           CACHE_SIGNING_KEY: 'test-cache-signing-key',
           TOTP_ENCRYPTION_KEY: 'test-totp-encryption-key',

@@ -16,7 +16,8 @@ import type { Principal } from '../auth/principal';
 import type { RepoRecord } from '../db/client';
 import { actorOf } from '../audit/record';
 import { signatureFacts } from '../git/signatures';
-import { canSign, issueAfterMove } from '../provenance/issue';
+import { issueAfterMove } from '../provenance/issue';
+import { canSign } from '../provenance/keys';
 import {
   actorFor,
   applies,

@@ -34,6 +34,11 @@ export interface Env {
    * signatures stay unverified.
    */
   SIGSTORE_TRUST_ROOTS?: string;
+  /**
+   * Signed provenance (issue #58), secret: Ed25519 JWK key ring
+   * `{"keys":[...]}`, the first (with `d`) signs and all are published.
+   */
+  PROVENANCE_SIGNING_KEYS?: string;
   /** Key-encryption key for CI secrets, secret: base64 key or key ring JSON. */
   SECRETS_KEK?: string;
   /** Comma-separated user ids allowed to run the KEK re-wrap. */

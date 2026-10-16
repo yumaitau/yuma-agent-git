@@ -7,7 +7,7 @@ import { z } from 'zod';
  * exact verifier against an envelope the server signed.
  */
 export const ATTEST_AUDIENCE = 'yag:attest';
-const PAYLOAD_TYPE = 'application/vnd.in-toto+json';
+export const PAYLOAD_TYPE = 'application/vnd.in-toto+json';
 const ALG = { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' } as const;
 
 export const envelopeSchema = z.object({
@@ -22,7 +22,7 @@ export const jwksSchema = z.object({
 });
 export type Jwks = z.infer<typeof jwksSchema>;
 
-const statementSchema = z.looseObject({
+export const statementSchema = z.looseObject({
   _type: z.literal('https://in-toto.io/Statement/v1'),
   subject: z.array(
     z.object({ name: z.string(), digest: z.record(z.string(), z.string()) }),
@@ -36,13 +36,13 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function fromBase64(text: string): Uint8Array<ArrayBuffer> {
+export function fromBase64(text: string): Uint8Array<ArrayBuffer> {
   const b64 = text.replace(/-/g, '+').replace(/_/g, '/');
   const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
   return Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
 }
 
-function pae(type: string, body: Uint8Array): Uint8Array<ArrayBuffer> {
+export function pae(type: string, body: Uint8Array): Uint8Array<ArrayBuffer> {
   const typeBytes = new TextEncoder().encode(type);
   const head = new TextEncoder().encode(
     `DSSEv1 ${typeBytes.length} ${type} ${body.length} `,

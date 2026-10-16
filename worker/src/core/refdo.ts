@@ -24,7 +24,8 @@ import {
   type RefFacts,
   type Ruleset,
 } from '../policy/rulesets';
-import { canSign, issueAfterMove } from '../provenance/issue';
+import { issueAfterMove } from '../provenance/issue';
+import { canSign } from '../provenance/keys';
 import { signatureFacts } from '../git/signatures';
 
 const moveSchema = z.object({

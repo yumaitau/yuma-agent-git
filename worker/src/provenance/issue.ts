@@ -7,15 +7,15 @@ import { getChangeset } from '../core/changesets';
 import { ulid } from '../core/ids';
 import { AGENT_PREFIX, TAG_PREFIX } from '../core/refs';
 import { gitIdentity } from '../git/identity';
-import { commitShas } from '../git/upload-pack';
+import { commitIdsForMany } from '../git/mapping';
 import { applies, rulesetsFor, type Outcome, type Violation } from '../policy/rulesets';
-import { signEnvelope } from './dsse';
+import { canSign, signStatement } from './keys';
 
 /**
  * Source provenance (issue #58): every move of a protected ref (the default
  * branch, or a branch or tag any ruleset covers) gets one in-toto statement,
- * signed by the forge into a DSSE envelope with the same key ring as CI
- * attestations (#54), published at `/.well-known/yag-provenance-keys`.
+ * signed by the forge's Ed25519 key (provenance/keys.ts) into a DSSE
+ * envelope, verifiable offline against `/.well-known/yag-provenance-keys`.
  *
  * SLSA v1.2's source track asks for tamper-resistant provenance of protected
  * branch updates but fixes no predicate, so the predicate type is this
@@ -26,7 +26,7 @@ import { signEnvelope } from './dsse';
  * (model, harness, tools, transcript SHA-256).
  *
  * Issued after the move, like the ruleset log: a failed issue never fails
- * the move. Without CI_OIDC_SIGNING_KEYS nothing is issued, and a
+ * the move. Without PROVENANCE_SIGNING_KEYS nothing is issued, and a
  * `required_provenance` rule then refuses the move instead (rulesets.ts).
  */
 
@@ -46,8 +46,14 @@ export interface RefMove {
   pulls?: number[];
 }
 
-export function canSign(env: Env): boolean {
-  return Boolean(env.CI_OIDC_SIGNING_KEYS);
+/** Known Git commit SHA-1s; never computed here, so issuing stays cheap. */
+async function commitShas(
+  env: Env,
+  repoId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const known = await commitIdsForMany(env, repoId, ids);
+  return new Map([...known].map(([id, git]) => [id, git.sha1]));
 }
 
 /** Git's name for a forge ref: branches live under `refs/heads/`. */
@@ -291,7 +297,7 @@ export async function issueProvenance(env: Env, move: RefMove): Promise<string |
   if (!(await isProtected(env, move.repo, move.ref))) return null;
   const now = Date.now();
   const statement = await buildStatement(env, move, now);
-  const { envelope, keyId } = await signEnvelope(env, statement);
+  const { envelope, keyId } = await signStatement(env, statement);
   const id = ulid(now);
   await run(
     env,

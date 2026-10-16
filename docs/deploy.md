@@ -69,6 +69,8 @@ material; see [ci-oidc-aws.md](ci-oidc-aws.md) for setup and rotation:
 ```sh
 node scripts/ci-keys.mjs oidc-new --out ci-oidc-keys.json
 npx wrangler secret put CI_OIDC_SIGNING_KEYS --env prod -c worker/wrangler.jsonc < ci-oidc-keys.json
+node scripts/ci-keys.mjs provenance-new --out provenance-keys.json
+npx wrangler secret put PROVENANCE_SIGNING_KEYS --env prod -c worker/wrangler.jsonc < provenance-keys.json
 node scripts/ci-keys.mjs kek --out secrets-kek.txt
 npx wrangler secret put SECRETS_KEK --env prod -c worker/wrangler.jsonc < secrets-kek.txt
 npx wrangler secret put SECRETS_ADMIN_USER_IDS --env prod -c worker/wrangler.jsonc   # may run the KEK re-wrap

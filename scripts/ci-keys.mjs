@@ -12,6 +12,11 @@
  *   oidc-promote --current FILE --out FILE   new key signs; old key kept public-only
  *   oidc-retire  --current FILE --out FILE   drop every key but the signer
  *
+ * Provenance signing keys (issue #58, PROVENANCE_SIGNING_KEYS; Ed25519 JWK set,
+ * the first key signs, all stay published so old records keep verifying):
+ *   provenance-new    --out FILE                  first key
+ *   provenance-rotate --current FILE --out FILE   new key signs; old keys public-only
+ *
  * Secrets key-encryption key (SECRETS_KEK):
  *   kek --out FILE [--previous FILE --id v2]  new key, or a key ring that keeps
  *                                             the previous key for re-wrapping
@@ -64,6 +69,14 @@ function newSigningKey() {
 
 const publicOnly = ({ kty, kid, n, e, alg, use }) => ({ kty, kid, n, e, alg, use });
 
+function newProvenanceKey() {
+  const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' });
+  // RFC 8037 thumbprint as the key id
+  const thumbprint = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x });
+  const kid = createHash('sha256').update(thumbprint).digest('base64url').slice(0, 16);
+  return { ...jwk, kid };
+}
+
 function writeKek() {
   const key = randomBytes(32).toString('base64');
   if (!values.previous) {
@@ -96,6 +109,15 @@ switch (command) {
   }
   case 'oidc-retire':
     keys = readSet(values.current).slice(0, 1);
+    break;
+  case 'provenance-new':
+    keys = [newProvenanceKey()];
+    break;
+  case 'provenance-rotate':
+    keys = [
+      newProvenanceKey(),
+      ...readSet(values.current).map(({ kty, crv, kid, x }) => ({ kty, crv, kid, x })),
+    ];
     break;
   case 'kek':
     writeKek();
