@@ -6,10 +6,11 @@ import type { Env } from '../src/env';
 import { createRepo, setRef } from '../src/db/repos';
 import { commitChanges } from '../src/core/commit';
 import { MAX_CHANGED_FILES } from '../src/core/changesets';
-import { q1 } from '../src/db/client';
+import { q, q1, run } from '../src/db/client';
 import { enqueueRun } from '../src/ci/runs';
 import { CiRunnerDO } from '../src/ci/runner';
 import { MAX_SOURCE_FILES } from '../src/ci/config';
+import { SNAPSHOT_COLD_MS } from '../src/ci/cache';
 import { readPack } from '../src/git/pack-reader';
 import type { CiRun } from '../shared/collaboration';
 
@@ -204,6 +205,131 @@ describe('CI checkout over Git (#78)', () => {
       job.id,
     ]);
     expect(row).toEqual({ job_token_hash: null });
+  });
+
+  it('starts later jobs from the workspace of a green push to main', async () => {
+    const owner = await loginAs(testEnv, 7804, 'owner');
+    const repo = await createRepo(dbEnv, { slug: 'acme/warm', createdBy: owner.userId });
+    const { changeset } = await commitChanges(dbEnv, repo.id, {
+      first_parent: null,
+      message: 'one\n',
+      author: { name: 'Ada', email: 'ada@example.com' },
+      changes: [{ path: 'a.txt', op: 'add', content_b64: btoa('a\n') }],
+    });
+    await setRef(dbEnv, repo.id, 'main', changeset.id);
+    const bindings = runnable();
+    await makeApp(bindings)(
+      new Request('https://forge.test/api/v1/repos/acme/warm/ci', {
+        method: 'PUT',
+        headers: { ...owner.headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ commands: ['npm test'], required_approvals: 0 }),
+      }),
+    );
+    const start = async (
+      event: 'push' | 'pull_request',
+      ref: string,
+    ): Promise<{ done: CiRun; log: string; execs: Exec[] }> => {
+      const job = await enqueueRun(bindings, repo.id, changeset.id, owner.userId, false, {
+        event,
+        ref,
+        pull_id: event === 'pull_request' ? 1 : null,
+        fork: false,
+        actor_kind: 'human',
+        origin: 'https://forge.test',
+        approval_id: null,
+      });
+      const execs: Exec[] = [];
+      await simulatedRunner(bindings, 'acme/warm', execs).fetch(
+        new Request('https://runner/run', {
+          method: 'POST',
+          body: JSON.stringify({ run_id: job.id }),
+        }),
+      );
+      const done = (await q1<CiRun>(dbEnv, 'SELECT * FROM ci_runs WHERE id = ?', [
+        job.id,
+      ]))!;
+      return {
+        done,
+        log: await (await testEnv.OBJECTS.get(done.log_key!))!.text(),
+        execs,
+      };
+    };
+    const snapshots = () =>
+      q<{ key: string; scope: string; state: string }>(
+        dbEnv,
+        'SELECT key, scope, state FROM ci_caches WHERE repo_id = ?',
+        [repo.id],
+      );
+
+    // a pull request before any green main run starts cold and saves nothing
+    const cold = await start('pull_request', 'refs/pull/1/head');
+    expect(cold.done.state, cold.log).toBe('passed');
+    expect(cold.execs.some((e) => e.argv[0] === 'tar')).toBe(false);
+    expect(await snapshots()).toEqual([]);
+
+    const push = await start('push', 'refs/heads/main');
+    expect(push.done.state, push.log).toBe('passed');
+    expect(push.log).toContain('Saved 1 MiB');
+    const saved = await snapshots();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ scope: 'refs/heads/main', state: 'ready' });
+    const [, seed, sha] = /^yag-workspace-settings-(\d+)-([0-9a-f]{40})$/.exec(
+      saved[0]!.key,
+    )!;
+    expect(Date.now() - Number(seed)).toBeLessThan(60_000);
+    const tar = push.execs.find((e) => e.argv[0] === 'tar')!;
+    expect(tar.argv.slice(0, 2)).toEqual(['tar', '-czf']);
+    // the job token was revoked before the workspace was read
+    expect(
+      await q1(dbEnv, 'SELECT 1 AS n FROM ci_job_tokens WHERE run_id = ?', [
+        push.done.id,
+      ]),
+    ).toBeNull();
+
+    const warm = await start('pull_request', 'refs/pull/1/head');
+    expect(warm.done.state, warm.log).toBe('passed');
+    expect(warm.log).toContain(`Restoring workspace snapshot of ${sha.slice(0, 12)}`);
+    expect(warm.log).not.toContain('Saving workspace snapshot');
+    const order = warm.execs.map((e) => e.argv.slice(0, 2).join(' '));
+    expect(order.indexOf('tar -xzf')).toBeGreaterThan(-1);
+    expect(order.indexOf('tar -xzf')).toBeLessThan(order.indexOf('git -C'));
+    const step = warm.execs.find((e) => e.argv[0] === '/bin/bash')!;
+    expect(step.env?.YAG_BASE).toBe(sha);
+    // pull requests never write the snapshot
+    expect(await snapshots()).toEqual(saved);
+
+    // a day after the clean build, the next push to main builds cold and re-seeds
+    const stale = `yag-workspace-settings-${Date.now() - SNAPSHOT_COLD_MS - 1}-${sha}`;
+    await run(dbEnv, 'UPDATE ci_caches SET key = ? WHERE repo_id = ?', [stale, repo.id]);
+    const pr = await start('pull_request', 'refs/pull/1/head');
+    expect(pr.log).toContain('Restoring workspace snapshot');
+    const clean = await start('push', 'refs/heads/main');
+    expect(clean.done.state, clean.log).toBe('passed');
+    expect(clean.log).toContain('Building from an empty workspace');
+    expect(clean.execs.some((e) => e.argv[1] === '-xzf')).toBe(false);
+    expect(
+      clean.execs.find((e) => e.argv[0] === '/bin/bash')!.env?.YAG_BASE,
+    ).toBeUndefined();
+    const reseeded = (await snapshots()).map((r) => r.key);
+    expect(reseeded).toHaveLength(2);
+    expect(reseeded).toContain(stale);
+    const fresh = reseeded.find((k) => k !== stale)!;
+    expect(Date.now() - Number(/-(\d+)-[0-9a-f]{40}$/.exec(fresh)![1])).toBeLessThan(
+      60_000,
+    );
+    // and later jobs start from the clean one
+    const after = await start('pull_request', 'refs/pull/1/head');
+    expect(after.log).toContain('Restoring workspace snapshot');
+    expect(after.execs.find((e) => e.argv[0] === '/bin/bash')!.env?.YAG_BASE).toBe(sha);
+    expect(
+      (
+        await q<{ key: string; last_used_at: number }>(
+          dbEnv,
+          'SELECT key, last_used_at FROM ci_caches WHERE repo_id = ? ORDER BY last_used_at DESC LIMIT 1',
+          [repo.id],
+        )
+      )[0]!.key,
+    ).toBe(fresh);
   });
 
   it('falls back to the tar copy for a run with no origin', async () => {

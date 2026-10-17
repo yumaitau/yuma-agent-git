@@ -141,6 +141,48 @@ unused for 7 days are swept, and each repository stays under its pool's
 `cache_quota_bytes` (10 GiB shared) by evicting the least recently used.
 Repository admins delete entries from `DELETE /api/v1/repos/:repo/ci/caches/:id`.
 
+### Workspace snapshots
+
+Built-in jobs that fetch over Git start from the workspace of the last green
+push to the default branch instead of an empty directory: the checkout,
+`node_modules`, and build caches such as `.eslintcache` or `*.tsbuildinfo`.
+
+1. The job restores the newest snapshot of its pipeline job it may read, then
+   fetches and force-checks out its commit on top. Untracked files stay;
+   tracked files move to the commit.
+2. `YAG_BASE` holds the snapshot's commit, so a step can skip work when its
+   inputs did not change. The node preset runs `npm ci` unless
+   `node_modules` exists and
+   `git diff --quiet "$YAG_BASE" HEAD -- package-lock.json` passes.
+3. After every step of a push to the default branch passes, the runner revokes
+   the job token and saves `/workspace` (gzip tar, 1 GiB at most) as
+   `yag-workspace-<job>-<seed>-<commit>` in the default branch's cache scope.
+   The two newest per job are kept, so one stays restorable while the next
+   uploads.
+
+Only jobs that asked for no secrets, environment, ID token, package or
+security-events permission, and no publish, save a snapshot. Pull requests and
+other branches read it and never write it. Shards of a job share one snapshot
+line; the first shard to finish saves it. The save counts toward the job's
+timeout, and a failed save leaves the run green. Snapshots count toward the
+cache quota, and the cache API refuses keys starting with `yag-workspace-`.
+
+A warm workspace can hide a missing dependency that a clean clone would catch.
+`<seed>` records when the clean build a snapshot descends from ran. Once that
+is over 24 hours old, the next push to the default branch skips the restore,
+builds from an empty workspace and saves a fresh line; pull requests keep
+restoring the old one until it lands. So the default branch builds cold at
+most once a day, only when it is pushed to. Delete a job's `yag-workspace-`
+entries to force the next job cold.
+
+Memory: a cold build needs as much as a run without snapshots. Large Next.js
+builds that want about 4 GiB fit the default `standard-2` (6 GiB), but Node's
+default heap can stop short of that: set
+`NODE_OPTIONS=--max-old-space-size=4096` in the build step, or use
+`runs-on: [cloudflare, standard-3]` (8 GiB) when the pool allows it. A
+`.next/cache` saved in the snapshot makes warm builds incremental; keep the
+whole workspace under 1 GiB compressed or the save is skipped.
+
 ## Secrets, environments and cloud identity
 
 Each job opts in to credentials on its own ([details](ci-oidc-aws.md)):

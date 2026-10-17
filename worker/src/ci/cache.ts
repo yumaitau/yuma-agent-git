@@ -2,7 +2,7 @@ import type { Env } from '../env';
 import { q, q1, run } from '../db/client';
 import { getRepo } from '../db/repos';
 import { ApiError } from '../core/errors';
-import { MAX_TIMEOUT_S, type CiRun } from './config';
+import { MAX_TIMEOUT_S, type CiPolicy, type CiRun } from './config';
 import { parseContext } from './context';
 import { storeArtifact } from './artifacts';
 import { poolFor } from './capacity';
@@ -213,6 +213,125 @@ export async function deleteCaches(
   await env.DB.batch(
     rows.map((r) => env.DB.prepare('DELETE FROM ci_caches WHERE id = ?').bind(r.id)),
   );
+}
+
+/**
+ * Workspace snapshots: the built-in runner saves `/workspace` (checkout,
+ * dependencies, build caches) after a green push to the default branch, and
+ * later jobs start from it instead of an empty directory. A snapshot is a
+ * cache entry keyed `yag-workspace-<job>-<seed>-<commit>` in the default
+ * branch's scope, so the scope rules above apply: pull requests read it and
+ * never write it. Jobs cannot reserve this prefix through the cache API.
+ *
+ * `<seed>` is when the clean build the line descends from ran. Warm state can
+ * hide a dependency a clean clone lacks, so a default branch push whose line
+ * is older than SNAPSHOT_COLD_MS builds from an empty workspace and re-seeds.
+ */
+export const SNAPSHOT_PREFIX = 'yag-workspace-';
+export const MAX_SNAPSHOT_BYTES = 1024 * 1024 * 1024;
+export const SNAPSHOT_COLD_MS = 24 * 60 * 60_000;
+/** The newest snapshot stays restorable while the next one uploads. */
+const SNAPSHOTS_KEPT = 2;
+
+/** One snapshot line per pipeline job; shards of a job share it. */
+function snapshotPrefix(job: CiRun): string {
+  const name = job.job_key?.replace(/ \(.*\)$/, '') || 'settings';
+  return `${SNAPSHOT_PREFIX}${encodeURIComponent(name)}-`;
+}
+
+/** The clean build a snapshot descends from and the commit it was saved at. */
+export function parseSnapshot(
+  row: Pick<CacheRow, 'key'>,
+): { seed: number; base: string } | null {
+  const m = /-(\d{1,15})-([0-9a-f]{40}(?:[0-9a-f]{24})?)$/.exec(row.key);
+  return m ? { seed: Number(m[1]), base: m[2]! } : null;
+}
+
+/**
+ * A green push to the default branch whose job held no credentials: only then
+ * may its workspace become what later jobs, pull requests included, start from.
+ */
+export async function snapshotEligible(
+  env: Env,
+  job: CiRun,
+  policy: CiPolicy,
+): Promise<boolean> {
+  const context = parseContext(job.context);
+  if (context?.event !== 'push' || job.publish) return false;
+  if (
+    policy.secrets.length ||
+    policy.environment !== null ||
+    policy.aws ||
+    policy.permissions.id_token === 'write' ||
+    policy.permissions.packages === 'write' ||
+    policy.permissions.security_events === 'write'
+  )
+    return false;
+  const { write } = await scopesOf(env, job);
+  const repo = await getRepo(env, job.repo_id);
+  return !!repo && write === `refs/heads/${repo.default_branch}`;
+}
+
+/** The newest snapshot of this job's line it may read. */
+export function restoreSnapshot(env: Env, job: CiRun): Promise<CacheRow | null> {
+  const prefix = snapshotPrefix(job);
+  // no key equals a bare prefix: this is the restore-key lookup alone
+  return restoreCache(env, job, prefix, [prefix]);
+}
+
+/**
+ * Save a snapshot from a writer's output, committed only once the writer
+ * exits 0; null when another job of the commit already holds the key. Older
+ * snapshots of the job beyond the newest two are deleted.
+ */
+export async function saveSnapshot(
+  env: Env,
+  job: CiRun,
+  snapshot: { seed: number; base: string },
+  body: ReadableStream<Uint8Array>,
+  exited: Promise<number>,
+): Promise<CacheRow | null> {
+  const prefix = snapshotPrefix(job);
+  const key = `${prefix}${snapshot.seed}-${snapshot.base}`;
+  const row = await reserveCache(env, job, key).catch((err: unknown) => {
+    if (err instanceof ApiError && err.status === 409) return null;
+    throw err;
+  });
+  if (!row) {
+    await body.cancel();
+    return null;
+  }
+  let size: number;
+  try {
+    size = await storeArtifact(env.OBJECTS, row.object_key, body, MAX_SNAPSHOT_BYTES);
+    // a writer that failed partway leaves a truncated archive
+    if ((await exited) !== 0) {
+      await env.OBJECTS.delete(row.object_key);
+      throw new Error('Snapshot export failed');
+    }
+  } catch (err) {
+    await run(env, 'DELETE FROM ci_caches WHERE id = ?', [row.id]);
+    throw err;
+  }
+  const committed = await q1<CacheRow>(
+    env,
+    `UPDATE ci_caches SET state = 'ready', size = ?, last_used_at = ?
+    WHERE id = ? AND state = 'pending' RETURNING *`,
+    [size, Date.now(), row.id],
+  );
+  if (!committed) {
+    await env.OBJECTS.delete(row.object_key);
+    return null;
+  }
+  const older = await q<CacheRow>(
+    env,
+    `SELECT * FROM ci_caches WHERE repo_id = ? AND scope = ? AND state = 'ready'
+    AND substr(key, 1, length(?)) = ? ORDER BY created_at DESC LIMIT -1 OFFSET ?`,
+    [job.repo_id, row.scope, prefix, prefix, SNAPSHOTS_KEPT],
+  );
+  await deleteCaches(env, older);
+  await evictCaches(env, job.repo_id);
+  return committed;
 }
 
 /** Least recently used entries go first until the repo is within its quota. */
