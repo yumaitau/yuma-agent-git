@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Built-in CI jobs start from a snapshot of the workspace of the default
+  branch's last green push, fetch their commit on top and get `YAG_BASE`; the
+  node preset skips `npm ci` when `package-lock.json` is unchanged. Only
+  credential-free pushes to the default branch save snapshots; pull requests
+  only read them. A push to the default branch whose snapshot line is over a
+  day past its last clean build builds cold and re-seeds it (docs/pipelines.md).
 - Release assets uploaded from a CI job with its ID token (`X-Yag-Id-Token`,
   sent by `yag release upload` and `create` inside CI) record the run, and a
   run attests only the assets it uploaded (#58 closes the #54 gap).

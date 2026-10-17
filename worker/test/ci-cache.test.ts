@@ -8,11 +8,15 @@ import {
   evictCaches,
   reserveCache,
   restoreCache,
+  restoreSnapshot,
+  saveSnapshot,
+  parseSnapshot,
+  snapshotEligible,
   sweepCaches,
   uploadCache,
   CACHE_IDLE_MS,
 } from '../src/ci/cache';
-import type { CiRun } from '../src/ci/config';
+import { parsePolicy, type CiRun } from '../src/ci/config';
 import type { RunContext } from '../src/ci/context';
 
 /**
@@ -213,5 +217,101 @@ describe('cache quota and retention', () => {
     const left = await q<{ key: string }>(testEnv, 'SELECT key FROM ci_caches');
     expect(left.map((r) => r.key)).toEqual(['new']);
     expect(await testEnv.OBJECTS.head(old.object_key)).toBeNull();
+  });
+});
+
+describe('workspace snapshots', () => {
+  const sha = (n: number) => n.toString(16).padStart(40, '0');
+  const at = (n: number) => ({ seed: 1000, base: sha(n) });
+  const policy = (extra: object = {}) =>
+    parsePolicy({ commands: ['npm test'], ...extra });
+
+  it('only a credential-free push to the default branch may save one', async () => {
+    expect(await snapshotEligible(testEnv, await main(), policy())).toBe(true);
+    expect(await snapshotEligible(testEnv, await pull(3), policy())).toBe(false);
+    expect(
+      await snapshotEligible(
+        testEnv,
+        await job(context('push', 'refs/heads/dev')),
+        policy(),
+      ),
+    ).toBe(false);
+    expect(
+      await snapshotEligible(
+        testEnv,
+        await job(context('workflow_dispatch', 'refs/heads/main')),
+        policy(),
+      ),
+    ).toBe(false);
+    for (const extra of [
+      { secrets: ['NPM_TOKEN'] },
+      { environment: 'prod' },
+      { permissions: { id_token: 'write' } },
+      { permissions: { packages: 'write' } },
+    ])
+      expect(await snapshotEligible(testEnv, await main(), policy(extra))).toBe(false);
+  });
+
+  it('pull requests restore the newest of the two kept snapshots', async () => {
+    for (const n of [1, 2, 3]) {
+      const row = await saveSnapshot(
+        testEnv,
+        await main(),
+        at(n),
+        stream(`ws ${n}`),
+        Promise.resolve(0),
+      );
+      expect(row?.scope).toBe('refs/heads/main');
+    }
+    const kept = await q<{ key: string }>(
+      testEnv,
+      'SELECT key FROM ci_caches WHERE repo_id = ? ORDER BY created_at',
+      [repoId],
+    );
+    expect(kept.map((r) => parseSnapshot(r))).toEqual([at(2), at(3)]);
+    const restored = await restoreSnapshot(testEnv, await pull(4));
+    expect(restored && parseSnapshot(restored)).toEqual(at(3));
+    expect(await (await testEnv.OBJECTS.get(restored!.object_key))!.text()).toBe('ws 3');
+  });
+
+  it('keeps a separate line for each job, even when one name prefixes another', async () => {
+    const named = async (key: string) => {
+      const j = await main();
+      await run(testEnv, 'UPDATE ci_runs SET job_key = ? WHERE id = ?', [key, j.id]);
+      return { ...j, job_key: key };
+    };
+    await saveSnapshot(
+      testEnv,
+      await named('test'),
+      at(1),
+      stream('t'),
+      Promise.resolve(0),
+    );
+    for (const n of [2, 3, 4])
+      await saveSnapshot(
+        testEnv,
+        await named('test-e2e (1/2)'),
+        at(n),
+        stream(`e ${n}`),
+        Promise.resolve(0),
+      );
+    const restored = await restoreSnapshot(testEnv, await named('test'));
+    expect(restored && parseSnapshot(restored)).toEqual(at(1));
+    const e2e = await restoreSnapshot(testEnv, await named('test-e2e (2/2)'));
+    expect(e2e && parseSnapshot(e2e)).toEqual(at(4));
+    expect(
+      await q(testEnv, 'SELECT key FROM ci_caches WHERE repo_id = ?', [repoId]),
+    ).toHaveLength(3);
+  });
+
+  it('a writer that fails or a taken key saves nothing', async () => {
+    await expect(
+      saveSnapshot(testEnv, await main(), at(1), stream('partial'), Promise.resolve(2)),
+    ).rejects.toThrow();
+    expect(await restoreSnapshot(testEnv, await main())).toBeNull();
+    await saveSnapshot(testEnv, await main(), at(1), stream('a'), Promise.resolve(0));
+    expect(
+      await saveSnapshot(testEnv, await main(), at(1), stream('b'), Promise.resolve(0)),
+    ).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ import { poolFor } from '../ci/capacity';
 import {
   parsePolicy,
   policySchema,
+  NPM_INSTALL,
   PRESETS,
   reservation,
   settings,
@@ -446,7 +447,7 @@ collaborationRoutes.get(`${base}/ci/detect`, async (c) => {
           };
           if (pkg.workspaces)
             commands = [
-              'npm ci',
+              NPM_INSTALL,
               'npm run lint --workspaces --if-present',
               'npm run typecheck --workspaces --if-present',
               'npm run build --workspaces --if-present',

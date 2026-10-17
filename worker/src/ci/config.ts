@@ -108,9 +108,15 @@ export interface Settings {
   config: string;
   updated_at: number;
 }
+/**
+ * `npm ci` unless the job started from a workspace snapshot (ci/cache.ts)
+ * whose lockfile matches: then node_modules is already in place.
+ */
+export const NPM_INSTALL =
+  'if [ -n "${YAG_BASE:-}" ] && [ -d node_modules ] && git diff --quiet "$YAG_BASE" HEAD -- package-lock.json; then echo "package-lock.json unchanged since the snapshot: keeping node_modules"; else npm ci; fi';
 export const PRESETS = {
   node: [
-    'npm ci',
+    NPM_INSTALL,
     'npm run lint --if-present',
     'npm test --if-present',
     'npm run build --if-present',

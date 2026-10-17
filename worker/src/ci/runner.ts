@@ -8,6 +8,14 @@ import { getRepo } from '../db/repos';
 import { commitShas } from '../git/upload-pack';
 import { tarEntry, tarEnd } from '../bridge/tar';
 import { storeArtifact } from './artifacts';
+import {
+  deleteCaches,
+  parseSnapshot,
+  restoreSnapshot,
+  saveSnapshot,
+  snapshotEligible,
+  SNAPSHOT_COLD_MS,
+} from './cache';
 import { advancePipelines } from './planner';
 import { runnerInstance, runnerServices } from './spec';
 import { issueJobToken } from './runners';
@@ -86,7 +94,14 @@ export class CiRunnerDO extends DurableObject<Env> {
       await this.checkpoint(job);
       await this.command(['mkdir', '-p', '/workspace']);
       const remote = origin && token ? await this.gitRemote(job, origin) : null;
+      // a job that will save a snapshot decides here whether it builds cold
+      const saves =
+        !!remote && (await snapshotEligible(this.env, job, policy).catch(() => false));
+      let base: string | null = null;
+      let seed = Date.now();
       if (remote && token) {
+        const warm = await this.restoreWorkspace(job, saves);
+        if (warm) ({ base, seed } = warm);
         // The VM fetches over Git smart HTTP (#78): no source bytes pass through this object.
         this.append('Fetching source over Git…\n');
         await this.checkpoint(job);
@@ -134,6 +149,8 @@ export class CiRunnerDO extends DurableObject<Env> {
         access.mask.push(token);
       }
       this.masker = createMasker(access.mask);
+      // the snapshot's commit, for `git diff --quiet "$YAG_BASE" HEAD -- <lockfile>`
+      if (base) access.env.YAG_BASE = base;
       if (access.summary) this.append(`\n${access.summary}\n`);
       for (const file of access.files) {
         await this.command(
@@ -156,6 +173,12 @@ export class CiRunnerDO extends DurableObject<Env> {
           env: access.env,
         });
         await this.checkpoint(job);
+      }
+      if (remote && saves) {
+        await this.assertRunning(id, deadline);
+        // the steps are done: nothing in the saved workspace may hold a live token
+        await run(this.env, 'DELETE FROM ci_job_tokens WHERE run_id = ?', [id]);
+        await this.saveWorkspace(job, { seed, base: remote.commit });
       }
       if (job.publish) {
         await this.assertRunning(id, deadline);
@@ -444,9 +467,74 @@ export class CiRunnerDO extends DurableObject<Env> {
       '/workspace',
       'checkout',
       '-q',
+      '-f',
       '--detach',
       'FETCH_HEAD',
     ]);
+  }
+
+  /**
+   * Unpack the newest workspace snapshot the job may read (ci/cache.ts) into
+   * /workspace and return the commit it holds; the checkout then moves it to
+   * the job's commit, keeping untracked dependencies and build caches. A miss
+   * or a broken snapshot leaves an empty workspace, and so does a stale line
+   * for a job that `saves`: it builds clean and re-seeds the line.
+   */
+  private async restoreWorkspace(
+    job: CiRun,
+    saves: boolean,
+  ): Promise<{ seed: number; base: string } | null> {
+    const row = await restoreSnapshot(this.env, job).catch(() => null);
+    const snapshot = row && parseSnapshot(row);
+    if (!row || !snapshot) return null;
+    if (saves && Date.now() - snapshot.seed >= SNAPSHOT_COLD_MS) {
+      this.append(
+        'Building from an empty workspace: the last clean build is over a day old.\n',
+      );
+      return null;
+    }
+    const { base } = snapshot;
+    const object = await this.env.OBJECTS.get(row.object_key);
+    if (!object) {
+      await deleteCaches(this.env, [row]);
+      return null;
+    }
+    this.append(`Restoring workspace snapshot of ${base.slice(0, 12)}…\n`);
+    try {
+      await this.command(['tar', '-xzf', '-', '-C', '/workspace', '--no-same-owner'], {
+        stdin: object.body,
+      });
+      return snapshot;
+    } catch {
+      this.append(
+        'The snapshot could not be restored; starting from an empty workspace.\n',
+      );
+      await this.command(['find', '/workspace', '-mindepth', '1', '-delete']);
+      return null;
+    }
+  }
+
+  /** Save /workspace as the next snapshot. A failure costs the cache, not the run. */
+  private async saveWorkspace(
+    job: CiRun,
+    snapshot: { seed: number; base: string },
+  ): Promise<void> {
+    this.append('\nSaving workspace snapshot…\n');
+    try {
+      const tar = await this.ctx.container!.exec(
+        ['tar', '-czf', '-', '-C', '/workspace', '.'],
+        { stderr: 'ignore' },
+      );
+      if (!tar.stdout) throw new Error('Snapshot export failed');
+      const saved = await saveSnapshot(this.env, job, snapshot, tar.stdout, tar.exitCode);
+      this.append(
+        saved
+          ? `Saved ${Math.ceil(saved.size / (1024 * 1024))} MiB: later jobs start from this workspace.\n`
+          : 'Another job of this commit is saving the snapshot.\n',
+      );
+    } catch {
+      this.append('Workspace snapshot skipped: it failed or exceeded 1 GiB.\n');
+    }
   }
 
   /**

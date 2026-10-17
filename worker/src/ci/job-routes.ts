@@ -19,6 +19,7 @@ import {
   deleteCaches,
   reserveCache,
   restoreCache,
+  SNAPSHOT_PREFIX,
   uploadCache,
 } from './cache';
 
@@ -128,6 +129,13 @@ jobStorageRoutes.post(`${base}/caches`, async (c) => {
     const job = await running(c);
     const parsed = reserveCacheBody.safeParse(await readJsonBody(c));
     if (!parsed.success) throw new ApiError(400, 'invalid_request', 'Give the cache key');
+    // workspace snapshots are saved by the built-in runner only
+    if (parsed.data.key.startsWith(SNAPSHOT_PREFIX))
+      throw new ApiError(
+        400,
+        'invalid_cache_key',
+        `Cache keys starting with ${SNAPSHOT_PREFIX} are reserved.`,
+      );
     const row = await reserveCache(c.env, job, parsed.data.key);
     return c.json({ cache: cacheView(row) }, 201);
   } catch (err) {
