@@ -274,6 +274,36 @@ describe('workspace snapshots', () => {
     expect(await (await testEnv.OBJECTS.get(restored!.object_key))!.text()).toBe('ws 3');
   });
 
+  it('keeps a separate line for each job, even when one name prefixes another', async () => {
+    const named = async (key: string) => {
+      const j = await main();
+      await run(testEnv, 'UPDATE ci_runs SET job_key = ? WHERE id = ?', [key, j.id]);
+      return { ...j, job_key: key };
+    };
+    await saveSnapshot(
+      testEnv,
+      await named('test'),
+      at(1),
+      stream('t'),
+      Promise.resolve(0),
+    );
+    for (const n of [2, 3, 4])
+      await saveSnapshot(
+        testEnv,
+        await named('test-e2e (1/2)'),
+        at(n),
+        stream(`e ${n}`),
+        Promise.resolve(0),
+      );
+    const restored = await restoreSnapshot(testEnv, await named('test'));
+    expect(restored && parseSnapshot(restored)).toEqual(at(1));
+    const e2e = await restoreSnapshot(testEnv, await named('test-e2e (2/2)'));
+    expect(e2e && parseSnapshot(e2e)).toEqual(at(4));
+    expect(
+      await q(testEnv, 'SELECT key FROM ci_caches WHERE repo_id = ?', [repoId]),
+    ).toHaveLength(3);
+  });
+
   it('a writer that fails or a taken key saves nothing', async () => {
     await expect(
       saveSnapshot(testEnv, await main(), at(1), stream('partial'), Promise.resolve(2)),

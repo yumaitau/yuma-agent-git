@@ -236,7 +236,8 @@ const SNAPSHOTS_KEPT = 2;
 /** One snapshot line per pipeline job; shards of a job share it. */
 function snapshotPrefix(job: CiRun): string {
   const name = job.job_key?.replace(/ \(.*\)$/, '') || 'settings';
-  return `${SNAPSHOT_PREFIX}${encodeURIComponent(name)}-`;
+  // `-` ends the name: escaped inside it, `test` cannot match `test-e2e`'s line
+  return `${SNAPSHOT_PREFIX}${encodeURIComponent(name).replaceAll('-', '%2D')}-`;
 }
 
 /** The clean build a snapshot descends from and the commit it was saved at. */
