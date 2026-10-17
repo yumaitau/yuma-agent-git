@@ -1,0 +1,6 @@
+extends:
+  - recommended
+rules:
+  # The OCI distribution spec fixes `/v2/` and `/v2/{name}/blobs/uploads/`
+  # with their trailing slashes; clients call them exactly so.
+  no-path-trailing-slash: off
