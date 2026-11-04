@@ -1,0 +1,5 @@
+# The OCI distribution spec requires these trailing slashes.
+docs/openapi.json:
+  no-path-trailing-slash:
+    - '#/paths/~1v2~1'
+    - '#/paths/~1v2~1{name}~1blobs~1uploads~1'
