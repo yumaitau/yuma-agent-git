@@ -1,0 +1,37 @@
+name: E2E nightly
+
+# End-to-end tests run here only, never in push or pull request CI.
+on:
+  schedule:
+    - cron: '0 15 * * *' # 02:00 AEDT
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runner-smoke:
+    name: Runner end-to-end wrangler dev smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # wrangler dev serves the dashboard assets from worker/dashboard/dist.
+      - name: Build dashboard
+        run: npm run build -w worker
+
+      - name: Runner end-to-end smoke (wrangler dev, git push, register, run, report)
+        working-directory: runner
+        run: npx vitest run test/smoke.test.ts
+        env:
+          YAG_GIT_SMOKE: '1'

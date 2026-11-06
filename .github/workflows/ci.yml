@@ -48,10 +48,10 @@ jobs:
         env:
           YAG_GIT_SMOKE: '1'
 
-      - name: Runner tests (with the end-to-end wrangler dev smoke)
-        run: npm test -w yag-runner
-        env:
-          YAG_GIT_SMOKE: '1'
+      # The end-to-end wrangler dev smoke (runner/test/smoke.test.ts) runs nightly only:
+      # .github/workflows/e2e-nightly.yml
+      - name: Runner tests
+        run: npm test -w yag-runner -- --exclude test/smoke.test.ts
 
       - name: SDK tests
         run: npm test -w @yuma/agent-git-sdk
