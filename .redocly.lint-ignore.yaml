@@ -1,0 +1,6 @@
+# This file instructs Redocly's lint command to ignore the listed rule violations.
+# The OCI distribution spec requires these trailing-slash paths.
+docs/openapi.json:
+  no-path-trailing-slash:
+    - '#/paths/~1v2~1'
+    - '#/paths/~1v2~1{name}~1blobs~1uploads~1'
